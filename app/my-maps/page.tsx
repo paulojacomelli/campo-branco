@@ -1,0 +1,355 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/app/context/AuthContext';
+import {
+    Loader2,
+    Search,
+    Building2,
+    ArrowRight,
+    Pencil,
+    Trash2,
+    X,
+    LogOut,
+    Check,
+    Map,
+    MoreVertical,
+    HelpCircle
+} from 'lucide-react';
+import HelpModal from '@/app/components/HelpModal';
+import BottomNav from '@/app/components/BottomNav';
+import { db, auth } from '@/lib/firebase';
+import { collection, query, orderBy, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import Link from 'next/link';
+
+interface Congregation {
+    id: string;
+    name: string;
+    category?: string;
+    createdAt?: Timestamp;
+}
+
+export default function CongregationListPage() {
+    const { user, isSuperAdmin, loading: authLoading, congregationId } = useAuth(); // Added congregationId from useAuth
+    const router = useRouter();
+
+    // State
+    const [congregations, setCongregations] = useState<Congregation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Modals
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [currentCongregation, setCurrentCongregation] = useState<Congregation | null>(null);
+    const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+    // Form State
+    const [congregationName, setCongregationName] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('Todas');
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+    // Redirect Unassigned Users
+    useEffect(() => {
+        if (!authLoading && user && !congregationId && !isSuperAdmin) {
+            router.push('/unassigned');
+        }
+    }, [user, authLoading, congregationId, isSuperAdmin, router]);
+
+    useEffect(() => {
+        if (!isSuperAdmin) return;
+
+        const q = query(collection(db, "congregations"), orderBy("name"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data: Congregation[] = [];
+            snapshot.forEach((doc) => {
+                data.push({ id: doc.id, ...doc.data() } as Congregation);
+            });
+            setCongregations(data);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // Close menu on click outside
+    useEffect(() => {
+        const handleClickOutside = () => setOpenMenuId(null);
+        if (openMenuId) {
+            window.addEventListener('click', handleClickOutside);
+        }
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, [openMenuId]);
+
+
+    const handleUpdateCongregation = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentCongregation || !congregationName.trim()) return;
+
+        try {
+            await updateDoc(doc(db, "congregations", currentCongregation.id), {
+                name: congregationName.trim()
+            });
+            setCongregationName('');
+            setCurrentCongregation(null);
+            setIsEditModalOpen(false);
+        } catch (error) {
+            console.error("Error updating congregation:", error);
+            alert("Erro ao atualizar congregação.");
+        }
+    };
+
+    const handleDeleteCongregation = async (id: string, name: string) => {
+        if (!confirm(`Tem certeza que deseja excluir a congregação "${name}"? Isso pode deixar cidades e territórios órfãos.`)) return;
+
+        try {
+            await deleteDoc(doc(db, "congregations", id));
+        } catch (error) {
+            console.error("Error deleting congregation:", error);
+            alert("Erro ao excluir congregação.");
+        }
+    };
+
+    const prepareEdit = (cong: Congregation) => {
+        setCurrentCongregation(cong);
+        setCongregationName(cong.name);
+        setIsEditModalOpen(true);
+    };
+
+    const handleSignOut = async () => {
+        try {
+            await auth.signOut();
+            await fetch('/api/auth/session', { method: 'DELETE' });
+            document.cookie = "__session=; path=/; max-age=0";
+            document.cookie = "auth_token=; path=/; max-age=0";
+            document.cookie = "role=; path=/; max-age=0";
+            document.cookie = "congregationId=; path=/; max-age=0";
+            window.location.href = '/login';
+        } catch (error) {
+            console.error("Logout error:", error);
+            window.location.href = '/login';
+        }
+    };
+
+    const categories = Array.from(new Set(congregations.map(c => c.category).filter(Boolean))) as string[];
+
+    const filteredCongregations = congregations.filter(c => {
+        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.category?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesCategory = selectedCategory === 'Todas' || c.category === selectedCategory;
+        return matchesSearch && matchesCategory;
+    });
+
+    if (authLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-background min-h-screen pb-24 font-sans text-main">
+            {/* Header */}
+            <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-3">
+                    <div className="bg-primary p-2 rounded-xl text-white shadow-md shadow-primary-light/20 dark:shadow-none">
+                        <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <span className="font-bold text-lg text-main tracking-tight block leading-tight">Congregações</span>
+                        <span className="text-[10px] text-muted font-bold uppercase tracking-widest hidden sm:inline-block">Gerenciamento</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsHelpOpen(true)}
+                        className="p-1.5 text-muted hover:text-primary dark:hover:text-primary-light hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 rounded-full transition-colors"
+                        title="Ajuda"
+                    >
+                        <HelpCircle className="w-5 h-5" />
+                    </button>
+                </div>
+            </header>
+
+            <HelpModal
+                isOpen={isHelpOpen}
+                onClose={() => setIsHelpOpen(false)}
+                title="Lista de Congregações"
+                description="Escolha a congregação que deseja gerenciar ou cujos mapas deseja visualizar."
+                steps={[
+                    { title: "Visualizar Mapas", text: "Clique em uma congregação para ver as cidades e territórios vinculados a ela." },
+                    { title: "Gestão", text: "Se você tem permissão, pode editar ou excluir congregações através do menu de três pontos." }
+                ]}
+                tips={[
+                    "Use a barra de busca para encontrar rapidamente sua congregação pelo nome.",
+                    "Lembre-se que os dados de cada congregação são isolados por segurança."
+                ]}
+            />
+
+            {/* Search */}
+            <div className="px-6 pt-6 pb-2">
+                <div className="relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted w-5 h-5 group-focus-within:text-primary transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Buscar congregação..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
+                    />
+                </div>
+            </div>
+
+            {/* Categories Filter (Super Admin Only) */}
+            {isSuperAdmin && !loading && categories.length > 0 && (
+                <div className="px-6 pb-2">
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                        <button
+                            onClick={() => setSelectedCategory('Todas')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === 'Todas' ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
+                        >
+                            Todas
+                        </button>
+                        {categories.sort().map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === cat ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* List */}
+            <main className="px-6 py-4 space-y-3">
+                {loading ? (
+                    <div className="flex justify-center p-8">
+                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    </div>
+                ) : filteredCongregations.length === 0 ? (
+                    <div className="text-center py-12 opacity-50">
+                        <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                        <p className="text-gray-400 font-medium">Nenhuma congregação encontrada</p>
+                    </div>
+                ) : (
+                    filteredCongregations.map(cong => (
+                        <div
+                            key={cong.id}
+                            className="group bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center gap-4 relative"
+                        >
+                            <Link href={`/my-maps/city?congregationId=${cong.id}`} prefetch={false} className="flex-1 flex items-center gap-4 min-w-0">
+                                <div className="w-10 h-10 bg-primary-light/50 dark:bg-primary-dark/30 text-primary dark:text-primary-light rounded-xl flex items-center justify-center shrink-0">
+                                    <Building2 className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-bold text-main text-base truncate">{cong.name}</h3>
+                                        {cong.category && (
+                                            <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-primary-dark/20 text-primary dark:text-primary-light rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light/30 dark:border-primary-dark/30 shrink-0">
+                                                {cong.category}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">ACESSAR MAPAS</p>
+                                </div>
+                            </Link>
+
+                            <div className="relative">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMenuId(openMenuId === cong.id ? null : cong.id);
+                                    }}
+                                    className="p-2 text-muted hover:text-main hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-all"
+                                >
+                                    <MoreVertical className="w-5 h-5" />
+                                </button>
+
+                                {openMenuId === cong.id && (
+                                    <div className="absolute right-0 top-full mt-2 w-40 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                        <Link
+                                            href={`/my-maps/city?congregationId=${cong.id}`}
+                                            prefetch={false}
+                                            className="w-full px-4 py-2 text-left text-xs font-bold text-main hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 hover:text-primary dark:hover:text-primary-light flex items-center gap-2 transition-colors border-b border-surface-border"
+                                        >
+                                            <ArrowRight className="w-3.5 h-3.5" />
+                                            Abrir
+                                        </Link>
+                                        {isSuperAdmin && (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        prepareEdit(cong);
+                                                        setOpenMenuId(null);
+                                                    }}
+                                                    className="w-full px-4 py-2 text-left text-xs font-bold text-main hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 hover:text-primary dark:hover:text-primary-light flex items-center gap-2 transition-colors border-b border-surface-border"
+                                                >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                    Editar
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        handleDeleteCongregation(cong.id, cong.name);
+                                                        setOpenMenuId(null);
+                                                    }}
+                                                    className="w-full px-4 py-2 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 transition-colors"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    Excluir
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </main>
+
+            <BottomNav />
+
+
+            {/* Edit Modal */}
+            {isEditModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-surface rounded-3xl p-6 w-full max-w-sm shadow-2xl relative animate-in zoom-in-95 duration-200">
+                        <button
+                            onClick={() => setIsEditModalOpen(false)}
+                            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <div className="mb-6">
+                            <h2 className="text-xl font-bold text-main">Editar Congregação</h2>
+                        </div>
+                        <form onSubmit={handleUpdateCongregation} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Nome</label>
+                                <input
+                                    autoFocus
+                                    className="w-full bg-background border-none rounded-xl p-3 font-bold text-main focus:ring-2 focus:ring-primary/20"
+                                    value={congregationName}
+                                    onChange={e => setCongregationName(e.target.value)}
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={!congregationName.trim()}
+                                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Check className="w-5 h-5" />
+                                SALVAR ALTERAÇÕES
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

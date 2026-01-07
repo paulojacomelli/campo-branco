@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "campo-branco"
+  },
+  "targets": {
+    "campo-branco": {
+      "hosting": {
+        "campo-branco": [
+          "campo-branco"
+        ],
+        "campobranco": [
+          "campobranco"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

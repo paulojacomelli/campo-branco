@@ -1,0 +1,267 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper functions ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper to extract auth context safely from Custom Claims
+    function getAuthContext() {
+       // Now reading directly from Auth Token (Optimized & Reliable)
+       let token = request.auth.token;
+       return {
+         "congregationId": token.congregationId != null ? token.congregationId : "",
+         "role": token.role != null ? token.role : "PUBLICADOR",
+         "roles": token.roles != null ? token.roles : []
+       };
+    }
+
+    // Role checks (SECURE LOCK STRATEGY)
+    function isSuperAdmin() {
+      // 1. First, check if the lock document says this user is the Super Admin
+      let lockPath = /databases/$(database)/documents/config/security;
+      let lockExists = exists(lockPath);
+      let isLockedOwner = lockExists && get(lockPath).data.superAdminUid == request.auth.uid;
+      
+      // STRICT LOCK STRATEGY: Only trust the lock document.
+      // If the lock document exists, you MUST be the owner.
+      // We do not trust the 'role' field in the user document for Super Admin privileges.
+      return lockExists && isLockedOwner;
+    }
+    
+    function isElder() {
+      let auth = getAuthContext();
+      return auth.role == 'ANCIAO' || 'ANCIAO' in auth.roles || isSuperAdmin();
+    }
+    
+    function isServant() {
+      let auth = getAuthContext();
+      return auth.role == 'SERVO' || 'SERVO' in auth.roles || isElder();
+    }
+    
+    // --- Isolation Logic ---
+
+    // Verify if the requested data belongs to the user's congregation
+    function belongsToUserCongregation(docData) {
+      let auth = getAuthContext();
+      // Super Admin bypasses isolation
+      let hasPower = isSuperAdmin(); 
+      // Strict check: doc must have congregationId and it must match user's
+      return isAuthenticated() && (hasPower || (docData.congregationId == auth.congregationId && auth.congregationId != ""));
+    }
+
+    // Ensure congregationId cannot be changed during an update
+    function congregationIdIsImmutable() {
+       return request.resource.data.congregationId == resource.data.congregationId;
+    }
+
+    // --- SECURITY LOCK COLLECTION ---
+    match /config/security {
+       // Lockbox: No one can edit this after creation
+       allow read: if false; // Internal use only
+       // Allow create ONLY if it doesn't exist AND the creator claims it for themselves
+       allow create: if isAuthenticated() && request.resource.data.superAdminUid == request.auth.uid; 
+       allow update, delete: if false; 
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Congregations
+    match /congregations/{congregationId} {
+      allow read: if isAuthenticated(); // Allow read for authenticated users
+      allow create: if isAuthenticated() && isSuperAdmin();
+      // Allow update for own congregation if isServant or isElder
+      allow update: if isAuthenticated() && (isSuperAdmin() || (isServant() && congregationId == getAuthContext().congregationId));
+      allow delete: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // 2. Users (Strict Access)
+    match /users/{userId} {
+      // Individual document access
+      allow get: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        (resource.data.email == request.auth.token.email && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com')) ||
+        isSuperAdmin() ||
+        // Only allow reading users from SAME congregation
+        (getAuthContext().congregationId != "" && getAuthContext().congregationId == resource.data.congregationId)
+      );
+
+      // List access
+      // CAUTION: "list" rules cannot efficiently depend on get() (getUserData/getAuthContext).
+      // Ideally, we'd use Custom Claims (request.auth.token.congregationId).
+      // For now, we allow list if authenticated, trusting the client's "where" clauses and the "get" rules to define visibility boundaries where possible.
+      allow list: if isAuthenticated() && (
+        isSuperAdmin() ||
+        getAuthContext().congregationId != ""
+      );
+      
+      // Strict Update Rule: Prevent changing your own Role unless you are SuperAdmin
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (request.auth.uid == userId && (
+           !('role' in request.resource.data) || request.resource.data.role == resource.data.role
+        )) || 
+        (isElder() && getAuthContext().congregationId == resource.data.congregationId)
+      );
+      
+      // Create: Allow standard creation, but 'role' should default to PUBLICADOR logic from client. 
+      // We can restrict role creation here too, but client typically sets it to PUBLICADOR.
+      allow create: if isAuthenticated() && (
+        request.resource.data.role == "PUBLICADOR" &&
+        (!('roles' in request.resource.data) || request.resource.data.roles.size() == 0) &&
+        (!('congregationId' in request.resource.data) || request.resource.data.congregationId == "")
+      );
+      allow delete: if isAuthenticated() && (isSuperAdmin() || request.auth.uid == userId);
+    }
+
+    // 3. Cities
+    match /cities/{cityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(request.resource.data)));
+      allow update: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(resource.data) && congregationIdIsImmutable()));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(resource.data)));
+    }
+
+    // 4. Core Collections (Territories, Addresses)
+    match /territories/{id} {
+        allow read: if isAuthenticated() && belongsToUserCongregation(resource.data);
+        allow create: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(request.resource.data)));
+        // Strict: Must belong to cong, and cannot change congId
+        allow update: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(resource.data) && belongsToUserCongregation(request.resource.data) && congregationIdIsImmutable()));
+        allow delete: if isAuthenticated() && (isSuperAdmin() || (isServant() && belongsToUserCongregation(resource.data)));
+    }
+
+    match /addresses/{id} {
+        // READ: Allow Super Admin, Elder, or Servant
+        // Using direct token check to avoid getAuthContext issues
+        allow read: if isAuthenticated() && (
+            isSuperAdmin() ||
+            request.auth.token.role == 'ANCIAO' ||
+            request.auth.token.role == 'SERVO' ||
+            'ANCIAO' in request.auth.token.roles ||
+            'SERVO' in request.auth.token.roles
+        );
+        
+        // CREATE: use request.resource (document being created)
+        allow create: if isAuthenticated() && (
+            isSuperAdmin() ||
+            (request.resource.data.congregationId == request.auth.token.congregationId && request.auth.token.congregationId != "")
+        );
+        
+        // UPDATE: validate both existing and new data
+        allow update: if isAuthenticated() && (
+            isSuperAdmin() ||
+            (resource.data.congregationId == request.auth.token.congregationId &&
+             request.resource.data.congregationId == request.auth.token.congregationId)
+        ) && congregationIdIsImmutable();
+        
+        // DELETE: use resource (existing document)
+        allow delete: if isAuthenticated() && (
+            isSuperAdmin() ||
+            resource.data.congregationId == request.auth.token.congregationId
+        );
+    }
+
+    // 5. Visits (Subcollection)
+    match /{document=**}/visits/{id} {
+        // STRICT READ: Only auth users in same congregation OR
+        // Public read IF the visit is explicitly tagged with a valid shareId
+        allow read: if (isAuthenticated() && belongsToUserCongregation(resource.data)) ||
+                       (resource.data.shareId != null && exists(/databases/$(database)/documents/shared_lists/$(resource.data.shareId)));
+        allow create: if isAuthenticated() && belongsToUserCongregation(request.resource.data);
+        allow update: if isAuthenticated() && belongsToUserCongregation(resource.data) && belongsToUserCongregation(request.resource.data);
+        allow delete: if isAuthenticated() && belongsToUserCongregation(resource.data);
+    }
+
+    // 6. Shared Lists (Public Read, Auth Write)
+    match /shared_lists/{id} {
+        allow get: if true; // Truly public for sharing
+        allow list: if isAuthenticated() && (
+            resource.data.assignedTo == request.auth.uid || 
+            belongsToUserCongregation(resource.data)
+        );
+        match /items/{itemId} { 
+            // Public read for sharing (both get and list)
+            allow get, list: if true;
+            
+            // CREATE: use request.resource (document being created)
+            allow create: if isAuthenticated() 
+                && request.resource.data.congregationId == request.auth.token.congregationId
+                && request.resource.data.createdBy == request.auth.uid;
+            
+            // UPDATE/DELETE: use resource (existing document)
+            allow update, delete: if isAuthenticated() 
+                && resource.data.congregationId == request.auth.token.congregationId;
+        }
+        match /territory_addresses/{addrId} { 
+            // Public read for sharing (both get and list)
+            allow get, list: if true;
+            
+            // CREATE: use request.resource (document being created)
+            allow create: if isAuthenticated() 
+                && request.resource.data.congregationId == request.auth.token.congregationId
+                && request.resource.data.createdBy == request.auth.uid;
+            
+            // UPDATE/DELETE: use resource (existing document)
+            allow update, delete: if isAuthenticated() 
+                && resource.data.congregationId == request.auth.token.congregationId;
+        }
+        
+        // CREATE: use request.resource (document being created)
+        allow create: if isAuthenticated() && (
+            isSuperAdmin() ||
+            request.resource.data.congregationId == request.auth.token.congregationId
+        );
+        
+        // UPDATE/DELETE: use resource (existing document)
+        allow update, delete: if isAuthenticated() && (
+            isSuperAdmin() ||
+            resource.data.congregationId == request.auth.token.congregationId
+        );
+        
+        match /results/{resultId} {
+            // Public sub-resources for the shared view
+            allow read: if true;
+            
+            // PUBLIC WRITE: Acceptable because:
+            // 1. Data is public anyway (shared lists)
+            // 2. Scope is limited (only results for this specific share)
+            // 3. Size is controlled (< 10 fields)
+            // 4. No sensitive data stored
+            allow write: if true && request.resource.data.size() < 10; 
+        }
+    }
+
+    // 7. Witnessing Points
+    match /witnessing_points/{id} {
+        allow read: if isAuthenticated() && belongsToUserCongregation(resource.data);
+        allow create: if isAuthenticated() && (isSuperAdmin() || (isElder() && belongsToUserCongregation(request.resource.data)));
+        allow update: if isAuthenticated() && (isSuperAdmin() || (belongsToUserCongregation(resource.data) && congregationIdIsImmutable()));
+        allow delete: if isAuthenticated() && (isSuperAdmin() || (isElder() && belongsToUserCongregation(resource.data)));
+    }
+
+    // 8. Templates & Reports
+    match /notification_templates/{id} {
+        // Restricted read to own congregation if field exists, otherwise global? 
+        // Assuming global templates for now, BUT preventing writes.
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // STRICT REPORTS RULES (As Requested)
+    match /reports/{reportId} {
+        allow create: if isAuthenticated()
+          && request.resource.data.userId == request.auth.uid
+          // && request.resource.data.createdAt is timestamp // Optional: Strict type check if needed
+          ;
+          
+        allow read: if isSuperAdmin();
+        allow update, delete: if false;
+    }
+    
+    // Default Deny All (Implicit in Firestore, but good practice to verify covers everything)
+  }
+}
