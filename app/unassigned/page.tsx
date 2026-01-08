@@ -115,7 +115,7 @@ export default function UnassignedPage() {
                             </div>
                             <div>
                                 <span className="font-bold text-gray-800">Aceite um Território</span>
-                                <p className="text-xs mt-1">Se você abrir um link de território compartilhado e clicar em "Aceitar", você será vinculado automaticamente.</p>
+                                <p className="text-xs mt-1">Se você abrir um link de território compartilhado e clicar em &quot;Aceitar&quot;, você será vinculado automaticamente.</p>
                             </div>
                         </li>
                     </ul>

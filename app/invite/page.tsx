@@ -19,7 +19,7 @@ function InviteContent() {
                 setToken(pathParts[2]);
             }
         }
-    }, []);
+    }, [token]);
 
     const { user, loading: authLoading } = useAuth();
     const router = useRouter();
@@ -78,16 +78,12 @@ function InviteContent() {
 
     const handleAccept = async () => {
         if (!user) {
-<<<<<<< HEAD
             const targetUrl = `/invite?token=${token}`;
             if (typeof window !== 'undefined') {
                 localStorage.setItem('login_redirect', targetUrl);
             }
             // Force full page navigation to ensure parameters are not lost by client router
             window.location.href = `/login?redirect=${encodeURIComponent(targetUrl)}`;
-=======
-            router.push(`/login?redirect=/invite?token=${token}`);
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
             return;
         }
 
@@ -106,12 +102,8 @@ function InviteContent() {
                 // Already bound logic
                 if (userDoc.data().congregationId === congregationId) {
                     setSuccess(true);
-<<<<<<< HEAD
                     // Force refresh to ensure AuthContext picks up the change
                     setTimeout(() => window.location.href = '/dashboard', 2000);
-=======
-                    setTimeout(() => router.push('/dashboard'), 2000);
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
                     return;
                 } else {
                     if (!confirm("Você já pertence a outra congregação. Deseja mudar para esta?")) {
@@ -131,12 +123,8 @@ function InviteContent() {
             }, { merge: true });
 
             setSuccess(true);
-<<<<<<< HEAD
             // Force refresh to ensure AuthContext picks up the change
             setTimeout(() => window.location.href = '/dashboard', 2000);
-=======
-            setTimeout(() => router.push('/dashboard'), 2000);
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
 
         } catch (e) {
             console.error("Error accepting invite:", e);

@@ -171,7 +171,7 @@ const htmlTemplate = `
                         </div>
                         <h2 class="text-3xl font-bold">Copiar & Colar</h2>
                         <p class="text-slate-300 leading-relaxed">
-                            Ao registrar o app, você verá um código com várias chaves (`apiKey`, `projectId`, etc).
+                            Ao registrar o app, você verá um código com várias chaves (\`apiKey\`, \`projectId\`, etc).
                         </p>
                         <div class="bg-black/40 rounded-xl p-4 border border-white/10 font-mono text-xs text-slate-400 overflow-hidden relative">
                             <div class="absolute top-2 right-2 flex gap-1">

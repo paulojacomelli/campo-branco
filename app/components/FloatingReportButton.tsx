@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Camera, X, CheckCircle2, Loader2, Bug } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import Image from 'next/image';
 
 export default function FloatingReportButton() {
     const [isOpen, setIsOpen] = useState(false);
@@ -102,7 +103,7 @@ export default function FloatingReportButton() {
                             <label className="text-xs font-bold text-muted uppercase">Captura de Tela</label>
                             {screenshot && (
                                 <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 w-full h-48 bg-gray-100 dark:bg-slate-800 relative group">
-                                    <img src={screenshot} alt="Screenshot" className="w-full h-full object-contain" />
+                                    <Image src={screenshot} alt="Screenshot" fill className="object-contain" />
                                 </div>
                             )}
                         </div>

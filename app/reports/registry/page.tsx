@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
@@ -77,12 +77,8 @@ export default function RegistryPage() {
         }
     }, [rows]);
 
-    useEffect(() => {
-        if (!congregationId) return;
-        fetchData();
-    }, [congregationId, currentServiceYear]);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setPageLoading(true);
         try {
             const { start, end } = getServiceYearRange(currentServiceYear);
@@ -189,7 +185,12 @@ export default function RegistryPage() {
         } finally {
             setPageLoading(false);
         }
-    };
+    }, [congregationId, currentServiceYear]);
+
+    useEffect(() => {
+        if (!congregationId) return;
+        fetchData();
+    }, [congregationId, currentServiceYear, fetchData]);
 
     const handleSaveAssignment = async () => {
         if (!selectedTerritoryId || !editingAssignment?.publisherName || !editingAssignment.assignedDate) return;
@@ -748,7 +749,7 @@ export default function RegistryPage() {
                         <div className="space-y-4">
                             <p className="text-sm text-gray-500 dark:text-gray-400">
                                 Defina a data histórica de conclusão para o território <strong>{editingLegacy?.name}</strong>.
-                                Esta data aparecerá na coluna "Última Data Concluída".
+                                Esta data aparecerá na coluna &quot;Última Data Concluída&quot;.
                             </p>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Data</label>

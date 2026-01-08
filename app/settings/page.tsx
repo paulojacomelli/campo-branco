@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useAuth } from '@/app/context/AuthContext';
 import { db, auth } from '@/lib/firebase';
 import { updateProfile } from 'firebase/auth';
@@ -201,6 +202,8 @@ export default function SettingsPage() {
 
 
     const handleSaveProfile = async () => {
+        // ... (existing code)
+        // (keeping existing logic - truncated for brevity in replacement if not modifying inner)
         if (!user || !user.email) return;
         setSaving(true);
         try {
@@ -252,6 +255,40 @@ export default function SettingsPage() {
             alert("Erro ao atualizar perfil.");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleExport = async () => {
+        if (!confirm("O download do backup será iniciado. Isso pode levar alguns segundos dependendo da quantidade de dados. Continuar?")) return;
+
+        try {
+            // Trigger download via direct navigation or hidden iframe
+            // Or fetch blob and download
+            const response = await fetch('/api/admin/export');
+            if (!response.ok) throw new Error('Falha no export');
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Filename is in header, but we can default
+            const disposition = response.headers.get('content-disposition');
+            let filename = `backup-${new Date().toISOString()}.json`;
+            if (disposition && disposition.indexOf('attachment') !== -1) {
+                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                const matches = filenameRegex.exec(disposition);
+                if (matches != null && matches[1]) {
+                    filename = matches[1].replace(/['"]/g, '');
+                }
+            }
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao exportar dados.");
         }
     };
 
@@ -309,7 +346,7 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-4">
                             <div className="w-16 h-16 bg-background dark:bg-surface-highlight rounded-full flex items-center justify-center text-muted text-xl font-bold border-2 border-surface dark:border-surface shadow-sm ring-1 ring-surface-border">
                                 {user.photoURL ? (
-                                    <img src={user.photoURL} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+                                    <Image src={user.photoURL} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
                                 ) : (
                                     <User className="w-8 h-8" />
                                 )}
@@ -591,6 +628,19 @@ export default function SettingsPage() {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Export Button (Elder only) */}
+                            {isElder && !isSuperAdmin && (
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        onClick={handleExport}
+                                        className="flex items-center gap-2 text-xs font-bold text-muted hover:text-primary transition-colors uppercase tracking-wider"
+                                    >
+                                        <Database className="w-4 h-4" />
+                                        Exportar Dados da Congregação
+                                    </button>
+                                </div>
+                            )}
                         </section>
                     </>
                 )}
@@ -631,7 +681,7 @@ export default function SettingsPage() {
                                         <div key={member.id} className="flex items-center justify-between p-3 bg-background rounded-2xl border border-surface-border">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 bg-surface rounded-full flex items-center justify-center text-muted font-bold border border-surface-border shadow-sm">
-                                                    {member.photoURL ? <img src={member.photoURL} className="w-full h-full rounded-full" /> : <User className="w-5 h-5" />}
+                                                    {member.photoURL ? <Image src={member.photoURL} alt={member.name || 'Avatar'} width={40} height={40} className="rounded-full object-cover" /> : <User className="w-5 h-5" />}
                                                 </div>
                                                 <div>
                                                     <h4 className="font-bold text-sm text-main">{member.name || member.email?.split('@')[0]}</h4>
@@ -775,6 +825,13 @@ export default function SettingsPage() {
                                             <Bell className="w-4 h-4" />
                                             Notificações
                                         </Link>
+                                        <button
+                                            onClick={handleExport}
+                                            className="inline-block bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/10 dark:hover:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-bold py-2 px-4 rounded-xl transition-colors shadow-sm flex items-center gap-2"
+                                        >
+                                            <Database className="w-4 h-4" />
+                                            Exportar Backup Completo
+                                        </button>
                                     </div>
 
                                     <div className="mt-4 pt-4 border-t border-primary-light/20 dark:border-primary-dark/20">

@@ -314,7 +314,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
         processItems();
 
         return () => { isMounted = false; };
-    }, [items]);
+    }, [items, disableGeocoding]);
 
     // 2. MAP INITIALIZATION (Leaflet)
     useEffect(() => {

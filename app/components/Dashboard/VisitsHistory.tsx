@@ -171,7 +171,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
         } finally {
             setLoading(false);
         }
-    }, [congregationId, isElder, isServant, role, user, scope, profileName]);
+    }, [congregationId, isElder, isServant, role, user, scope, profileName, showViewAll]);
 
     useEffect(() => {
         // Wait for auth to resolve

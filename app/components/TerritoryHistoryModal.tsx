@@ -109,7 +109,7 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
         };
 
         fetchHistory();
-    }, [territoryId]);
+    }, [territoryId, congregationId]);
 
     const formatDate = (ts: any) => {
         if (!ts) return 'N/A';

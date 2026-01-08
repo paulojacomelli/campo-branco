@@ -42,7 +42,7 @@ export default function AboutPage() {
 
                 <h3>Filosofia do Projeto</h3>
                 <p>
-                    O nome "Campo Branco" é uma referência às palavras de Jesus em João 4:35: <em>"Ergam os olhos e observem os campos, que estão brancos para a colheita."</em>
+                    O nome &quot;Campo Branco&quot; é uma referência às palavras de Jesus em João 4:35: <em>&quot;Ergam os olhos e observem os campos, que estão brancos para a colheita.&quot;</em>
                 </p>
                 <p>
                     Acreditamos que a tecnologia deve servir como uma facilitadora discreta e eficiente, respeitando sempre a natureza voluntária e sagrada do trabalho que ela apoia.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import {
@@ -88,7 +88,7 @@ function SharedPreviewContent() {
     const [congregationType, setCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
     const isTraditional = congregationType === 'TRADITIONAL';
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         if (!shareId || !id) {
             setError("Link incompleto.");
@@ -215,11 +215,11 @@ function SharedPreviewContent() {
             setError("Erro ao carregar dados.");
             setLoading(false);
         }
-    };
+    }, [shareId, id, type]);
 
     useEffect(() => {
         fetchData();
-    }, [type, id, searchParams]); // Fixed dependency
+    }, [fetchData]);
 
     // Close dropdown when complying with effect
     useEffect(() => {

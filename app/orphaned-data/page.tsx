@@ -237,7 +237,7 @@ export default function OrphanedDataPage() {
         } else {
             setTerritories([]);
         }
-    }, [selCity]);
+    }, [selCity, selCong]);
 
 
     const handleSaveFix = async () => {

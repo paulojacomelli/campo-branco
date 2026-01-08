@@ -6,19 +6,16 @@ import { auth, db } from '@/lib/firebase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import Image from 'next/image';
 
 export default function LoginClient() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const router = useRouter();
     const searchParams = useSearchParams();
-<<<<<<< HEAD
 
     // Robust Redirect Strategy: Priority to URL param, then LocalStorage (set by invite page)
     const redirectUrl = searchParams.get('redirect') || (typeof window !== 'undefined' ? localStorage.getItem('login_redirect') : null);
-=======
-    const redirectUrl = searchParams.get('redirect');
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
 
     useEffect(() => {
         const forceLogout = async () => {
@@ -150,7 +147,6 @@ export default function LoginClient() {
         // Static Export: No Server Session Creation
         // We rely on Client Auth (onAuthStateChanged)
 
-<<<<<<< HEAD
         // Clean up stored redirect
         if (typeof window !== 'undefined') {
             localStorage.removeItem('login_redirect');
@@ -160,11 +156,6 @@ export default function LoginClient() {
             window.location.href = '/legal-consent';
         } else {
             console.log("Redirecting to:", redirectUrl || '/dashboard');
-=======
-        if (!hasAcceptedTerms) {
-            window.location.href = '/legal-consent';
-        } else {
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
             window.location.href = redirectUrl || '/dashboard';
         }
     };
@@ -186,16 +177,12 @@ export default function LoginClient() {
     };
 
     return (
-<<<<<<< HEAD
         <div className="min-h-[100dvh] bg-primary dark:bg-background flex flex-col items-center justify-center p-6 font-sans transition-colors duration-300 relative z-10">
-=======
-        <div className="min-h-screen bg-primary dark:bg-background flex flex-col items-center justify-center p-6 font-sans transition-colors duration-300">
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
             <div className="w-full max-w-sm">
                 <div className="bg-white dark:bg-surface rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-12 fade-in duration-1000 border border-transparent dark:border-surface-border transition-colors">
                     <div className="text-center mb-8">
                         <div className="w-24 h-24 flex items-center justify-center mx-auto mb-2">
-                            <img src="/app-icon.svg" alt="Campo Branco" className="w-full h-full object-contain" />
+                            <Image src="/app-icon.svg" alt="Campo Branco" width={96} height={96} className="w-full h-full object-contain" priority />
                         </div>
                         <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter mb-1">Campo Branco</h1>
                         <p className="text-primary dark:text-primary-light text-[10px] font-bold opacity-80 uppercase tracking-widest">Acesso Restrito</p>

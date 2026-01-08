@@ -2,11 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
-<<<<<<< HEAD
 import { collection, query, orderBy, getDocs, where, documentId, limit } from 'firebase/firestore';
-=======
-import { collection, query, orderBy, getDocs, where, documentId } from 'firebase/firestore';
->>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
 import { useAuth } from '@/app/context/AuthContext';
 import {
     X,
@@ -32,13 +28,14 @@ interface VisitHistoryModalProps {
 }
 
 export default function VisitHistoryModal({ addressId, onClose, address, isSharedView = false, shareId }: VisitHistoryModalProps) {
-    if (!addressId) return null;
-
     const [loading, setLoading] = useState(true);
     const [visits, setVisits] = useState<any[]>([]);
     const { user, congregationId } = useAuth();
 
+
     useEffect(() => {
+        if (!addressId) return;
+
         const fetchHistory = async () => {
             setLoading(true);
             try {
@@ -103,7 +100,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
         };
 
         fetchHistory();
-    }, [addressId, isSharedView]);
+    }, [addressId, isSharedView, user, congregationId]);
 
     const getStatusIcon = (status: string) => {
         switch (status) {
@@ -124,6 +121,8 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
             default: return status;
         }
     };
+
+    if (!addressId) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -175,7 +174,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                                 </div>
                                 {visit.notes && (
                                     <p className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-gray-200 dark:border-slate-700 mt-2 italic">
-                                        "{visit.notes}"
+                                        &quot;{visit.notes}&quot;
                                     </p>
                                 )}
                             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -41,9 +42,11 @@ export default function UserAvatar({ userId, name, className = "w-6 h-6 text-[10
 
     if (photoURL) {
         return (
-            <img
+            <Image
                 src={photoURL}
                 alt={displayName}
+                width={24}
+                height={24}
                 className={`${className} rounded-full object-cover ring-2 ring-white bg-gray-200`}
                 title={displayName}
             />

@@ -24,7 +24,7 @@ export default function UserCommitmentPage() {
                         Seu Compromisso
                     </h3>
                     <p className="text-gray-700 dark:text-gray-300 mb-6">
-                        Ao cadastrar endereços, nomes de moradores ou particularidades (como "Surdo" ou "Língua Estrangeira"), você declara e se compromete a:
+                        Ao cadastrar endereços, nomes de moradores ou particularidades (como &quot;Surdo&quot; ou &quot;Língua Estrangeira&quot;), você declara e se compromete a:
                     </p>
 
                     <ul className="space-y-4 list-none pl-0">
@@ -51,7 +51,7 @@ export default function UserCommitmentPage() {
 
                 <h3>Notas Pessoais e Anotações</h3>
                 <p>
-                    O sistema permite registrar observações sobre as visitas (ex.: "Não estava", "Pediu para voltar"). É responsabilidade do usuário garantir que essas anotações sejam respeitosas e factuais.
+                    O sistema permite registrar observações sobre as visitas (ex.: &quot;Não estava&quot;, &quot;Pediu para voltar&quot;). É responsabilidade do usuário garantir que essas anotações sejam respeitosas e factuais.
                 </p>
 
                 <h3>Exclusão de Dados</h3>

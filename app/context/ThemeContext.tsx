@@ -33,7 +33,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         root.style.fontSize = `${textSize}px`;
 
         // Use CSS variable/zoom for body
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line
         (document.body.style as any).zoom = displayScale;
 
         // Theme Mode Logic

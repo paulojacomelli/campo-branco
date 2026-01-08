@@ -1,0 +1,71 @@
+﻿
+> campobranco@0.4.24-beta lint
+> eslint
+
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\Dashboard\VisitsHistory.tsx
+  174:8  warning  React Hook useCallback has a missing dependency: 'showViewAll'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\FloatingReportButton.tsx
+  105:37  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\MapView.tsx
+  317:8  warning  React Hook useEffect has a missing dependency: 'disableGeocoding'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\TerritoryHistoryModal.tsx
+  112:8  warning  React Hook useEffect has a missing dependency: 'congregationId'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\UserAvatar.tsx
+  44:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\components\VisitHistoryModal.tsx
+   37:5  error    React Hook "useEffect" is called conditionally. React Hooks must be called in the exact same order in every component render    react-hooks/rules-of-hooks
+  102:8  warning  React Hook useEffect has missing dependencies: 'congregationId' and 'user'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\context\ThemeContext.tsx
+  36:9  warning  Unused eslint-disable directive (no problems were reported)
+
+C:\Users\design\Desktop\campobranco 202601081250\app\dashboard\page.tsx
+  568:8   warning  React Hook useEffect has a missing dependency: 'fetchSharedHistory'. Either include it or remove the dependency array                                                                                                                                                                    react-hooks/exhaustive-deps
+  842:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\hooks\useFCM.ts
+  79:8  warning  React Hook useEffect has a missing dependency: 'requestPermission'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\invite\page.tsx
+  22:8  warning  React Hook useEffect has a missing dependency: 'token'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\layout.tsx
+  55:9  warning  Synchronous scripts should not be used. See: https://nextjs.org/docs/messages/no-sync-scripts  @next/next/no-sync-scripts
+
+C:\Users\design\Desktop\campobranco 202601081250\app\legal\layout.tsx
+  19:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\login\LoginClient.tsx
+  184:29  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\my-maps\address\page.tsx
+  236:12  warning  React Hook useEffect has unnecessary dependencies: 'congregationId', 'selectedCityId', and 'selectedCongregationId'. Either exclude them or remove the dependency array. Outer scope values like 'selectedCongregationId' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\orphaned-data\page.tsx
+  240:8  warning  React Hook useEffect has a missing dependency: 'selCong'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\reports\registry\page.tsx
+  78:8  warning  React Hook useEffect has a missing dependency: 'selectedCities.length'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  83:8  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array              react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\app\settings\page.tsx
+   348:37  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+   683:72  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+   683:72  warning  img elements must have an alt prop, either with meaningful text, or an empty string for decorative images                                                                                                                                                                                jsx-a11y/alt-text
+  1009:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\design\Desktop\campobranco 202601081250\app\share\preview\page.tsx
+  222:8  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\design\Desktop\campobranco 202601081250\next.config.js
+  25:1  warning  Unused eslint-disable directive (no problems were reported from '@next/next/no-assign-module-variable')
+
+Ô£û 25 problems (1 error, 24 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+

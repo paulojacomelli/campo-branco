@@ -1,7 +1,8 @@
 "use client";
 // Force rebuild
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import { useAuth } from "@/app/context/AuthContext";
 import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, collectionGroup, updateDoc, deleteDoc, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -70,7 +71,9 @@ export default function DashboardPage() {
 
     // Redirect Unassigned Users
     useEffect(() => {
-        if (!loading && user && !congregationId && !isSuperAdmin) {
+        if (!loading && !user) {
+            router.push('/login');
+        } else if (!loading && user && !congregationId && !isSuperAdmin) {
             router.push('/unassigned');
         }
     }, [user, loading, congregationId, isSuperAdmin, router]);
@@ -151,7 +154,7 @@ export default function DashboardPage() {
             role === 'SERVO' ? 'Servo de Territórios' :
                 'Publicador';
 
-    const fetchSharedHistory = async () => {
+    const fetchSharedHistory = useCallback(async () => {
         if (!congregationId && role !== 'SUPER_ADMIN') {
             return;
         }
@@ -235,7 +238,7 @@ export default function DashboardPage() {
         } finally {
             setHistoryLoading(false);
         }
-    };
+    }, [congregationId, role, isElder, isServant, profileName, user]);
 
     // --- NOTIFICATION & ENCOURAGEMENT LOGIC ---
     useEffect(() => {
@@ -563,7 +566,7 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.uid]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.uid, fetchSharedHistory]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;
@@ -837,7 +840,7 @@ export default function DashboardPage() {
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center">
                 <div className="flex items-center gap-3">
                     <div className="bg-transparent p-0 rounded-xl">
-                        <img src="/app-icon.svg" alt="Logo" className="w-10 h-10 object-contain drop-shadow-md" />
+                        <Image src="/app-icon.svg" alt="Logo" width={40} height={40} className="object-contain drop-shadow-md" />
                     </div>
                     <div>
                         <span className="font-bold text-lg text-main tracking-tight block leading-tight">Campo Branco</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { messaging, db } from "@/lib/firebase";
 import { getToken, onMessage } from "firebase/messaging";
 import { doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
@@ -11,7 +11,7 @@ export default function useFCM({ withListener = true } = {}) {
     const [token, setToken] = useState<string | null>(null);
     const [permission, setPermission] = useState<NotificationPermission>('default');
 
-    const requestPermission = async () => {
+    const requestPermission = useCallback(async () => {
         try {
             const permission = await Notification.requestPermission();
             setPermission(permission);
@@ -63,7 +63,7 @@ export default function useFCM({ withListener = true } = {}) {
                 console.info("FCM Token retrieval skipped or failed in development. This is expected if the Service Worker is resetting.");
             }
         }
-    };
+    }, [user]);
 
     useEffect(() => {
         if (!user) return;
@@ -76,7 +76,7 @@ export default function useFCM({ withListener = true } = {}) {
                 requestPermission();
             }
         }
-    }, [user]);
+    }, [user, requestPermission]);
 
     // Optional: Handle foreground messages
     useEffect(() => {

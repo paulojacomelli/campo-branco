@@ -20,9 +20,9 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 
 // Aqui ativamos o banco de dados (Firestore) para o Campo Branco
 // Configuração com persistência offline robusta para suportar PWA
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore, Firestore } from "firebase/firestore";
 
-let db;
+let db: Firestore;
 
 try {
     // Tenta obter a instância existente para evitar erro de re-inicialização
