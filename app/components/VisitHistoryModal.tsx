@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
+<<<<<<< HEAD
 import { collection, query, orderBy, getDocs, where, documentId, limit } from 'firebase/firestore';
+=======
+import { collection, query, orderBy, getDocs, where, documentId } from 'firebase/firestore';
+>>>>>>> fb656bc073aeaf628b0d3527464291e268349b02
 import { useAuth } from '@/app/context/AuthContext';
 import {
     X,
