@@ -1,0 +1,78 @@
+{
+    "firestore": {
+        "rules": "firestore.rules",
+        "indexes": "firestore.indexes.json"
+    },
+    "hosting": [
+        {
+            "target": "campo-branco",
+            "public": "out",
+            "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+            ],
+            "cleanUrls": true,
+            "headers": [
+                {
+                    "source": "**",
+                    "headers": [
+                        {
+                            "key": "Cross-Origin-Opener-Policy",
+                            "value": "unsafe-none"
+                        },
+                        {
+                            "key": "Cross-Origin-Embedder-Policy",
+                            "value": "unsafe-none"
+                        }
+                    ]
+                }
+            ],
+            "rewrites": [
+                {
+                    "source": "/invite/**",
+                    "destination": "/invite.html"
+                },
+                {
+                    "source": "/share/**",
+                    "destination": "/share.html"
+                }
+            ]
+        },
+        {
+            "target": "campobranco",
+            "public": "out",
+            "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+            ],
+            "cleanUrls": true,
+            "headers": [
+                {
+                    "source": "**",
+                    "headers": [
+                        {
+                            "key": "Cross-Origin-Opener-Policy",
+                            "value": "unsafe-none"
+                        },
+                        {
+                            "key": "Cross-Origin-Embedder-Policy",
+                            "value": "unsafe-none"
+                        }
+                    ]
+                }
+            ],
+            "rewrites": [
+                {
+                    "source": "/invite/**",
+                    "destination": "/invite.html"
+                },
+                {
+                    "source": "/share/**",
+                    "destination": "/share.html"
+                }
+            ]
+        }
+    ]
+}
