@@ -7,6 +7,7 @@ import FCMManager from './components/FCMManager';
 import SimulationBanner from './components/SimulationBanner';
 import FloatingReportButton from './components/FloatingReportButton';
 import CookieBanner from './components/CookieBanner';
+import PreviewIndicator from './components/PreviewIndicator';
 import { APP_VERSION } from '@/lib/version';
 
 
@@ -57,11 +58,12 @@ export default function RootLayout({
       <body className={`${inter.className} min-h-screen flex flex-col`} suppressHydrationWarning={true}>
         <AuthProvider>
           <ThemeProvider>
+            <PreviewIndicator />
             <FCMManager />
             <SimulationBanner />
             <FloatingReportButton />
             <CookieBanner />
-            <main className="app-shell flex-1">
+            <main className="app-shell flex-1 pt-6">
               {children}
             </main>
             <footer className="py-4 text-center print:hidden">

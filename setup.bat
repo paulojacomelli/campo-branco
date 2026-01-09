@@ -1,10 +1,10 @@
 @echo off
-title Campo Branco - Instalador
+title Campo Branco - Setup
 color 0F
 cls
 
 echo ========================================
-echo   INICIANDO INSTALADOR DO CAMPO BRANCO
+echo   GERENCIADOR DO CAMPO BRANCO
 echo ========================================
 echo.
 
@@ -15,23 +15,19 @@ if %errorlevel% neq 0 goto ERROR_NODE
 
 :: 2. Instalar Dependencias
 if exist node_modules goto SKIP_INSTALL
+
+echo.
 echo [2/3] Instalando dependencias (Isso pode demorar um pouco)...
 call npm install
 if %errorlevel% neq 0 goto ERROR_INSTALL
-echo Dependencias instaladas com sucesso.
-goto START_WIZARD
 
 :SKIP_INSTALL
-echo [2/3] Dependencias ja instaladas. Pulasndo...
-
-:START_WIZARD
 :: 3. Iniciar Script de Deploy
 echo.
 echo [3/3] Iniciando assistente de configuracao...
 echo.
 node scripts/deploy.js
 if %errorlevel% neq 0 goto ERROR_SCRIPT
-
 goto END
 
 :ERROR_NODE
@@ -53,12 +49,12 @@ exit
 
 :ERROR_SCRIPT
 echo.
-echo [ERRO] O assistente de instalacao encontrou um problema e precisou fechar.
+echo [ERRO] O processo encontrou um problema e precisou fechar.
 echo Leia as mensagens acima para identificar o erro.
 pause
 exit
 
 :END
 echo.
-echo Instalador finalizado.
+echo Processo finalizado.
 pause

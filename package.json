@@ -1,6 +1,6 @@
 {
   "name": "campobranco",
-  "version": "0.4.26-beta",
+  "version": "0.4.49-beta",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:export": "npx tsx scripts/db-tools-cli.ts export",
     "db:import": "npx tsx scripts/db-tools-cli.ts import",
+    "preview": "node scripts/preview.js",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "jest --testPathIgnorePatterns=__tests__/integration",
     "test:int": "jest __tests__/integration",

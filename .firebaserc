@@ -5,10 +5,10 @@
   "targets": {
     "campo-branco": {
       "hosting": {
-        "campo-branco": [
+        "target_campo_branco": [
           "campo-branco"
         ],
-        "campobranco": [
+        "target_campobranco": [
           "campobranco"
         ]
       }

@@ -76,7 +76,40 @@ npm run dev
 # Acesse http://localhost:3000
 ```
 
-## 🤝 Contribuição e Suporte
+## 🔥 Firebase Hosting
+
+Este projeto foi configurado de forma agnóstica, não utilizando "hosting targets". Para fazer o deploy:
+
+1.  Certifique-se de estar logado: `firebase login`
+2.  Inicialize o hosting (se necessário): `firebase init hosting`
+3.  Faça o deploy: `firebase deploy`
+
+### Redirects Customizados
+
+Se desejar configurar redirecionamentos de domínio (ex: de um domínio antigo para o novo), você deve editar o arquivo `firebase.json` manualmente. Adicione a chave `redirects` dentro de `hosting`. Consulte a [documentação do Firebase](https://firebase.google.com/docs/hosting/full-config#redirects) para mais detalhes.
+
+## � Testes e QA
+
+O projeto possui scripts automatizados para garantir a qualidade do código.
+
+### Comandos Disponíveis
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run test:unit` | Executa testes unitários (Jest). Valida lógica isolada. |
+| `npm run test:e2e` | Executa testes End-to-End (Playwright). Simula o usuário real. |
+| `npm run test:all` | Roda Lint, Unitários e E2E em sequência. |
+
+### 🔍 Recomendação para QA Manual
+Para validação completa antes de releases:
+1.  **Limpeza**: Teste em aba anônima ou limpe o Storage.
+2.  **Fluxo Crítico**:
+    *   Criar Conta / Login
+    *   Criar Território e Designar
+    *   Devolver Território
+3.  **Mobile**: Verifique a responsividade e o modo offline (PWA).
+
+## �🤝 Contribuição e Suporte
 
 Desenvolvido por **Paulo Jacomelli**.
 - E-mail: `campobranco@paulojacomelli.com.br`
