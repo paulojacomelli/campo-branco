@@ -27,5 +27,4 @@ const withPWA = require("@ducanh2912/next-pwa").default({
     },
 });
 
-// eslint-disable-next-line @next/next/no-assign-module-variable
 module.exports = withPWA(nextConfig);

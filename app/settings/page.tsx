@@ -1007,10 +1007,13 @@ export default function SettingsPage() {
                             <span className="text-xs font-semibold">Projeto Open Source <span className="text-[10px] opacity-60 font-normal">(MIT)</span></span>
                         </div>
 
-                        <img
+                        <Image
                             src="https://img.shields.io/github/stars/paulojacomelli/campo-branco?style=social"
                             alt="GitHub Repo stars"
-                            className="h-5 grayscale group-hover:grayscale-0 transition-all duration-300"
+                            width={100}
+                            height={20}
+                            className="h-5 w-auto grayscale group-hover:grayscale-0 transition-all duration-300"
+                            unoptimized
                         />
                     </a>
 

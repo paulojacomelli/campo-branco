@@ -75,7 +75,7 @@ export default function RegistryPage() {
                 setSelectedCities(cities);
             }
         }
-    }, [rows]);
+    }, [rows, selectedCities.length]);
 
 
     const fetchData = useCallback(async () => {

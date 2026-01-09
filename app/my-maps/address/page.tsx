@@ -200,43 +200,38 @@ function AddressListContent() {
     }, [isCreateModalOpen, selectedCongregationId]);
 
     // Fetch Lists Logic
-    const useFetchLists = (isOpen: boolean) => {
-        useEffect(() => {
-            if (!isOpen) return;
+    useEffect(() => {
+        if (!isCreateModalOpen) return;
 
-            // Fetch Cities
-            const fetchCities = async () => {
-                onSnapshot(query(collection(db, "cities"), where("congregationId", "==", selectedCongregationId)), snap => {
-                    setAvailableCities(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
-                });
-            };
+        // Fetch Cities
+        const fetchCities = async () => {
+            onSnapshot(query(collection(db, "cities"), where("congregationId", "==", selectedCongregationId)), snap => {
+                setAvailableCities(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+            });
+        };
 
-            // Fetch Territories
-            const fetchTerritories = async () => {
-                const q = query(
-                    collection(db, "territories"),
-                    where("congregationId", "==", selectedCongregationId),
-                    where("cityId", "==", selectedCityId)
-                );
-                onSnapshot(q, snap => {
-                    setAvailableTerritories(snap.docs.map(d => ({ id: d.id, name: d.data().name })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
-                });
-            };
+        // Fetch Territories
+        const fetchTerritories = async () => {
+            const q = query(
+                collection(db, "territories"),
+                where("congregationId", "==", selectedCongregationId),
+                where("cityId", "==", selectedCityId)
+            );
+            onSnapshot(q, snap => {
+                setAvailableTerritories(snap.docs.map(d => ({ id: d.id, name: d.data().name })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
+            });
+        };
 
-            fetchCities();
-            fetchTerritories();
+        fetchCities();
+        fetchTerritories();
 
-            // Congregations (Mocking/Fetching minimal)
-            if (congregationId) {
-                getDoc(doc(db, "congregations", congregationId)).then(snap => {
-                    if (snap.exists()) setAvailableCongregations([{ id: snap.id, name: snap.data().name }]);
-                });
-            }
-
-        }, [isOpen, selectedCongregationId, selectedCityId, congregationId]);
-    };
-
-    useFetchLists(isCreateModalOpen);
+        // Congregations (Mocking/Fetching minimal)
+        if (congregationId) {
+            getDoc(doc(db, "congregations", congregationId)).then(snap => {
+                if (snap.exists()) setAvailableCongregations([{ id: snap.id, name: snap.data().name }]);
+            });
+        }
+    }, [isCreateModalOpen, selectedCongregationId, selectedCityId, congregationId]);
 
     useEffect(() => {
         // Init form with params or edited data
