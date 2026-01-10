@@ -169,12 +169,26 @@ async function startWizard() {
 
                     <!-- Slide 3: Copy and Paste Magic -->
                     <div class="carousel-slide">
-                        <span class="text-primary font-bold text-xs uppercase tracking-widest mb-2">Passo Final</span>
+                        <span class="text-primary font-bold text-xs uppercase tracking-widest mb-2">Passo 3</span>
                         <h2 class="text-4xl font-bold mb-6">A Ciência Mágica ✨</h2>
                         <p class="text-slate-400 mb-8">Após registrar seu app, você verá um bloco de código como "firebaseConfig".</p>
-                        <p class="text-sm text-primary font-bold mb-4">Para funções avançadas (Backup/Import):</p>
+                        <p class="text-xs text-slate-500 mb-4 uppercase font-bold">Dica para Conta de Serviço:</p>
                         <div class="bg-black/30 p-4 rounded-xl border border-white/5 text-xs text-slate-300">
                            Vá em <strong>Configurações do Projeto > Contas de Serviço</strong> e gere uma nova chave privada (JSON). Você pode colar esse JSON aqui também!
+                        </div>
+                    </div>
+
+                    <!-- Slide 4: Push Notifications (VAPID) -->
+                    <div class="carousel-slide">
+                        <span class="text-primary font-bold text-xs uppercase tracking-widest mb-2">Passo 4</span>
+                        <h2 class="text-4xl font-bold mb-6">Notificações Push</h2>
+                        <div class="space-y-4 text-slate-300">
+                            <p class="text-sm">Para enviar avisos aos usuários, precisamos da <strong>Chave VAPID</strong>.</p>
+                            <div class="bg-black/30 p-4 rounded-xl border border-white/10 text-xs">
+                                1. Vá em <strong>Configurações do Projeto > Cloud Messaging</strong>.<br>
+                                2. Role até <strong>Web configuration</strong>.<br>
+                                3. Gere um "Key Pair". Esse é o seu VAPID!
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -224,8 +238,21 @@ async function startWizard() {
                         <div class="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
                             <label class="block text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-3">Login do Administrador</label>
                             <input required name="adminEmail" type="email" placeholder="seu.email@gmail.com" 
-                                   pattern=".*@gmail\.com$" title="Por favor, use uma conta do Google (@gmail.com)"
+                                   pattern=".*@gmail\\.com$" title="Por favor, use uma conta do Google (@gmail.com)"
                                    class="w-full p-4 rounded-xl bg-white border border-blue-200 focus:border-primary outline-none transition-all text-sm font-medium">
+                        </div>
+
+                        <!-- VAPID Section -->
+                        <div class="bg-amber-50/30 p-6 rounded-2xl border border-amber-100/50 space-y-4">
+                            <label class="block text-[10px] font-bold text-amber-600 uppercase tracking-widest">Configurações VAPID (Notificações)</label>
+                            <div>
+                                <input name="vapidPublic" id="val_vapidPublic" type="text" placeholder="VAPID Public Key" 
+                                       class="w-full p-4 rounded-xl bg-white border border-amber-100 focus:border-amber-400 outline-none transition-all text-xs font-mono">
+                            </div>
+                            <div>
+                                <input name="vapidPrivate" id="val_vapidPrivate" type="text" placeholder="VAPID Private Key" 
+                                       class="w-full p-4 rounded-xl bg-white border border-amber-100 focus:border-amber-400 outline-none transition-all text-xs font-mono">
+                            </div>
                         </div>
                     </div>
 
@@ -239,6 +266,7 @@ async function startWizard() {
                     <input type="hidden" name="measurementId" id="val_measurementId">
                     <input type="hidden" name="clientEmail" id="val_clientEmail">
                     <input type="hidden" name="privateKey" id="val_privateKey">
+
 
                     <button type="submit" id="submitBtn" disabled class="w-full bg-slate-100 text-slate-400 py-5 rounded-2xl font-bold text-lg select-none transition-all">
                         Preencha os Campos
@@ -388,6 +416,13 @@ async function startWizard() {
                     found++;
                 }
             });
+
+            // Specific check for VAPID if pasted in common formats
+            const vapidPublicMatch = raw.match(/Public Key:\\\s*([A-Za-z0-9_-]{80,})/i);
+            const vapidPrivateMatch = raw.match(/Private Key:\\\s*([A-Za-z0-9_-]{40,})/i);
+            if (vapidPublicMatch) document.getElementById('val_vapidPublic').value = vapidPublicMatch[1].trim();
+            if (vapidPrivateMatch) document.getElementById('val_vapidPrivate').value = vapidPrivateMatch[1].trim();
+
 
             const btn = document.getElementById('submitBtn');
             if (found >= 6) {
@@ -649,12 +684,27 @@ async function startWizard() {
                     'NEXT_PUBLIC_FIREBASE_APP_ID="' + config.appId.trim() + '"',
                     'NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID="' + (config.measurementId ? config.measurementId.trim() : '') + '"',
                     'NEXT_PUBLIC_ADMIN_EMAIL="' + config.adminEmail.trim() + '"',
+                    'VAPID_SUBJECT="mailto:' + config.adminEmail.trim() + '"',
+                    'NEXT_PUBLIC_VAPID_PUBLIC_KEY="' + (config.vapidPublic ? config.vapidPublic.trim() : '') + '"',
+                    'VAPID_PRIVATE_KEY="' + (config.vapidPrivate ? config.vapidPrivate.trim() : '') + '"',
                     'FIREBASE_CLIENT_EMAIL="' + (config.clientEmail ? config.clientEmail.trim() : '') + '"',
-                    'FIREBASE_PRIVATE_KEY="' + (config.privateKey ? config.privateKey.trim().replace(/\\n/g, '\\n') : '') + '"',
+                    'FIREBASE_PRIVATE_KEY="' + (config.privateKey ? config.privateKey.trim().replace(/\\\\n/g, '\\\\n') : '') + '"',
                     'FIREBASE_HOSTING_SITES="' + existingSites + '"',
                     ''
                 ].join('\n');
                 fs.writeFileSync(envPath, envContent);
+
+                // Create service-account.json if data exists
+                if (config.clientEmail && config.privateKey) {
+                    const saPath = path.join(__dirname, '..', 'service-account.json');
+                    const saContent = {
+                        project_id: config.projectId.trim(),
+                        client_email: config.clientEmail.trim(),
+                        private_key: config.privateKey.trim().replace(/\\\\n/g, '\n')
+                    };
+                    fs.writeFileSync(saPath, JSON.stringify(saContent, null, 2));
+                    console.log("📄 Arquivo service-account.json criado.");
+                }
 
                 const firebaseRcPath = path.join(__dirname, '..', '.firebaserc');
                 fs.writeFileSync(firebaseRcPath, JSON.stringify({ projects: { default: config.projectId.trim() } }, null, 2));
@@ -691,21 +741,35 @@ async function startWizard() {
     startServer(startPort);
 }
 
-function continueDeployment(state) {
+function runCommand(command, description) {
+    return new Promise((resolve, reject) => {
+        console.log(`\n--- ${description} ---`);
+        const proc = exec(command, { shell: true });
+
+        proc.stdout.on('data', (data) => process.stdout.write(data));
+        proc.stderr.on('data', (data) => process.stderr.write(data));
+
+        proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`Comando falhou com código ${code}`));
+        });
+    });
+}
+
+async function continueDeployment(state) {
     try {
         state.stage = 'prepare';
-        console.log("\n--- CONECTANDO COM O GOOGLE ---");
-        try { execSync('npx firebase login', { stdio: 'inherit', shell: true }); } catch (e) { }
+        try { await runCommand('npx firebase login', 'CONECTANDO COM O GOOGLE'); } catch (e) { }
 
         state.stage = 'build';
-        console.log("\n--- CONSTRUINDO APP (BUILD) ---");
-        try { execSync('npm run build', { stdio: 'inherit', shell: true }); } catch (e) {
+        try {
+            await runCommand('npm run build', 'CONSTRUINDO APP (BUILD)');
+        } catch (e) {
             state.stage = 'error';
             return;
         }
 
         state.stage = 'deploy';
-        console.log("\n--- ENVIANDO PARA O AR (DEPLOY) ---");
 
         let extraSites = '';
         const sitesFilePath = path.join(__dirname, '..', 'firebase-sites.txt');
@@ -722,8 +786,7 @@ function continueDeployment(state) {
 
         try {
             // 1. Deploy Firestore and Storage once
-            console.log("🔥 Deploying Firestore & Storage...");
-            execSync(`npx firebase deploy --project ${state.projectId} --only firestore,storage`, { stdio: 'inherit', shell: true });
+            await runCommand(`npx firebase deploy --project ${state.projectId} --only firestore,storage`, 'ENVIANDO FIRESTORE & STORAGE');
 
             // 2. Handle Hosting
             if (extraSites) {
@@ -749,14 +812,13 @@ function continueDeployment(state) {
                 fs.writeFileSync(tempFirebaseConfigPath, JSON.stringify(tempConfig, null, 2));
 
                 console.log(`\n🚀 Iniciando deploy unificado para todos os sites...`);
-                execSync(`npx firebase deploy --project ${state.projectId} --only hosting --config firebase-deploy.json`, { stdio: 'inherit', shell: true });
+                await runCommand(`npx firebase deploy --project ${state.projectId} --only hosting --config firebase-deploy.json`, 'ENVIANDO SITES (DEPLOY)');
 
                 // Cleanup
                 if (fs.existsSync(tempFirebaseConfigPath)) fs.unlinkSync(tempFirebaseConfigPath);
             } else {
                 // Standard single site deploy
-                console.log("🚀 Deploying Hosting (Padrão)...");
-                execSync(`npx firebase deploy --project ${state.projectId} --only hosting`, { stdio: 'inherit', shell: true });
+                await runCommand(`npx firebase deploy --project ${state.projectId} --only hosting`, 'ENVIANDO PARA O AR (DEPLOY)');
             }
         } catch (e) {
             if (fs.existsSync(tempFirebaseConfigPath)) fs.unlinkSync(tempFirebaseConfigPath);
@@ -768,7 +830,7 @@ function continueDeployment(state) {
         console.log("\n🎉 PROJETO ATUALIZADO COM SUCESSO!");
         console.log(`📡 URL: https://${state.domain}`);
 
-        // Wait a bit to let the user see the success page before potentially closing (though browser keeps it)
+        // Wait a bit to let the user see the success page before potentially closing
         setTimeout(() => { process.exit(0); }, 30000);
     } catch (e) {
         state.stage = 'error';
