@@ -3,18 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from "@/app/context/AuthContext";
-import { db } from "@/lib/firebase";
-import {
-    collection,
-    query,
-    where,
-    getDocs,
-    doc,
-    deleteDoc,
-    updateDoc,
-    limit,
-    orderBy
-} from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import Link from 'next/link';
 import BottomNav from "@/app/components/BottomNav";
 import {
@@ -57,27 +46,24 @@ function CardsContent() {
         setLoading(true);
 
         try {
-            let q;
+            let query = supabase.from("shared_lists").select("*");
+
             // SCOPE: MINE
             if (scope === 'mine') {
-                q = query(
-                    collection(db, "shared_lists"),
-                    where("assignedTo", "==", user.uid)
-                );
+                query = query.eq("assigned_to", user.id);
             }
             // SCOPE: MANAGED (Sent/All)
             else if (scope === 'managed') {
-                if (role === 'SUPER_ADMIN') {
-                    q = query(collection(db, "shared_lists"), limit(100)); // Limit for safety
-                } else if (congregationId) {
-                    q = query(
-                        collection(db, "shared_lists"),
-                        where("congregationId", "==", congregationId)
-                    );
-                } else {
+                if (role !== 'SUPER_ADMIN' && congregationId) {
+                    query = query.eq("congregation_id", congregationId);
+                } else if (role !== 'SUPER_ADMIN') {
                     setLists([]);
                     setLoading(false);
                     return;
+                }
+                // Super admin sees all, limited for safety
+                if (role === 'SUPER_ADMIN') {
+                    query = query.limit(100);
                 }
             } else {
                 setLists([]);
@@ -85,56 +71,31 @@ function CardsContent() {
                 return;
             }
 
-            // Fetch Data
-            const snap = await getDocs(q);
-            let rawLists: any[] = [];
+            const { data, error } = await query;
+            if (error) throw error;
 
-            // Helper to get Names if needed (Managed View)
-            const usersMap: Record<string, string> = {};
-            if (scope === 'managed') {
-                // We might need to fetch users if we want perfect names, 
-                // but usually assignedName is stored. Let's rely on stored Data for speed unless critical.
-                // The dashboard implementation fetched users. Let's do a lightweight version or just trust data.
-                // Dashboard Logic: 
-                // 1. Fetch Users to map IDs to current Names from DB
-                // We will skip this optimization here for simplicity unless requested. 
-                // We will use Data.assignedName || Data.assignedTo logic inside loop.
-            }
-
-            snap.forEach(d => {
-                const data = d.data();
-
+            let rawLists: any[] = (data || []).map(item => ({
+                ...item,
+                assignedTo: item.assigned_to,
+                assignedName: item.assigned_name,
+                congregationId: item.congregation_id,
+                createdAt: item.created_at,
+                expiresAt: item.expires_at,
                 // MINE: responsible is 'Você'
                 // MANAGED: use assignedName or 'Não atribuído'
-                let responsible = 'Não atribuído';
-                if (scope === 'mine') {
-                    responsible = 'Você';
-                } else {
-                    responsible = data.assignedName || (data.assignedTo ? 'Usuário' : 'Não atribuído');
-                }
+                responsibleName: scope === 'mine' ? 'Você' : (item.assigned_name || (item.assigned_to ? 'Usuário' : 'Não atribuído'))
+            }));
 
-                rawLists.push({
-                    id: d.id,
-                    ...data,
-                    responsibleName: responsible
-                });
-            });
-
-            // Filter for Publisher in Managed View (if they accessed it via URL hacking, though we only verify auth)
-            // But 'managed' scope usually implies Elder/Servant access. 
-            // If a publisher goes to ?scope=managed, they should only see their own? 
-            // Dashboard logic says: if (!isElder && !isServant && role !== 'SUPER_ADMIN') -> filter to own.
-            if (scope === 'managed' && !isElder && !isServant && role !== 'SUPER_ADMIN') {
-                const userName = profileName || user?.displayName || user?.email?.split('@')[0];
-                rawLists = rawLists.filter(l => l.assignedName === userName || l.assignedTo === user.uid);
+            // Filter for Publisher in Managed View
+            if (scope === 'managed' && !isElder && !isServant && !isSuperAdmin) {
+                const userName = profileName || user?.user_metadata?.full_name || user?.email?.split('@')[0];
+                rawLists = rawLists.filter(l => l.assignedName === userName || l.assignedTo === user.id);
             }
 
-            // Only show active active ones for 'mine'? Dashboard shows active.
-            // Dashboard 'myAssignments' logic: active only (status != completed/archived).
+            // Only show active active ones for 'mine'
             if (scope === 'mine') {
                 rawLists = rawLists.filter(l => l.status !== 'completed' && l.status !== 'archived');
             }
-            // For 'managed', Dashboard 'sharedHistory' shows ALL (sorted active first).
 
             // Sort
             rawLists.sort((a, b) => {
@@ -145,7 +106,7 @@ function CardsContent() {
                 if (!isAActive && isBActive) return 1;
 
                 // Then Date Newest
-                return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             });
 
             setLists(rawLists);
@@ -155,7 +116,7 @@ function CardsContent() {
         } finally {
             setLoading(false);
         }
-    }, [user, scope, role, isElder, isServant, congregationId, profileName]);
+    }, [user, scope, role, isElder, isServant, congregationId, profileName, isSuperAdmin]);
 
     useEffect(() => {
         if (!authLoading && user) {
@@ -199,7 +160,8 @@ function CardsContent() {
     const handleDeleteShare = async (id: string) => {
         if (!confirm("Tem certeza que deseja excluir este cartão? O link deixará de funcionar.")) return;
         try {
-            await deleteDoc(doc(db, "shared_lists", id));
+            const { error } = await supabase.from("shared_lists").delete().eq("id", id);
+            if (error) throw error;
             setLists(prev => prev.filter(item => item.id !== id));
         } catch (err) {
             console.error("Error deleting share:", err);
@@ -210,11 +172,12 @@ function CardsContent() {
     const handleRemoveResponsible = async (id: string) => {
         if (!confirm("Tem certeza que deseja remover o responsável?")) return;
         try {
-            await updateDoc(doc(db, "shared_lists", id), {
-                assignedTo: null,
-                assignedName: null
-            });
-            fetchLists(); // Reload to update names/status
+            const { error } = await supabase.from("shared_lists").update({
+                assigned_to: null,
+                assigned_name: null
+            }).eq("id", id);
+            if (error) throw error;
+            fetchLists();
             alert("Responsável removido.");
         } catch (err) {
             console.error("Error removing responsible:", err);
@@ -222,15 +185,15 @@ function CardsContent() {
         }
     };
 
-    const formatDate = (ts: any) => {
-        if (!ts) return 'N/A';
-        const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+    const formatDate = (dateValue: any) => {
+        if (!dateValue) return 'N/A';
+        const date = new Date(dateValue);
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     };
 
-    const formatExpirationTime = (expiresAtTimestamp: any) => {
-        if (!expiresAtTimestamp) return "Por tempo indeterminado";
-        const expiresAt = expiresAtTimestamp.toDate ? expiresAtTimestamp.toDate() : new Date(expiresAtTimestamp.seconds * 1000);
+    const formatExpirationTime = (expiresAtValue: any) => {
+        if (!expiresAtValue) return "Por tempo indeterminado";
+        const expiresAt = new Date(expiresAtValue);
         const now = new Date();
         const diffMs = expiresAt.getTime() - now.getTime();
         if (diffMs <= 0) return "Vencido";

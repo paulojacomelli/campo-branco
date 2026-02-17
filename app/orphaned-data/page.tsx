@@ -3,8 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, where } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Database, Trash2, Link as LinkIcon, AlertTriangle, Check, Loader2, Pencil } from 'lucide-react';
@@ -36,6 +35,8 @@ export default function OrphanedDataPage() {
     const [selCity, setSelCity] = useState('');
     const [selTerr, setSelTerr] = useState('');
 
+    const [saving, setSaving] = useState(false);
+
     useEffect(() => {
         if (!authLoading && !isSuperAdmin) {
             router.push('/');
@@ -48,37 +49,36 @@ export default function OrphanedDataPage() {
 
         try {
             // Fetch Valid Congregations first
-            const congsSnap = await getDocs(collection(db, "congregations"));
-            const validCongIds = new Set(congsSnap.docs.map(d => d.id));
+            const { data: congs } = await supabase.from('congregations').select('id');
+            const validCongIds = new Set(congs?.map(d => d.id) || []);
 
             // Fetch Valid Cities first
-            const citySnap = await getDocs(collection(db, "cities"));
-            const validCityIds = new Set(citySnap.docs.map(d => d.id));
+            const { data: cities } = await supabase.from('cities').select('id');
+            const validCityIds = new Set(cities?.map(d => d.id) || []);
 
             // Fetch Valid Territories first
-            const terrSnap = await getDocs(collection(db, "territories"));
-            const validTerritoryIds = new Set(terrSnap.docs.map(d => d.id));
+            const { data: territories } = await supabase.from('territories').select('id');
+            const validTerritoryIds = new Set(territories?.map(d => d.id) || []);
 
-            // 1. Scan Addresses (and build validAddressIds)
-            const addrSnap = await getDocs(collection(db, "addresses"));
+            // 1. Scan Addresses
+            const { data: addresses } = await supabase.from('addresses').select('*');
             const validAddressIds = new Set<string>();
 
-            addrSnap.forEach(d => {
-                validAddressIds.add(d.id);
-                const data = d.data();
+            addresses?.forEach(data => {
+                validAddressIds.add(data.id);
                 const missing = [];
-                if (!data.congregationId) missing.push('Congregação');
-                else if (!validCongIds.has(data.congregationId)) missing.push('Congregação Inválida (' + data.congregationId.substring(0, 4) + '...)');
+                if (!data.congregation_id) missing.push('Congregação');
+                else if (!validCongIds.has(data.congregation_id)) missing.push('Congregação Inválida');
 
-                if (!data.cityId) missing.push('Cidade');
-                else if (!validCityIds.has(data.cityId)) missing.push('Cidade Inválida');
+                if (!data.city_id) missing.push('Cidade');
+                else if (!validCityIds.has(data.city_id)) missing.push('Cidade Inválida');
 
-                if (!data.territoryId) missing.push('Território');
-                else if (!validTerritoryIds.has(data.territoryId)) missing.push('Território Inválido');
+                if (!data.territory_id) missing.push('Território');
+                else if (!validTerritoryIds.has(data.territory_id)) missing.push('Território Inválido');
 
                 if (missing.length > 0) {
                     newOrphans.push({
-                        id: d.id,
+                        id: data.id,
                         type: 'address',
                         name: data.street || 'Sem Rua',
                         details: data.number || 'S/N',
@@ -88,18 +88,18 @@ export default function OrphanedDataPage() {
                 }
             });
 
-            // 2. Scan Territories (Already fetched)
-            terrSnap.forEach(d => {
-                const data = d.data();
+            // 2. Scan Territories
+            const { data: allTerritories } = await supabase.from('territories').select('*');
+            allTerritories?.forEach(data => {
                 const missing = [];
-                if (!data.cityId) missing.push('Cidade');
-                else if (!validCityIds.has(data.cityId)) missing.push('Cidade Inválida');
+                if (!data.city_id) missing.push('Cidade');
+                else if (!validCityIds.has(data.city_id)) missing.push('Cidade Inválida');
 
-                if (data.congregationId && !validCongIds.has(data.congregationId)) missing.push('Congregação Inválida (' + data.congregationId.substring(0, 4) + '...)');
+                if (data.congregation_id && !validCongIds.has(data.congregation_id)) missing.push('Congregação Inválida');
 
                 if (missing.length > 0) {
                     newOrphans.push({
-                        id: d.id,
+                        id: data.id,
                         type: 'territory',
                         name: data.name || 'Sem Nome',
                         details: 'Mapa',
@@ -110,19 +110,18 @@ export default function OrphanedDataPage() {
             });
 
             // 3. Scan Witnessing Points
-            const witnessingSnap = await getDocs(collection(db, "witnessing_points"));
-            witnessingSnap.forEach(d => {
-                const data = d.data();
+            const { data: witnessingPoints } = await supabase.from('witnessing_points').select('*');
+            witnessingPoints?.forEach(data => {
                 const missing = [];
-                if (!data.congregationId) missing.push('Congregação');
-                else if (!validCongIds.has(data.congregationId)) missing.push('Congregação Inválida (' + data.congregationId.substring(0, 4) + '...)');
+                if (!data.congregation_id) missing.push('Congregação');
+                else if (!validCongIds.has(data.congregation_id)) missing.push('Congregação Inválida');
 
-                if (!data.cityId) missing.push('Cidade');
-                else if (!validCityIds.has(data.cityId)) missing.push('Cidade Inválida');
+                if (!data.city_id) missing.push('Cidade');
+                else if (!validCityIds.has(data.city_id)) missing.push('Cidade Inválida');
 
                 if (missing.length > 0) {
                     newOrphans.push({
-                        id: d.id,
+                        id: data.id,
                         type: 'witnessing',
                         name: data.name || 'Ponto sem Nome',
                         details: 'T. Público',
@@ -133,15 +132,15 @@ export default function OrphanedDataPage() {
             });
 
             // 4. Scan Cities
-            citySnap.forEach(d => {
-                const data = d.data();
+            const { data: allCities } = await supabase.from('cities').select('*');
+            allCities?.forEach(data => {
                 const missing = [];
-                if (!data.congregationId) missing.push('Congregação');
-                else if (!validCongIds.has(data.congregationId)) missing.push('Congregação Inválida (' + data.congregationId.substring(0, 4) + '...)');
+                if (!data.congregation_id) missing.push('Congregação');
+                else if (!validCongIds.has(data.congregation_id)) missing.push('Congregação Inválida');
 
                 if (missing.length > 0) {
                     newOrphans.push({
-                        id: d.id,
+                        id: data.id,
                         type: 'city',
                         name: data.name || 'Sem Nome',
                         details: 'Cidade',
@@ -151,39 +150,28 @@ export default function OrphanedDataPage() {
                 }
             });
 
-            // 5. Scan Visits (Subcollections)
-            try {
-                const { collectionGroup } = await import('firebase/firestore');
-                const visitsSnap = await getDocs(collectionGroup(db, 'visits'));
-                visitsSnap.forEach(d => {
-                    const data = d.data();
-                    const missing = [];
+            // 5. Scan Visits
+            const { data: visits } = await supabase.from('visits').select('*');
+            visits?.forEach(data => {
+                const missing = [];
+                if (data.congregation_id && !validCongIds.has(data.congregation_id)) {
+                    missing.push('Congregação Inválida');
+                }
+                if (data.address_id && !validAddressIds.has(data.address_id)) {
+                    missing.push('Endereço Pai Excluído');
+                }
 
-                    // Check Congregation
-                    if (data.congregationId && !validCongIds.has(data.congregationId)) {
-                        missing.push('Congregação Inválida');
-                    }
-
-                    // Check Parent Address
-                    const parentAddressId = d.ref.parent.parent?.id;
-                    if (!parentAddressId) missing.push('Sem Endereço Pai'); // Should be impossible for subcollection
-                    else if (!validAddressIds.has(parentAddressId)) missing.push('Endereço Pai Excluído');
-
-                    if (missing.length > 0) {
-                        newOrphans.push({
-                            id: d.id,
-                            type: 'visit',
-                            name: 'Visita de ' + (data.userName || 'Desconhecido'),
-                            details: data.date ? new Date(data.date.seconds * 1000).toLocaleDateString() : 'Sem Data',
-                            missing,
-                            data,
-                            path: d.ref.path
-                        });
-                    }
-                });
-            } catch (err) {
-                console.error("Error scanning visits:", err);
-            }
+                if (missing.length > 0) {
+                    newOrphans.push({
+                        id: data.id,
+                        type: 'visit',
+                        name: 'Visita de ' + (data.user_name || 'Desconhecido'),
+                        details: data.date ? new Date(data.date).toLocaleDateString() : 'Sem Data',
+                        missing,
+                        data
+                    });
+                }
+            });
 
         } catch (error) {
             console.error("Error scanning orphans:", error);
@@ -201,23 +189,22 @@ export default function OrphanedDataPage() {
     useEffect(() => {
         if (fixingItem) {
             // Load Congregations
-            getDocs(collection(db, "congregations")).then(snap => {
-                setCongs(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+            supabase.from('congregations').select('id, name').then(({ data }) => {
+                if (data) setCongs(data);
             });
 
             // Pre-fill if exists
-            setSelCong(fixingItem.data.congregationId || '');
-            setSelCity(fixingItem.data.cityId || '');
-            setSelTerr(fixingItem.data.territoryId || '');
+            setSelCong(fixingItem.data.congregation_id || '');
+            setSelCity(fixingItem.data.city_id || '');
+            setSelTerr(fixingItem.data.territory_id || '');
         }
     }, [fixingItem]);
 
     // Cascading selects
     useEffect(() => {
         if (selCong) {
-            const q = query(collection(db, "cities"), where("congregationId", "==", selCong));
-            getDocs(q).then(snap => {
-                setCities(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+            supabase.from('cities').select('id, name').eq('congregation_id', selCong).then(({ data }) => {
+                if (data) setCities(data);
             });
         } else {
             setCities([]);
@@ -226,14 +213,13 @@ export default function OrphanedDataPage() {
 
     useEffect(() => {
         if (selCity) {
-            const q = query(
-                collection(db, "territories"),
-                where("congregationId", "==", selCong),
-                where("cityId", "==", selCity)
-            );
-            getDocs(q).then(snap => {
-                setTerritories(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
-            });
+            supabase.from('territories')
+                .select('id, name')
+                .eq('congregation_id', selCong)
+                .eq('city_id', selCity)
+                .then(({ data }) => {
+                    if (data) setTerritories(data);
+                });
         } else {
             setTerritories([]);
         }
@@ -243,89 +229,83 @@ export default function OrphanedDataPage() {
     const handleSaveFix = async () => {
         if (!fixingItem) return;
 
+        setSaving(true);
         try {
             const updates: any = {};
 
             if (fixingItem.type === 'address') {
                 if (!selCong || !selCity || !selTerr) {
                     alert("Para endereços, selecione Congregação, Cidade e Território.");
+                    setSaving(false);
                     return;
                 }
-                updates.congregationId = selCong;
-                updates.cityId = selCity;
-                updates.territoryId = selTerr;
+                updates.congregation_id = selCong;
+                updates.city_id = selCity;
+                updates.territory_id = selTerr;
             }
             else if (fixingItem.type === 'territory') {
                 if (!selCity) {
                     alert("Selecione a Cidade.");
+                    setSaving(false);
                     return;
                 }
-                updates.cityId = selCity;
-                // If fixing territory, we define cong based on selected city (or just update cong if we have it?)
-                // Actually the API expects updates object directly.
-                // Assuming we want to fix congregationId too if missing/invalid?
-                // The UI doesn't explicitly Select Cong for territory fix unless we add logic, 
-                // but checking the modal code: checking `fixingItem.type === 'address' || fixingItem.type === 'territory'`?
-                // Ah, the modal has Cong select for ALL types.
-                if (selCong) updates.congregationId = selCong;
+                updates.city_id = selCity;
+                if (selCong) updates.congregation_id = selCong;
             }
             else if (fixingItem.type === 'witnessing') {
                 if (!selCong || !selCity) {
                     alert("Selecione Congregação e Cidade.");
+                    setSaving(false);
                     return;
                 }
-                updates.congregationId = selCong;
-                updates.cityId = selCity;
+                updates.congregation_id = selCong;
+                updates.city_id = selCity;
             }
             else if (fixingItem.type === 'city') {
                 if (!selCong) {
                     alert("Selecione a Congregação.");
+                    setSaving(false);
                     return;
                 }
-                updates.congregationId = selCong;
+                updates.congregation_id = selCong;
             }
 
-            // Call Admin API
-            const collectionName = fixingItem.type === 'address' ? 'addresses' :
+            const tableName = fixingItem.type === 'address' ? 'addresses' :
                 fixingItem.type === 'territory' ? 'territories' :
-                    fixingItem.type === 'witnessing' ? 'witnessing_points' : 'cities';
+                    fixingItem.type === 'witnessing' ? 'witnessing_points' :
+                        fixingItem.type === 'visit' ? 'visits' : 'cities';
 
-            const response = await fetch('/api/admin/fix-orphan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    collectionName,
-                    id: fixingItem.id,
-                    action: 'update',
-                    updates
-                })
-            });
+            const { error } = await supabase
+                .from(tableName)
+                .update(updates)
+                .eq('id', fixingItem.id);
 
-            if (!response.ok) throw new Error('Falha ao atualizar via API');
+            if (error) throw error;
 
             setFixItem(null);
             fetchOrphans(); // Refresh
         } catch (error) {
             console.error("Error fixing:", error);
             alert("Erro ao salvar.");
+        } finally {
+            setSaving(false);
         }
     };
 
-    const handleDelete = async (id: string, collectionName: string, path?: string) => {
+    const handleDelete = async (id: string, type: string) => {
         if (!confirm("Tem certeza que deseja excluir este item permanentemente?")) return;
         try {
-            const response = await fetch('/api/admin/fix-orphan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    collectionName,
-                    id,
-                    action: 'delete',
-                    path
-                })
-            });
+            const tableName = type === 'address' ? 'addresses' :
+                type === 'territory' ? 'territories' :
+                    type === 'witnessing' ? 'witnessing_points' :
+                        type === 'visit' ? 'visits' : 'cities';
 
-            if (!response.ok) throw new Error('Falha ao excluir via API');
+            const { error } = await supabase
+                .from(tableName)
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
 
             setOrphans(prev => prev.filter(o => o.id !== id));
         } catch (error) {
@@ -391,7 +371,7 @@ export default function OrphanedDataPage() {
                                     </div>
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => handleDelete(item.id, item.type === 'address' ? 'addresses' : item.type === 'territory' ? 'territories' : item.type === 'witnessing' ? 'witnessing_points' : item.type === 'visit' ? 'visits' : 'cities', item.path)}
+                                            onClick={() => handleDelete(item.id, item.type)}
                                             className="p-2 text-red-600 hover:text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-lg transition-colors"
                                             title="Excluir"
                                         >

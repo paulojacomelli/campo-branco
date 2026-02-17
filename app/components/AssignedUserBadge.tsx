@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
 interface AssignedUserBadgeProps {
     userId: string;
@@ -21,13 +20,15 @@ export default function AssignedUserBadge({ userId, fallbackName }: AssignedUser
         let isMounted = true;
         const fetchName = async () => {
             try {
-                // We utilize Firestore cache by default, so repetitive fetches for same user are cheap
-                const snap = await getDoc(doc(db, "users", userId));
-                if (isMounted && snap.exists()) {
-                    const data = snap.data();
-                    if (data.name) {
-                        setDisplayName(data.name.split(' ')[0].toUpperCase());
-                    }
+                // We utilize Supabase cache/query
+                const { data } = await supabase
+                    .from('users')
+                    .select('name')
+                    .eq('id', userId)
+                    .single();
+
+                if (isMounted && data && data.name) {
+                    setDisplayName(data.name.split(' ')[0].toUpperCase());
                 }
             } catch (e) {
                 console.warn("Error fetching badge name", e);

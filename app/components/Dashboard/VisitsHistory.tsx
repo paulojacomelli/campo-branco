@@ -2,21 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/app/context/AuthContext";
-import { db } from "@/lib/firebase";
-import {
-    collection,
-    query,
-    where,
-    getDocs,
-    collectionGroup,
-    orderBy,
-    deleteDoc,
-    doc,
-    updateDoc,
-    Timestamp,
-    limit,
-    documentId
-} from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import {
     History,
     Calendar,
@@ -48,116 +34,64 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
     const fetchVisits = useCallback(async () => {
         setLoading(true);
         try {
-            // 1. Get Visits (Filtered by congregation if not Super Admin)
-            let visitsQuery;
-            if (role === 'SUPER_ADMIN') {
-                visitsQuery = query(collectionGroup(db, "visits"));
-                console.log("Super Admin: Fetching all visits via collectionGroup");
-            } else if (congregationId) {
-                visitsQuery = query(
-                    collectionGroup(db, "visits"),
-                    where("congregationId", "==", congregationId),
-                    limit(100)
-                );
-            } else {
-                setVisits([]);
-                setLoading(false);
-                return;
+            // 1. Get Visits from Supabase
+            let query = supabase.from('visits').select('*');
+
+            if (role !== 'SUPER_ADMIN') {
+                if (congregationId) {
+                    query = query.eq('congregation_id', congregationId);
+                } else {
+                    setVisits([]);
+                    setLoading(false);
+                    return;
+                }
             }
 
-            const visitsSnap = await getDocs(visitsQuery);
-            const rawVisits: any[] = [];
-            const addressIdsSet = new Set<string>();
+            query = query.order('visit_date', { ascending: false }).limit(showViewAll ? 10 : 100);
 
-            visitsSnap.docs.forEach(doc => {
-                const parentId = doc.ref.parent.parent?.id;
-                // If no parentId, it's a root visit or witnessing visit, we still want it for Global
+            const { data: rawVisitsData, error } = await query;
+            if (error) throw error;
+            const rawVisits = rawVisitsData || [];
 
-                const data = doc.data();
-
-                // Filter logic for non-admins (Scoped results)
-                const userName = (profileName || user?.displayName || user?.email?.split('@')[0] || '').toLowerCase();
-                const pubName = (data.publisherName || '').toLowerCase();
-                const uName = (data.userName || '').toLowerCase();
-                const uId = data.userId || '';
-
-                const isMyVisit = (uId && user?.uid && uId === user?.uid) ||
-                    (pubName && userName && (pubName.includes(userName) || userName.includes(pubName))) ||
-                    (uName && userName && (uName.includes(userName) || userName.includes(uName)));
-
-                if (scope === 'mine' && !isMyVisit) return;
-
+            // Filter logic for non-admins (Scoped results)
+            const filteredVisits = rawVisits.filter(v => {
+                if (scope === 'mine' && v.user_id !== user?.id) return false;
                 if (scope === 'all' && role !== 'SUPER_ADMIN' && !isElder && !isServant) {
-                    if (!isMyVisit) return;
+                    if (v.user_id !== user?.id) return false;
                 }
-
-                if (parentId) addressIdsSet.add(parentId);
-
-                rawVisits.push({
-                    id: doc.id,
-                    refPath: doc.ref.path,
-                    parentId: parentId || null,
-                    ...data,
-                    sortDate: data.date?.toDate ? data.date.toDate() : (data.createdAt?.toDate ? data.createdAt.toDate() : (data.date ? new Date(data.date) : new Date(0)))
-                });
+                return true;
             });
 
             // 2. Fetch required addresses and users details
+            const addressIds = Array.from(new Set(filteredVisits.map(v => v.address_id).filter(id => id)));
+            const userIds = Array.from(new Set(filteredVisits.map(v => v.user_id).filter(id => id)));
+
             const addressMap = new Map<string, any>();
             const userNamesMap = new Map<string, string>();
-            const addressIds = Array.from(addressIdsSet);
-            const userIdsSet = new Set<string>();
-            rawVisits.forEach(v => {
-                if (v.userId && v.userId !== 'anon') userIdsSet.add(v.userId);
-            });
-            const userIds = Array.from(userIdsSet);
 
-            // Fetch Addresses
             if (addressIds.length > 0) {
-                const chunks = [];
-                for (let i = 0; i < addressIds.length; i += 30) {
-                    chunks.push(addressIds.slice(i, i + 30));
-                }
-
-                for (const chunk of chunks) {
-                    const addrQ = query(collection(db, "addresses"), where(documentId(), "in", chunk));
-                    const addrSnap = await getDocs(addrQ);
-                    addrSnap.docs.forEach(d => {
-                        addressMap.set(d.id, { id: d.id, ...d.data() });
-                    });
-                }
+                const { data: addrs } = await supabase.from('addresses').select('*').in('id', addressIds);
+                if (addrs) addrs.forEach(a => addressMap.set(a.id, a));
             }
 
-            // Fetch Users (to get real names)
             if (userIds.length > 0) {
-                const chunks = [];
-                for (let i = 0; i < userIds.length; i += 30) {
-                    chunks.push(userIds.slice(i, i + 30));
-                }
-
-                for (const chunk of chunks) {
-                    const userQ = query(collection(db, "users"), where(documentId(), "in", chunk));
-                    const userSnap = await getDocs(userQ);
-                    userSnap.docs.forEach(d => {
-                        const userData = d.data();
-                        userNamesMap.set(d.id, userData.profileName || userData.name || userData.displayName);
-                    });
-                }
+                const { data: users } = await supabase.from('users').select('id, name').in('id', userIds);
+                if (users) users.forEach(u => userNamesMap.set(u.id, u.name));
             }
 
-            // 3. Merge and Sort
-            const mergedVisits = rawVisits.map(v => {
-                const address = v.parentId ? addressMap.get(v.parentId) : null;
-                const realUserName = v.userId ? userNamesMap.get(v.userId) : null;
+            // 3. Merge
+            const mergedVisits = filteredVisits.map(v => {
+                const address = v.address_id ? addressMap.get(v.address_id) : null;
+                const realUserName = v.user_id ? userNamesMap.get(v.user_id) : null;
                 return {
                     ...v,
-                    addressStreet: address?.street || v.addressStreet || 'Localização não identificada',
-                    addressNumber: address?.number || v.addressNumber || '',
-                    displayName: realUserName || v.userName || v.publisherName || 'Publicador'
+                    addressStreet: address?.street || 'Localização não identificada',
+                    addressNumber: address?.number || '',
+                    displayName: realUserName || v.publisher_name || 'Publicador',
+                    sortDate: v.visit_date ? new Date(v.visit_date) : new Date(0),
+                    observations: v.notes || ''
                 };
             });
-
-            mergedVisits.sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime());
 
             // Only slice if we are in "Preview" mode on the dashboard
             if (showViewAll) {
@@ -171,7 +105,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
         } finally {
             setLoading(false);
         }
-    }, [congregationId, isElder, isServant, role, user, scope, profileName, showViewAll]);
+    }, [congregationId, isElder, isServant, role, user?.id, scope, showViewAll]);
 
     useEffect(() => {
         // Wait for auth to resolve
@@ -201,13 +135,8 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
         if (!confirm("Tem certeza que deseja excluir este registro de visita?")) return;
 
         try {
-            // Because it's a subcollection, we need the full path or reference.
-            // We stored refPath or we can construct it if we knew the collection structure.
-            // But we can't easily reconstruct 'visits' subcollection path without knowing the address ID it belongs to strictly from the doc object unless we saved it.
-            // Fortunately `getDocs` results allow `doc.ref`. But we serialized to state.
-            // Let's use the `refPath` we saved.
-
-            await deleteDoc(doc(db, visit.refPath));
+            const { error } = await supabase.from('visits').delete().eq('id', visit.id);
+            if (error) throw error;
 
             // Remove from state
             setVisits(prev => prev.filter(v => v.id !== visit.id));
@@ -232,15 +161,17 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
 
     const saveEdit = async (visit: any) => {
         try {
-            await updateDoc(doc(db, visit.refPath), {
-                observations: editForm.observations,
+            const { error } = await supabase.from('visits').update({
+                notes: editForm.observations,
                 status: editForm.status
-            });
+            }).eq('id', visit.id);
+
+            if (error) throw error;
 
             // Update State
             setVisits(prev => prev.map(v => {
                 if (v.id === visit.id) {
-                    return { ...v, ...editForm };
+                    return { ...v, observations: editForm.observations, status: editForm.status };
                 }
                 return v;
             }));

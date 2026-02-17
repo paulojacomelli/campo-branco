@@ -4,8 +4,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
 import { useAuth } from "@/app/context/AuthContext";
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, collectionGroup, updateDoc, deleteDoc, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import {
     Map as MapIcon,
     Home,
@@ -86,38 +85,41 @@ export default function DashboardPage() {
             try {
                 // Query by UID (Robust) instead of Name
                 // We fetch ALL assigned cards to the user, then filter/sort client-side
-                const q = query(
-                    collection(db, "shared_lists"),
-                    where("assignedTo", "==", user.uid)
-                );
+                const { data: lists, error } = await supabase
+                    .from('shared_lists')
+                    .select('*')
+                    .eq('assigned_to', user.id);
 
-                const snap = await getDocs(q);
-                const lists: any[] = [];
-                snap.forEach(d => {
-                    const data = d.data();
-                    // Optional: Double check active status if needed, but we usually want to show at least active ones
+                if (error) {
+                    console.error("Error fetching my assignments:", error);
+                    return;
+                }
+
+                const processedLists: any[] = [];
+                lists.forEach((data: any) => {
                     if (data.status !== 'completed' && data.status !== 'archived') {
-                        lists.push({
-                            id: d.id,
+                        processedLists.push({
                             ...data,
-                            responsibleName: 'Você' // It's assigned to me
+                            responsibleName: 'Você'
                         });
                     }
                 });
 
-                // Sort: Newest created first
-                lists.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                processedLists.sort((a, b) => {
+                    const dateA = new Date(a.created_at || 0).getTime();
+                    const dateB = new Date(b.created_at || 0).getTime();
+                    return dateB - dateA;
+                });
 
-                // Check for expiring maps (within 10 days)
-                const expiring = lists.filter(l => {
-                    if (!l.expiresAt) return false;
-                    const expires = new Date(l.expiresAt.seconds * 1000);
+                const expiring = processedLists.filter(l => {
+                    if (!l.expires_at) return false;
+                    const expires = new Date(l.expires_at);
                     const now = new Date();
                     const diffMs = expires.getTime() - now.getTime();
                     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                     return diffDays > 0 && diffDays <= 10;
                 }).map(l => {
-                    const expires = new Date(l.expiresAt.seconds * 1000);
+                    const expires = new Date(l.expires_at);
                     const now = new Date();
                     const diffMs = expires.getTime() - now.getTime();
                     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -129,8 +131,8 @@ export default function DashboardPage() {
                 });
 
                 setExpiringMaps(expiring);
-                setMyAssignments(lists);
-                setPendingMapsCount(lists.length);
+                setMyAssignments(processedLists);
+                setPendingMapsCount(processedLists.length);
             } catch (e) {
                 console.error("Error fetching my assignments:", e);
             }
@@ -161,63 +163,57 @@ export default function DashboardPage() {
 
         setHistoryLoading(true);
         try {
-            let q;
-            if (role === 'SUPER_ADMIN') {
-                q = query(collection(db, "shared_lists"), limit(50));
+            let query = supabase.from('shared_lists').select('*');
+
+            if (role !== 'SUPER_ADMIN') {
+                query = query.eq('congregation_id', congregationId);
             } else {
-                q = query(
-                    collection(db, "shared_lists"),
-                    where("congregationId", "==", congregationId)
-                );
+                query = query.limit(50);
             }
 
-            // 1. Fetch Users to map IDs to current Names from DB
             const usersMap: Record<string, string> = {};
             try {
-                let uQuery;
+                let uQuery = supabase.from('users').select('id, name');
                 if (congregationId) {
-                    uQuery = query(collection(db, "users"), where("congregationId", "==", congregationId));
+                    uQuery = uQuery.eq('congregation_id', congregationId);
                 } else if (role === 'SUPER_ADMIN') {
-                    uQuery = query(collection(db, "users"), limit(500));
+                    uQuery = uQuery.limit(500);
                 }
 
-                if (uQuery) {
-                    const uSnap = await getDocs(uQuery);
-                    uSnap.forEach(uDoc => {
-                        const uData = uDoc.data();
-                        usersMap[uDoc.id] = uData.name || uData.profileName || uData.displayName || "";
+                const { data: users } = await uQuery;
+                if (users) {
+                    users.forEach((u: any) => {
+                        usersMap[u.id] = u.name || "";
                     });
                 }
             } catch (e) {
                 console.warn("Error fetching users map:", e);
             }
 
-            const snap = await getDocs(q);
-            const lists: any[] = [];
+            const { data: lists, error } = await query;
+            if (error) throw error;
 
-            for (const d of snap.docs) {
-                const data = d.data();
+            const processedLists: any[] = [];
+            if (lists) {
+                for (const data of lists) {
+                    let responsible = 'Não atribuído';
+                    if (data.assigned_to && usersMap[data.assigned_to]) {
+                        responsible = usersMap[data.assigned_to];
+                    } else {
+                        responsible = data.assigned_name || 'Não atribuído';
+                    }
 
-                // Use Name from DB if available, otherwise fallback to assignedName
-                let responsible = 'Não atribuído';
-                if (data.assignedTo && usersMap[data.assignedTo]) {
-                    responsible = usersMap[data.assignedTo];
-                } else {
-                    responsible = data.assignedName || 'Não atribuído';
+                    processedLists.push({
+                        ...data,
+                        responsibleName: responsible
+                    });
                 }
-
-                lists.push({
-                    id: d.id,
-                    ...data,
-                    responsibleName: responsible
-                });
             }
 
             // Filter for Publisher: only show their own cards
-            let filteredLists = [...lists];
+            let filteredLists = [...processedLists];
             if (!isElder && !isServant && role !== 'SUPER_ADMIN') {
-                const userName = profileName || user?.displayName || user?.email?.split('@')[0];
-                filteredLists = lists.filter(l => l.assignedName === userName);
+                filteredLists = processedLists.filter(l => l.assigned_to === user?.id);
             }
 
             // Custom sort: active (not completed) first
@@ -227,8 +223,8 @@ export default function DashboardPage() {
                 if (isAActive && !isBActive) return -1;
                 if (!isAActive && isBActive) return 1;
 
-                const dateA = a.createdAt?.seconds || 0;
-                const dateB = b.createdAt?.seconds || 0;
+                const dateA = new Date(a.created_at || 0).getTime();
+                const dateB = new Date(b.created_at || 0).getTime();
                 return dateB - dateA;
             });
 
@@ -247,25 +243,19 @@ export default function DashboardPage() {
         const checkNotifications = async () => {
             try {
                 // 1. Fetch Active Templates (System Only)
-                // We fetch all active system templates to avoid multiple queries
-                const tplQuery = query(
-                    collection(db, 'notification_templates'),
-                    where('isActive', '==', true),
-                    where('type', '==', 'system') // or just fetch all active and filter by slug
-                );
-                // Note: Compound queries might require index. To be safe, let's fetch active templates and filter in memory.
-                // Or better: Fetch specific known slugs if we can, but we have multiple. 
-                // Let's just fetch all active templates (usually small number)
-                const qTemplates = query(collection(db, 'notification_templates'), where('isActive', '==', true));
-                const tplSnap = await getDocs(qTemplates);
+                const { data: templatesData } = await supabase
+                    .from('notification_templates')
+                    .select('*')
+                    .eq('is_active', true);
 
                 const templates: Record<string, any> = {};
-                tplSnap.forEach(doc => {
-                    const data = doc.data();
-                    if (data.slug) {
-                        templates[data.slug] = data;
-                    }
-                });
+                if (templatesData) {
+                    templatesData.forEach((data: any) => {
+                        if (data.slug) {
+                            templates[data.slug] = data;
+                        }
+                    });
+                }
 
                 const now = new Date();
                 const notifiedKeys: string[] = [];
@@ -286,46 +276,31 @@ export default function DashboardPage() {
                     }
                 };
 
-                // 2. Iterate User's Active Lists
-                // userLists is already filtered for the current user in fetchSharedHistory? 
-                // Actually 'sharedHistory' state contains everything for admins/elders?
-                // We should re-filter for specifically "assigned to ME" active lists to be safe.
-
                 const myActiveLists = sharedHistory.filter(l => {
-                    // Normalize assignedName check
-                    const myName = profileName || user?.displayName || "";
-                    // Check if assigned to me OR created by me if I'm testing
-                    const isAssigned = l.assignedName === myName || l.createdBy === user.uid;
+                    const isAssigned = l.assigned_to === user?.id || l.created_by === user?.id;
                     return isAssigned && l.status === 'active';
                 });
 
                 myActiveLists.forEach(list => {
-                    if (!list.createdAt) return;
-                    const created = new Date(list.createdAt.seconds * 1000);
+                    if (!list.created_at) return;
+                    const created = new Date(list.created_at);
                     const diffMs = now.getTime() - created.getTime();
                     const diffDays = diffMs / (1000 * 60 * 60 * 24);
                     const diffHours = diffMs / (1000 * 60 * 60);
 
-                    // A. "Novo Mapa Atribuído" (Recent assignment, e.g. < 24h)
                     if (diffHours < 24) {
                         trigger('map_assigned', list.id);
-                        trigger('encourage_finish', list.id); // Also encourage to finish today!
+                        trigger('encourage_finish', list.id);
                     }
-
-                    // B. "Uma Semana" (6-8 days)
                     if (diffDays >= 6 && diffDays <= 8) {
                         trigger('encourage_1week', list.id);
                     }
-
-                    // C. "Duas Semanas" (13-15 days)
                     if (diffDays >= 13 && diffDays <= 15) {
                         trigger('encourage_2weeks', list.id);
                     }
 
-                    // D. Expiration Check (From previous logic)
-                    if (list.expiresAt) {
-                        const expires = new Date(list.expiresAt.seconds * 1000);
-                        // < 24h to expire and not expired yet
+                    if (list.expires_at) {
+                        const expires = new Date(list.expires_at);
                         if (expires > now && (expires.getTime() - now.getTime()) < (24 * 60 * 60 * 1000)) {
                             trigger('link_expiration', list.id);
                         }
@@ -339,7 +314,7 @@ export default function DashboardPage() {
 
         const timer = setTimeout(checkNotifications, 3000);
         return () => clearTimeout(timer);
-    }, [user, sharedHistory, profileName]); // Depend on sharedHistory being loaded
+    }, [user, sharedHistory, profileName]);
 
     useEffect(() => {
         if (!congregationId && role !== 'SUPER_ADMIN') return;
@@ -354,25 +329,25 @@ export default function DashboardPage() {
                 let publicWitnessingCount = 0;
                 let coverageVal = 0;
 
-                const safelyGetSize = async (name: string, queryPromise: Promise<any>) => {
-                    try {
-                        const snap = await queryPromise;
-                        return snap.size || (snap.docs ? snap.docs.length : 0);
-                    } catch (error) {
-                        console.error(`Error fetching ${name}:`, error);
-                        return 0;
-                    }
+                // Helper for Supabase count
+                const countTable = async (table: string, filters: any = {}) => {
+                    let q = supabase.from(table).select('*', { count: 'exact', head: true });
+                    Object.entries(filters).forEach(([col, val]) => {
+                        q = q.eq(col, val);
+                    });
+                    const { count, error } = await q;
+                    if (error) console.error(`Error counting ${table}:`, error);
+                    return count || 0;
                 };
 
-                // SUPER ADMIN: Fetch ALL
                 if (role === 'SUPER_ADMIN') {
                     const [congC, cityC, mapC, addrC, pwC, visitC] = await Promise.all([
-                        safelyGetSize('Congregations', getDocs(collection(db, "congregations"))),
-                        safelyGetSize('Cities', getDocs(collection(db, "cities"))),
-                        safelyGetSize('Territories', getDocs(collection(db, "territories"))),
-                        safelyGetSize('Addresses', getDocs(collection(db, "addresses"))),
-                        safelyGetSize('Witnessing', getDocs(collection(db, "witnessing_points"))),
-                        safelyGetSize('Visits', getDocs(collectionGroup(db, "visits")))
+                        countTable('congregations'),
+                        countTable('cities'),
+                        countTable('territories'),
+                        countTable('addresses'),
+                        countTable('witnessing_points'),
+                        countTable('visits')
                     ]);
 
                     congCount = congC;
@@ -381,156 +356,122 @@ export default function DashboardPage() {
                     addressCount = addrC;
                     publicWitnessingCount = pwC;
                     visitCount = visitC;
-
                 } else {
-                    // CONGREGATION SCOPED (Elder, Servant, Publisher)
-                    // We sum data STRICTLY belonging to the user's congregation
-
-                    // 1. Congregations (Always 1)
                     congCount = 1;
-
-                    // 2. Cities
-                    cityCount = await safelyGetSize('Cities', getDocs(query(collection(db, "cities"), where("congregationId", "==", congregationId))));
-
-                    // 3. Maps (Territories)
-                    mapsCount = await safelyGetSize('Territories', getDocs(query(collection(db, "territories"), where("congregationId", "==", congregationId))));
-
-                    // 4. Addresses
-                    addressCount = await safelyGetSize('Addresses', getDocs(query(collection(db, "addresses"), where("congregationId", "==", congregationId))));
-
-                    // 5. Witnessing
-                    publicWitnessingCount = await safelyGetSize('Witnessing', getDocs(query(collection(db, "witnessing_points"), where("congregationId", "==", congregationId))));
-
-                    // 6. Visits
+                    cityCount = await countTable('cities', { congregation_id: congregationId });
+                    mapsCount = await countTable('territories', { congregation_id: congregationId });
+                    addressCount = await countTable('addresses', { congregation_id: congregationId });
+                    publicWitnessingCount = await countTable('witnessing_points', { congregation_id: congregationId });
+                    visitCount = await countTable('visits', { congregation_id: congregationId });
                 }
 
-                // 7. Action Center Logic (Idle Check) & Accurate Coverage Calculation
+                // 7. Action Center Logic 
                 if (mapsCount > 0) {
                     try {
-                        const getScopedQuery = (col: string) => {
-                            if (role === 'SUPER_ADMIN') return query(collection(db, col));
-                            return query(collection(db, col), where("congregationId", "==", congregationId));
-                        };
+                        let mapsQuery = supabase.from('territories').select('*');
+                        let citiesQuery = supabase.from('cities').select('*');
+                        let historyQuery = supabase.from('shared_lists').select('*');
 
-                        const [mapsSnap, citiesSnap, historySnap] = await Promise.all([
-                            getDocs(getScopedQuery("territories")),
-                            getDocs(getScopedQuery("cities")),
-                            getDocs(getScopedQuery("shared_lists"))
-                        ]);
+                        if (role !== 'SUPER_ADMIN') {
+                            mapsQuery = mapsQuery.eq('congregation_id', congregationId);
+                            citiesQuery = citiesQuery.eq('congregation_id', congregationId);
+                            historyQuery = historyQuery.eq('congregation_id', congregationId);
+                        }
 
-                        // 1. Map History Dates
-                        const latestWorkMap = new Map<string, number>(); // Only for completed/returned
-                        const latestAnyActivityMap = new Map<string, number>(); // Including assignments
+                        const [
+                            { data: mapsData },
+                            { data: citiesData },
+                            { data: historyData }
+                        ] = await Promise.all([mapsQuery, citiesQuery, historyQuery]);
 
-                        historySnap.docs.forEach(doc => {
-                            const data = doc.data();
+                        const latestWorkMap = new Map<string, number>();
+                        const latestAnyActivityMap = new Map<string, number>();
 
-                            const updateMap = (id: string, date: number, map: Map<string, number>) => {
-                                const current = map.get(id) || 0;
-                                if (date > current) map.set(id, date);
-                            };
+                        if (historyData) {
+                            historyData.forEach((data: any) => {
+                                const processDate = (id: string) => {
+                                    const created = data.created_at ? new Date(data.created_at).getTime() : 0;
+                                    const completed = data.completed_at ? new Date(data.completed_at).getTime() : 0;
+                                    const returned = data.returned_at ? new Date(data.returned_at).getTime() : 0;
 
-                            const processDate = (id: string) => {
-                                if (data.createdAt) {
-                                    updateMap(id, data.createdAt.seconds * 1000, latestAnyActivityMap);
-                                }
-                                if (data.completedAt) {
-                                    const d = data.completedAt.seconds * 1000;
-                                    updateMap(id, d, latestWorkMap);
-                                    updateMap(id, d, latestAnyActivityMap);
-                                }
-                                if (data.returnedAt) {
-                                    const d = data.returnedAt.seconds * 1000;
-                                    updateMap(id, d, latestWorkMap);
-                                    updateMap(id, d, latestAnyActivityMap);
-                                }
-                            };
+                                    if (created > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, created);
+                                    if (completed > (latestWorkMap.get(id) || 0)) latestWorkMap.set(id, completed);
+                                    if (completed > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, completed);
+                                    if (returned > (latestWorkMap.get(id) || 0)) latestWorkMap.set(id, returned);
+                                    if (returned > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, returned);
+                                };
 
-                            if (data.territoryId) processDate(data.territoryId);
-                            if (data.items && Array.isArray(data.items)) {
-                                data.items.forEach((id: string) => processDate(id));
-                            }
-                        });
+                                if (data.territory_id) processDate(data.territory_id);
+                                // Check if items is array?
+                            });
+                        }
 
                         const cityMap: Record<string, string> = {};
-                        citiesSnap.forEach(doc => {
-                            const d = doc.data();
-                            if (d.name) cityMap[doc.id] = d.name;
-                        });
+                        if (citiesData) {
+                            citiesData.forEach((d: any) => {
+                                if (d.name) cityMap[d.id] = d.name;
+                            });
+                        }
 
-                        // Time thresholds - Sync with Reports (Service Year)
                         const currentYear = getServiceYear();
                         const { start: syStart, end: syEnd } = getServiceYearRange(currentYear);
-                        const oneYearAgo = syStart; // For Idle check, we can use the start of service year or rolling year.
-                        // Reports uses Service Year for Coverage.
-
                         const idleList: any[] = [];
                         let coveredCount = 0;
 
-                        mapsSnap.docs.forEach(d => {
-                            const data = d.data();
+                        if (mapsData) {
+                            mapsData.forEach((data: any) => {
+                                let lastWork = 0;
+                                if (data.manual_last_completed_date) lastWork = new Date(data.manual_last_completed_date).getTime();
+                                if (data.last_visit && !lastWork) lastWork = new Date(data.last_visit).getTime();
 
-                            // 1. Coverage Calculation (Strict: only actual work in current Service Year)
-                            // Check manual dates (both common fields)
-                            let lastWork = 0;
-                            if (data.manualLastCompletedDate) lastWork = data.manualLastCompletedDate.toDate().getTime();
-                            if (data.lastVisit && !lastWork) lastWork = data.lastVisit.toDate().getTime();
+                                const historyWork = latestWorkMap.get(data.id) || 0;
+                                if (historyWork > lastWork) lastWork = historyWork;
 
-                            const historyWork = latestWorkMap.get(d.id) || 0;
-                            if (historyWork > lastWork) lastWork = historyWork;
+                                const lastWorkDate = lastWork > 0 ? new Date(lastWork) : null;
+                                if (lastWorkDate && lastWorkDate >= syStart && lastWorkDate <= syEnd) {
+                                    coveredCount++;
+                                }
 
-                            const lastWorkDate = lastWork > 0 ? new Date(lastWork) : null;
-                            if (lastWorkDate && lastWorkDate >= syStart && lastWorkDate <= syEnd) {
-                                coveredCount++;
-                            }
+                                let lastAny = lastWork;
+                                const historyAny = latestAnyActivityMap.get(data.id) || 0;
+                                if (historyAny > lastAny) lastAny = historyAny;
 
-                            // 2. Idle Logic (Visual for User)
-                            // We use any activity to avoid showing currently assigned/recent maps as idle
-                            let lastAny = lastWork;
-                            const historyAny = latestAnyActivityMap.get(d.id) || 0;
-                            if (historyAny > lastAny) lastAny = historyAny;
+                                const lastAnyDate = lastAny > 0 ? new Date(lastAny) : null;
+                                const cityName = (data.city_id && cityMap[data.city_id]) || data.city || 'Cidade Desconhecida';
 
-                            const lastAnyDate = lastAny > 0 ? new Date(lastAny) : null;
-                            const cityName = (data.cityId && cityMap[data.cityId]) || data.city || 'Cidade Desconhecida';
+                                if (data.assigned_to || data.status === 'OCUPADO') return;
 
-                            // Ignore if currently assigned
-                            if (data.assignedTo || data.status === 'OCUPADO') return;
+                                const rollingYearAgo = new Date();
+                                rollingYearAgo.setFullYear(rollingYearAgo.getFullYear() - 1);
 
-                            // For Idle, we use 1 year rolling to be more intuitive for "neglected" maps
-                            const rollingYearAgo = new Date();
-                            rollingYearAgo.setFullYear(rollingYearAgo.getFullYear() - 1);
+                                if (!lastAnyDate) {
+                                    idleList.push({
+                                        id: data.id,
+                                        name: data.name || 'Sem Nome',
+                                        city: cityName,
+                                        city_id: data.city_id,
+                                        congregation_id: data.congregation_id,
+                                        lastVisit: null,
+                                        variant: 'danger'
+                                    });
+                                } else if (lastAnyDate < rollingYearAgo) {
+                                    idleList.push({
+                                        id: data.id,
+                                        name: data.name || 'Sem Nome',
+                                        city: cityName,
+                                        city_id: data.city_id,
+                                        congregation_id: data.congregation_id,
+                                        lastVisit: lastAnyDate,
+                                        variant: 'warning'
+                                    });
+                                }
+                            });
+                        }
 
-                            if (!lastAnyDate) {
-                                // CASE 1: NEVER VISITED (Red)
-                                idleList.push({
-                                    id: d.id,
-                                    name: data.name || 'Sem Nome',
-                                    city: cityName,
-                                    cityId: data.cityId,
-                                    congregationId: data.congregationId,
-                                    lastVisit: null,
-                                    variant: 'danger'
-                                });
-                            } else if (lastAnyDate < rollingYearAgo) {
-                                // CASE 2: > 1 YEAR (Orange)
-                                idleList.push({
-                                    id: d.id,
-                                    name: data.name || 'Sem Nome',
-                                    city: cityName,
-                                    cityId: data.cityId,
-                                    congregationId: data.congregationId,
-                                    lastVisit: lastAnyDate,
-                                    variant: 'warning'
-                                });
-                            }
-                        });
-
-                        // Calculate Coverage Percentage
                         if (mapsCount > 0) {
                             coverageVal = Math.floor((coveredCount / mapsCount) * 100);
                         }
 
-                        // Sort Idle List
                         idleList.sort((a, b) => {
                             if (!a.lastVisit && !b.lastVisit) return 0;
                             if (!a.lastVisit) return -1;
@@ -539,6 +480,7 @@ export default function DashboardPage() {
                         });
 
                         setIdleTerritories(idleList);
+
                     } catch (e) { console.error("Idle check error", e); }
                 }
 
@@ -566,7 +508,7 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.uid, fetchSharedHistory]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;
@@ -604,7 +546,7 @@ export default function DashboardPage() {
     const handleDeleteShare = async (id: string) => {
         if (!confirm("Tem certeza que deseja excluir este cartão do histórico? O link deixará de funcionar.")) return;
         try {
-            await deleteDoc(doc(db, "shared_lists", id));
+            await supabase.from('shared_lists').delete().eq('id', id);
             // Refresh list
             setSharedHistory(prev => prev.filter(item => item.id !== id));
         } catch (err) {
@@ -616,10 +558,10 @@ export default function DashboardPage() {
     const handleRemoveResponsible = async (id: string) => {
         if (!confirm("Tem certeza que deseja remover o responsável deste cartão?")) return;
         try {
-            await updateDoc(doc(db, "shared_lists", id), {
-                assignedTo: null,
-                assignedName: null
-            });
+            await supabase.from('shared_lists').update({
+                assigned_to: null,
+                assigned_name: null
+            }).eq('id', id);
             // Refresh lists
             fetchSharedHistory();
             setMyAssignments(prev => prev.filter(item => item.id !== id));
@@ -699,22 +641,22 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3 text-muted" />
-                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.createdAt)}</span>
+                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.created_at)}</span>
                                         </div>
-                                        {list.status === 'completed' && list.returnedAt ? (
+                                        {list.status === 'completed' && list.returned_at ? (
                                             <div className="flex items-center gap-1">
                                                 <CheckCircle className="w-3 h-3 text-green-600" />
-                                                <span className="text-[10px] text-muted font-medium">Conclusão: {formatDate(list.returnedAt)}</span>
+                                                <span className="text-[10px] text-muted font-medium">Conclusão: {formatDate(list.returned_at)}</span>
                                             </div>
                                         ) : (
-                                            list.status !== 'completed' && list.expiresAt && formatExpirationTime(list.expiresAt) && (
+                                            list.status !== 'completed' && list.expires_at && formatExpirationTime(list.expires_at) && (
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3 text-orange-400" />
-                                                    <span className={`text-[10px] font-bold ${(list.expiresAt && (list.expiresAt.seconds * 1000 - Date.now()) < 5 * 24 * 60 * 60 * 1000)
+                                                    <span className={`text-[10px] font-bold ${(list.expires_at && (new Date(list.expires_at).getTime() - Date.now()) < 5 * 24 * 60 * 60 * 1000)
                                                         ? 'text-red-500 dark:text-red-400'
                                                         : 'text-orange-500 dark:text-orange-400'
                                                         }`}>
-                                                        {formatExpirationTime(list.expiresAt)}
+                                                        {formatExpirationTime(list.expires_at)}
                                                     </span>
                                                 </div>
                                             )
@@ -803,16 +745,16 @@ export default function DashboardPage() {
 
 
 
-    const formatDate = (ts: any) => {
-        if (!ts) return 'N/A';
-        const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+    const formatDate = (dateString: any) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     };
 
-    const formatExpirationTime = (expiresAtTimestamp: any) => {
-        if (!expiresAtTimestamp) return "Por tempo indeterminado";
+    const formatExpirationTime = (expiresAtString: any) => {
+        if (!expiresAtString) return "Por tempo indeterminado";
 
-        const expiresAt = expiresAtTimestamp.toDate ? expiresAtTimestamp.toDate() : new Date(expiresAtTimestamp.seconds * 1000);
+        const expiresAt = new Date(expiresAtString);
         const now = new Date();
         const diffMs = expiresAt.getTime() - now.getTime();
 
@@ -905,7 +847,7 @@ export default function DashboardPage() {
                 {/* Greeting */}
                 <div>
                     <h1 className="text-2xl font-bold text-main tracking-tight">
-                        Olá, {(profileName || user?.displayName)?.split(' ')[0] || 'Irmão'}
+                        Olá, {(profileName || user?.user_metadata?.full_name || user?.email)?.split(' ')[0] || 'Irmão'}
                     </h1>
                     <p className="text-muted text-sm">
                         Aqui está o resumo para sua função.
@@ -921,7 +863,7 @@ export default function DashboardPage() {
 
                     {(isElder || isServant || role === 'SUPER_ADMIN') && (
                         <ActionCenter
-                            userName={profileName || user?.displayName || 'Publicador'}
+                            userName={profileName || user?.user_metadata?.full_name || user?.email || 'Publicador'}
                             pendingMapsCount={pendingMapsCount}
                             hasPendingAnnotation={false}
                             idleTerritories={isElder || isServant || role === 'SUPER_ADMIN' ? idleTerritories : []}

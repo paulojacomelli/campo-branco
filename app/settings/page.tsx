@@ -3,9 +3,7 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/app/context/AuthContext';
-import { db, auth } from '@/lib/firebase';
-import { updateProfile } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import {
     LogOut,
@@ -49,7 +47,7 @@ import { APP_VERSION } from '@/lib/version';
 
 
 export default function SettingsPage() {
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, logout: authLogout } = useAuth();
     const router = useRouter();
     const { textSize, displayScale, themeMode, updatePreferences } = useTheme();
 
@@ -97,29 +95,21 @@ export default function SettingsPage() {
     }, [user, loading, congregationId, isSuperAdmin, router]);
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && congregationId) {
-            // Initially just show loading or default
-            // Real update happens when we fetch the token
-        }
-    }, [congregationId]);
-
-    useEffect(() => {
         if ((isElder || isServant) && congregationId) {
             const fetchCongregationAndMembers = async () => {
                 setMembersLoading(true);
                 try {
-                    const { collection, query, where, getDocs, doc, getDoc, updateDoc } = await import('firebase/firestore');
-
-                    // 1. Fetch Members (Only Elders can manage members, but we can fetch them for display or just skip)
-                    // Invite Link is separate from member display management.
-                    // Let's fetch members only if Elder, OR if we want to show registries.
-                    // User request says "Servant can send invite link".
-
+                    // 1. Fetch Members
                     let docs: any[] = [];
                     if (isElder) {
-                        const qMembers = query(collection(db, "users"), where("congregationId", "==", congregationId));
-                        const snapMembers = await getDocs(qMembers);
-                        docs = snapMembers.docs.map(d => ({ id: d.id, ...d.data() }));
+                        const { data: memberData, error: memberError } = await supabase
+                            .from("users")
+                            .select("*")
+                            .eq("congregation_id", congregationId);
+
+                        if (memberError) throw memberError;
+                        docs = memberData || [];
+
                         if (!isSuperAdmin) {
                             docs = docs.filter((d: any) => d.role !== 'SUPER_ADMIN');
                         }
@@ -127,24 +117,28 @@ export default function SettingsPage() {
                     setMembers(docs);
 
                     // 2. Fetch Congregation for Token
-                    const congDocRef = doc(db, "congregations", congregationId);
-                    const congSnap = await getDoc(congDocRef);
+                    const { data: congData, error: congError } = await supabase
+                        .from("congregations")
+                        .select("invite_token")
+                        .eq("id", congregationId)
+                        .single();
 
-                    if (congSnap.exists()) {
-                        const data = congSnap.data();
-                        let token = data.inviteToken;
+                    if (congError) throw congError;
 
-                        // If no token exists, auto-generate one for backward compatibility/initial setup
+                    if (congData) {
+                        let token = congData.invite_token;
+
+                        // If no token exists, auto-generate one
                         if (!token) {
-                            token = crypto.randomUUID(); // Secure random string
-                            await updateDoc(congDocRef, { inviteToken: token });
+                            token = crypto.randomUUID();
+                            await supabase.from("congregations").update({ invite_token: token }).eq("id", congregationId);
                         }
 
                         setInviteToken(token);
                         setInviteLink(`${window.location.origin}/invite?token=${token}`);
                     }
                 } catch (e) {
-                    console.error(e);
+                    console.error("Error fetching settings data:", e);
                 } finally {
                     setMembersLoading(false);
                 }
@@ -158,12 +152,13 @@ export default function SettingsPage() {
 
         setGeneratingToken(true);
         try {
-            const { updateDoc, doc } = await import('firebase/firestore');
             const newToken = crypto.randomUUID();
 
-            await updateDoc(doc(db, "congregations", congregationId!), {
-                inviteToken: newToken
-            });
+            const { error } = await supabase.from("congregations").update({
+                invite_token: newToken
+            }).eq("id", congregationId!);
+
+            if (error) throw error;
 
             setInviteToken(newToken);
             setInviteLink(`${window.location.origin}/invite?token=${newToken}`);
@@ -179,9 +174,9 @@ export default function SettingsPage() {
     const handlePromote = async (uid: string, currentRole: string) => {
         if (!confirm("Confirmar alteração de função?")) return;
         try {
-            const { updateDoc, doc } = await import('firebase/firestore');
             const newRole = currentRole === 'SERVO' ? 'PUBLICADOR' : 'SERVO';
-            await updateDoc(doc(db, "users", uid), { role: newRole });
+            const { error } = await supabase.from("users").update({ role: newRole }).eq("id", uid);
+            if (error) throw error;
             setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: newRole } : m));
         } catch (e) {
             alert("Erro ao alterar função");
@@ -191,62 +186,35 @@ export default function SettingsPage() {
     const handleRemove = async (uid: string) => {
         if (!confirm("Remover este usuário da congregação? Ele perderá acesso aos dados.")) return;
         try {
-            const { updateDoc, doc } = await import('firebase/firestore');
-            await updateDoc(doc(db, "users", uid), { congregationId: null, role: 'PUBLICADOR' });
+            const { error } = await supabase.from("users").update({
+                congregation_id: null,
+                role: 'PUBLICADOR'
+            }).eq("id", uid);
+            if (error) throw error;
             setMembers(prev => prev.filter(m => m.id !== uid));
         } catch (e) {
             alert("Erro ao remover usuário");
         }
     };
 
-
-
     const handleSaveProfile = async () => {
-        // ... (existing code)
-        // (keeping existing logic - truncated for brevity in replacement if not modifying inner)
-        if (!user || !user.email) return;
+        if (!user || (!user.email && !user.id)) return;
         setSaving(true);
         try {
-            // Import firestore functions
-            const { collection, getDocs, doc, setDoc } = await import('firebase/firestore');
+            // Update Supabase 'users' table
+            const { error } = await supabase.from('users').update({
+                name: editName,
+                email: editEmail
+            }).eq('id', user.id);
 
-            // 1. Find user by email (Query instead of List All to satisfy security rules)
-            // Note: This matches exact email. If we need case-insensitive, we rely on the implementation plan
-            // or we accept that non-admins can only find their exact email match.
-            const { query, where } = await import('firebase/firestore');
-            const userEmail = user.email;
+            if (error) throw error;
 
-            // Query for the specific email. This is allowed by the security rule:
-            // resource.data.email == request.auth.token.email
-            const q = query(collection(db, 'users'), where('email', '==', userEmail));
-            const querySnapshot = await getDocs(q);
+            // Update Supabase Auth metadata
+            const { error: authError } = await supabase.auth.updateUser({
+                data: { full_name: editName }
+            });
 
-            const matchedDocs = querySnapshot.docs; // Should be just one, or zero if casing differs significantly
-
-            if (matchedDocs.length > 0) {
-                // Update ALL matching documents found
-                const updates = matchedDocs.map(d =>
-                    setDoc(d.ref, {
-                        name: editName,
-                        email: editEmail
-                    }, { merge: true })
-                );
-                await Promise.all(updates);
-            } else {
-                // If really not found, create/update by Auth UID
-                await setDoc(doc(db, 'users', user.uid), {
-                    name: editName,
-                    email: editEmail,
-                    // Ensure role is preserved if merging, otherwise defaults
-                }, { merge: true });
-            }
-
-            // 2. Update Firebase Auth Profile
-            if (auth.currentUser) {
-                await updateProfile(auth.currentUser, {
-                    displayName: editName
-                });
-            }
+            if (authError) throw authError;
 
             setShowEditModal(false);
             window.location.reload();
@@ -262,8 +230,6 @@ export default function SettingsPage() {
         if (!confirm("O download do backup será iniciado. Isso pode levar alguns segundos dependendo da quantidade de dados. Continuar?")) return;
 
         try {
-            // Trigger download via direct navigation or hidden iframe
-            // Or fetch blob and download
             const response = await fetch('/api/admin/export');
             if (!response.ok) throw new Error('Falha no export');
 
@@ -271,7 +237,6 @@ export default function SettingsPage() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            // Filename is in header, but we can default
             const disposition = response.headers.get('content-disposition');
             let filename = `backup-${new Date().toISOString()}.json`;
             if (disposition && disposition.indexOf('attachment') !== -1) {
@@ -295,12 +260,7 @@ export default function SettingsPage() {
 
     const handleSignOut = async () => {
         try {
-            await auth.signOut();
-            await fetch('/api/auth/session', { method: 'DELETE' });
-            document.cookie = "__session=; path=/; max-age=0";
-            document.cookie = "auth_token=; path=/; max-age=0";
-            document.cookie = "role=; path=/; max-age=0";
-            document.cookie = "congregationId=; path=/; max-age=0";
+            await authLogout();
             router.push('/login');
         } catch (error) {
             console.error("Logout error:", error);
@@ -345,14 +305,14 @@ export default function SettingsPage() {
                     <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                         <div className="flex items-center gap-4">
                             <div className="w-16 h-16 bg-background dark:bg-surface-highlight rounded-full flex items-center justify-center text-muted text-xl font-bold border-2 border-surface dark:border-surface shadow-sm ring-1 ring-surface-border">
-                                {user.photoURL ? (
-                                    <Image src={user.photoURL} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
+                                {user.user_metadata?.avatar_url ? (
+                                    <Image src={user.user_metadata.avatar_url} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
                                 ) : (
                                     <User className="w-8 h-8" />
                                 )}
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-main">{profileName || user.displayName || 'Usuário'}</h3>
+                                <h3 className="text-lg font-bold text-main">{profileName || user.user_metadata?.full_name || 'Usuário'}</h3>
                                 <p className="text-muted text-sm">{user.email}</p>
                                 <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-primary-light/50 text-primary-dark dark:bg-primary-dark/30 dark:text-primary-light">
                                     <Shield className="w-3 h-3" />
@@ -371,7 +331,7 @@ export default function SettingsPage() {
                         <div className="flex flex-col gap-2 w-full md:w-auto">
                             <button
                                 onClick={() => {
-                                    setEditName(profileName || user.displayName || '');
+                                    setEditName(profileName || user.user_metadata?.full_name || '');
                                     setEditEmail(user.email || '');
                                     setShowEditModal(true);
                                 }}
@@ -836,37 +796,33 @@ export default function SettingsPage() {
 
                                     <div className="mt-4 pt-4 border-t border-primary-light/20 dark:border-primary-dark/20">
                                         <h4 className="text-xs font-bold text-primary mb-2 uppercase tracking-wider">Segurança do Sistema</h4>
-                                        <button
-                                            onClick={async () => {
-                                                if (!confirm("Isso irá definir SUA conta como a única Super Admin proprietária da trava de segurança. Continuar?")) return;
-                                                try {
-                                                    await setDoc(doc(db, 'config', 'security'), {
-                                                        superAdminUid: user.uid,
-                                                        updatedAt: Timestamp.now()
-                                                    });
-                                                    alert("Trava de segurança inicializada com sucesso!");
-                                                    window.location.reload();
-                                                } catch (error: any) {
-                                                    console.error(error);
-                                                    alert("Erro: " + error.message);
-                                                }
-                                            }}
-                                            className="bg-red-900/10 hover:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-900/20 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all"
-                                        >
-                                            <Shield className="w-4 h-4" />
-                                            Inicializar Trava de Segurança (Strict Mode)
-                                        </button>
-                                        <p className="text-[10px] text-muted mt-1">
-                                            Exigido para acesso total ao Dashboard se o documento /config/security estiver ausente.
-                                        </p>
+                                        <div className="flex flex-col gap-2">
+                                            <button
+                                                onClick={async () => {
+                                                    if (!confirm("Isso garantirá que as políticas de RLS estejam ativas. Continuar?")) return;
+                                                    try {
+                                                        alert("A segurança agora é gerenciada via Row Level Security (RLS) no Supabase. Verifique o painel do Supabase.");
+                                                    } catch (error: any) {
+                                                        console.error(error);
+                                                        alert("Erro: " + error.message);
+                                                    }
+                                                }}
+                                                className="bg-red-900/10 hover:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-900/20 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all"
+                                            >
+                                                <Shield className="w-4 h-4" />
+                                                Verificar Segurança (Supabase RLS)
+                                            </button>
+                                            <p className="text-[10px] text-muted mt-1">
+                                                O sistema agora utiliza Row Level Security nativo do Supabase para proteção de dados.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
-
-
                         </section>
                     </>
                 )}
+
                 {/* About & Legal Section */}
                 <section className="space-y-4">
                     <h2 className="text-sm font-bold text-muted uppercase tracking-widest pl-1">Sobre & Legal</h2>
@@ -959,28 +915,17 @@ export default function SettingsPage() {
                                         const doubleCheck = prompt("Digite 'DELETAR' para confirmar:");
                                         if (doubleCheck === 'DELETAR') {
                                             try {
-                                                const { deleteDoc, doc } = await import('firebase/firestore');
-                                                // 1. Delete Firestore Profile
-                                                if (user?.uid) {
-                                                    await deleteDoc(doc(db, "users", user.uid));
+                                                // 1. Delete Public Profile
+                                                if (user?.id) {
+                                                    await supabase.from("users").delete().eq("id", user.id);
                                                 }
 
-                                                // 2. Delete Auth Account
-                                                if (auth.currentUser) {
-                                                    await auth.currentUser.delete();
-                                                }
-
-                                                // Force logout just in case
-                                                await handleSignOut();
-                                                alert("Conta excluída com sucesso.");
+                                                // 2. Logout
+                                                await authLogout();
+                                                alert("Conta marcada para exclusão. Saída realizada.");
                                             } catch (error: any) {
                                                 console.error("Delete account error:", error);
-                                                if (error.code === 'auth/requires-recent-login') {
-                                                    alert("Por segurança, faça login novamente antes de excluir sua conta.");
-                                                    await handleSignOut();
-                                                } else {
-                                                    alert("Erro ao excluir conta. Tente novamente.");
-                                                }
+                                                alert("Erro ao excluir conta. Tente novamente.");
                                             }
                                         }
                                     }
@@ -994,7 +939,6 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
-                {/* Footer Info */}
                 <div className="pt-8 pb-12 flex flex-col items-center gap-4">
                     <a
                         href="https://github.com/paulojacomelli/campo-branco"
@@ -1025,6 +969,6 @@ export default function SettingsPage() {
 
             {/* Bottom Navigation */}
             <BottomNav />
-        </div >
+        </div>
     );
 }

@@ -1,177 +1,35 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, AlertCircle } from 'lucide-react';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import { AlertCircle } from 'lucide-react';
 
 export default function LoginClient() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const router = useRouter();
-    const searchParams = useSearchParams();
-
-    // Robust Redirect Strategy: Priority to URL param, then LocalStorage (set by invite page)
-    const redirectUrl = searchParams.get('redirect') || (typeof window !== 'undefined' ? localStorage.getItem('login_redirect') : null);
-
-    useEffect(() => {
-        const forceLogout = async () => {
-            try {
-                await auth.signOut();
-                await fetch('/api/auth/logout', { method: 'POST' });
-                document.cookie = "__session=; path=/; max-age=0";
-                document.cookie = "auth_token=; path=/; max-age=0";
-                document.cookie = "role=; path=/; max-age=0";
-                document.cookie = "congregationId=; path=/; max-age=0";
-            } catch (e) {
-                console.warn("Silent logout fail", e);
-            }
-        };
-        forceLogout();
-    }, []);
-
-    const processLoginResult = async (user: any, provider: string) => {
-        let targetUid = user.uid;
-        let needsCreation = false;
-
-        try {
-            if (user.email) {
-                try {
-                    const q = query(collection(db, 'users'), where('email', '==', user.email));
-                    const querySnapshot = await getDocs(q);
-                    if (!querySnapshot.empty) {
-                        targetUid = querySnapshot.docs[0].id;
-                    } else {
-                        needsCreation = true;
-                    }
-                } catch (e) {
-                    console.warn("Login: Email check failed, skipping", e);
-                    needsCreation = true; // Assume new or let create fail if exists
-                }
-            } else {
-                try {
-                    const userRef = doc(db, "users", user.uid);
-                    const userSnap = await getDoc(userRef);
-                    if (!userSnap.exists()) needsCreation = true;
-                } catch (e) {
-                    console.warn("Login: UID check failed, skipping", e);
-                    needsCreation = true;
-                }
-            }
-
-            if (needsCreation) {
-                // Try create, if fails (e.g. exists and create rule blocks), ignore
-                try {
-                    await setDoc(doc(db, "users", targetUid), {
-                        name: user.displayName || user.email?.split('@')[0] || 'Novo Usuário',
-                        email: user.email,
-                        photoURL: user.photoURL,
-                        role: "PUBLICADOR",
-                        congregationId: "",
-                        createdAt: serverTimestamp(),
-                        provider: provider
-                    }, { merge: true }); // Merge true allows update-like behavior if exists
-                } catch (e) {
-                    console.warn("Login: Creation/Update failed", e);
-                }
-            }
-        } catch (err) {
-            console.error("Login Process Error (Non-Fatal):", err);
-        }
-
-        // --- ADMIN LOCK LOGIC (STATIC EXPORT SECURE STRATEGY) ---
-        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-
-        if (adminEmail && user.email === adminEmail) {
-            try {
-                // 1. Check if the lock exists
-                const securityRef = doc(db, 'config', 'security');
-                const snap = await getDoc(securityRef);
-
-                // 2. If NO lock exists, claim the throne
-                if (!snap.exists()) {
-                    console.log("🔒 Creating Security Lock for Super Admin...");
-                    // Create Lock
-                    await setDoc(securityRef, {
-                        superAdminUid: targetUid,
-                        locked: true,
-                        createdAt: serverTimestamp()
-                    });
-
-                    // Grant Role
-                    console.log("👑 Promoting User to SUPER_ADMIN...");
-                    await setDoc(doc(db, 'users', targetUid), {
-                        role: 'SUPER_ADMIN'
-                    }, { merge: true });
-                }
-            } catch (lockError) {
-                console.error("Failed to execute Admin Lock:", lockError);
-            }
-        }
-        // ----------------------------------------------------
-
-        if (targetUid !== user.uid) {
-            try {
-                const sourceDoc = await getDoc(doc(db, "users", targetUid));
-                if (sourceDoc.exists()) {
-                    const sourceData = sourceDoc.data();
-                    await setDoc(doc(db, "users", user.uid), {
-                        role: sourceData.role,
-                        congregationId: sourceData.congregationId,
-                        email: user.email,
-                        isShadowAuthDoc: true,
-                        linkedProfileId: targetUid,
-                        updatedAt: serverTimestamp()
-                    }, { merge: true });
-                }
-            } catch (syncErr) {
-                console.error("Failed to sync Auth Doc permissions:", syncErr);
-            }
-        }
-
-        let hasAcceptedTerms = false;
-        try {
-            const userDocRef = doc(db, "users", targetUid);
-            const userDocSnap = await getDoc(userDocRef);
-            if (userDocSnap.exists()) {
-                hasAcceptedTerms = !!userDocSnap.data().termsAcceptedAt;
-            }
-        } catch (e) {
-            console.warn("Login: Failed to check terms", e);
-            // Default to false, users will just accept again if needed
-        }
-
-        // Static Export: No Server Session Creation
-        // We rely on Client Auth (onAuthStateChanged)
-
-        // Clean up stored redirect
-        if (typeof window !== 'undefined') {
-            localStorage.removeItem('login_redirect');
-        }
-
-        if (!hasAcceptedTerms) {
-            window.location.href = '/legal-consent';
-        } else {
-            console.log("Redirecting to:", redirectUrl || '/dashboard');
-            window.location.href = redirectUrl || '/dashboard';
-        }
-    };
 
     const handleGoogleLogin = async () => {
         setLoading(true);
         setError('');
 
         try {
-            const provider = new GoogleAuthProvider();
-            const result = await signInWithPopup(auth, provider);
-            await processLoginResult(result.user, 'google.com');
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'consent',
+                    },
+                },
+            });
+
+            if (error) throw error;
+
         } catch (error: any) {
             console.error("Google Login Error:", error);
-            setError(error.message?.includes('Firebase Admin') ? "Erro de Configuração Local." : "Erro ao conectar com Google.");
-        } finally {
+            setError("Erro ao conectar com Google. Tente novamente.");
             setLoading(false);
         }
     };
@@ -212,7 +70,7 @@ export default function LoginClient() {
                                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                             </svg>
-                            <span>Entrar com Google</span>
+                            <span>{loading ? 'Carregando...' : 'Entrar com Google'}</span>
                         </button>
                     </div>
 

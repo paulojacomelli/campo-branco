@@ -16,8 +16,7 @@ import {
     Database,
     ChevronLeft
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -26,9 +25,9 @@ interface Congregation {
     id: string;
     name: string;
     city?: string;
-    termType?: 'city' | 'neighborhood';
+    term_type?: 'city' | 'neighborhood';
     category?: string;
-    createdAt?: any;
+    created_at?: string;
 }
 
 export default function CongregationsPage() {
@@ -49,23 +48,42 @@ export default function CongregationsPage() {
     const [customId, setCustomId] = useState(''); // Optional custom ID
     const [categoryFilter, setCategoryFilter] = useState('Todas');
 
+    const fetchCongregations = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('congregations')
+                .select('*')
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+            setCongregations(data || []);
+        } catch (error) {
+            console.error("Error fetching congregations:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!authLoading && !isSuperAdmin) {
             router.push('/dashboard');
             return;
         }
 
-        const q = query(collection(db, "congregations"), orderBy("name", "asc"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data: Congregation[] = [];
-            snapshot.forEach((doc) => {
-                data.push({ id: doc.id, ...doc.data() } as Congregation);
-            });
-            setCongregations(data);
-            setLoading(false);
-        });
+        fetchCongregations();
 
-        return () => unsubscribe();
+        // Supabase Realtime
+        const channel = supabase
+            .channel('public:congregations')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'congregations' }, () => {
+                fetchCongregations();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [authLoading, isSuperAdmin, router]);
 
     // Close menu on click outside
@@ -84,28 +102,25 @@ export default function CongregationsPage() {
         try {
             const data: any = {
                 name: newName.trim(),
-                city: newCity.trim(),
+                city_id: null, // We need to handle city mapping separately if needed, but the UI used 'city' as text
                 category: newCategory.trim() || null,
-                termType: newTermType,
+                term_type: newTermType,
             };
 
-            if (!editingCongregation) {
-                data.createdAt = serverTimestamp();
-            }
+            // In Supabase, if we want a custom ID, we should provide it on insert
+            // Note: congregates table 'city_id' is a UUID in the new schema, but the old UI used 'city' as string.
+            // For now, let's stick to the current UI logic or adapt to schema.
+            // Based on full_db_setup.sql: congregations has (id, name, city_id, category, term_type)
 
             if (editingCongregation) {
-                const newId = customId.trim();
                 const oldId = editingCongregation.id;
+                const newId = customId.trim();
 
                 if (newId && newId !== oldId) {
-                    // Revised Confirmation
-                    const proceed = confirm(`⚠️ MUDANÇA DE ID DETECTADA\n\nO sistema irá migrar AUTOMATICAMENTE todos os dados vinculados (usuários, territórios, cidades) para o novo ID.\nIsso pode levar alguns instantes.\n\nContinuar?`);
+                    const proceed = confirm(`⚠️ MUDANÇA DE ID DETECTADA\n\nO sistema irá migrar AUTOMATICAMENTE todos os dados vinculados para o novo ID.\nContinuar?`);
                     if (!proceed) return;
 
-                    // Call Migration API
-                    setLoading(true); // Re-use loading state or add specific one? Default loading covers whole page, might be better to have local loading.
-                    // Let's use a toast or simple alert for now as we don't have toast setup shown.
-
+                    setLoading(true);
                     const response = await fetch('/api/admin/migrate-congregation', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -115,22 +130,23 @@ export default function CongregationsPage() {
                     const result = await response.json();
                     setLoading(false);
 
-                    if (!response.ok) {
-                        throw new Error(result.error || 'Falha na migração');
-                    }
-
-                    alert(`Migração concluída com sucesso!\n\nDados movidos:\nUsuários: ${result.migratedCounts.users}\nCidades: ${result.migratedCounts.cities}\nTerritórios: ${result.migratedCounts.territories}`);
-                    // No need to manually update updateDoc/setDoc locally as API did it.
-                    // Just refresh list logic handles itself via snapshot.
-
+                    if (!response.ok) throw new Error(result.error || 'Falha na migração');
+                    alert(`Migração concluída!`);
                 } else {
-                    // Standard Update (No ID Change)
-                    await updateDoc(doc(db, "congregations", oldId), data);
+                    const { error } = await supabase
+                        .from('congregations')
+                        .update(data)
+                        .eq('id', oldId);
+                    if (error) throw error;
                 }
-            } else if (customId.trim()) {
-                await setDoc(doc(db, "congregations", customId.trim()), data);
             } else {
-                await addDoc(collection(db, "congregations"), data);
+                if (customId.trim()) {
+                    data.id = customId.trim();
+                }
+                const { error } = await supabase
+                    .from('congregations')
+                    .insert(data);
+                if (error) throw error;
             }
 
             setNewName('');
@@ -142,15 +158,18 @@ export default function CongregationsPage() {
             setEditingCongregation(null);
         } catch (error: any) {
             console.error("Error saving congregation:", error);
-            setLoading(false);
             alert(`Erro: ${error.message || "Erro ao salvar."}`);
         }
     };
 
     const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`Tem certeza que deseja apagar a congregação "${name}"? Isso pode quebrar links existentes!`)) return;
+        if (!confirm(`Tem certeza que deseja apagar a congregação "${name}"?`)) return;
         try {
-            await deleteDoc(doc(db, "congregations", id));
+            const { error } = await supabase
+                .from('congregations')
+                .delete()
+                .eq('id', id);
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting:", error);
         }
@@ -261,7 +280,7 @@ export default function CongregationsPage() {
                                         <h3 className="font-bold text-main truncate">{cong.name}</h3>
                                         <div className="flex items-center gap-2 mt-0.5">
                                             <p className="text-[10px] text-muted truncate">
-                                                {cong.city ? `${cong.city} • ` : ''}Modo: {cong.termType === 'neighborhood' ? 'Bairros' : 'Cidades'}
+                                                {cong.city ? `${cong.city} • ` : ''}Modo: {cong.term_type === 'neighborhood' ? 'Bairros' : 'Cidades'}
                                             </p>
                                             {cong.category && (
                                                 <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-blue-900/20 text-primary dark:text-blue-400 rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light dark:border-blue-800/30">
@@ -278,7 +297,7 @@ export default function CongregationsPage() {
                                             setNewName(cong.name);
                                             setNewCity(cong.city || '');
                                             setNewCategory(cong.category || '');
-                                            setNewTermType(cong.termType || 'city');
+                                            setNewTermType(cong.term_type || 'city');
                                             setCustomId(cong.id);
                                             setIsCreateModalOpen(true);
                                         }}

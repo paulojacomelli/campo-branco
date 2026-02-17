@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import {
     Map as MapIcon,
     Loader2,
@@ -68,7 +67,7 @@ function SharedPreviewContent() {
     const type = searchParams.get('type');
     const id = searchParams.get('id');
     const shareId = searchParams.get('shareId');
-    const { user } = useAuth();
+    const { user, profileName } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [title, setTitle] = useState('');
@@ -97,22 +96,23 @@ function SharedPreviewContent() {
         }
 
         try {
-            // 0. Fetch Shared List Metadata & Validation
-            const listRef = doc(db, "shared_lists", shareId);
-            const listSnap = await getDoc(listRef);
+            // 1. Fetch Shared List Metadata & Validation
+            const { data: listData, error: listError } = await supabase
+                .from('shared_lists')
+                .select('*')
+                .eq('id', shareId)
+                .single();
 
-            if (!listSnap.exists()) {
+            if (listError || !listData) {
                 setError("Lista compartilhada não encontrada.");
                 setLoading(false);
                 return;
             }
 
-            const listData = listSnap.data();
-
             // Check Expiration
-            if (listData.expiresAt) {
+            if (listData.expires_at) {
                 const now = new Date();
-                const expires = listData.expiresAt.toDate ? listData.expiresAt.toDate() : new Date(listData.expiresAt.seconds * 1000);
+                const expires = new Date(listData.expires_at);
                 if (now > expires) {
                     setError("Link expirado.");
                     setLoading(false);
@@ -120,93 +120,139 @@ function SharedPreviewContent() {
                 }
             }
 
-            // Verify if item belongs to this list
-            if (listData.items && !listData.items.includes(id)) {
-                setError("Item não pertence a esta lista compartilhada.");
-                setLoading(false);
-                return;
-            }
+            // 2. Fetch Item Data (Territory or City)
+            const table = type === 'city' ? 'cities' : 'territories';
+            const { data: mainData, error: mainError } = await supabase
+                .from(table)
+                .select('*')
+                .eq('id', id)
+                .single();
 
-            // 1. Fetch Item Data (Fallback Strategy)
-            let mainData: any = null;
-
-            // Try Snapshot Subcollection first
-            const itemRef = doc(db, "shared_lists", shareId, "items", id);
-            const itemSnap = await getDoc(itemRef);
-
-            if (itemSnap.exists()) {
-                mainData = itemSnap.data();
-            } else {
-                // Fallback to Live Collection
-                const collectionName = type === 'city' ? "cities" : "territories"; // 'type' comes from URL param
-                const liveItemRef = doc(db, collectionName, id);
-                const liveItemSnap = await getDoc(liveItemRef);
-
-                if (liveItemSnap.exists()) {
-                    mainData = liveItemSnap.data();
-                }
-            }
-
-            if (!mainData) {
+            if (mainError || !mainData) {
                 setError("Item não encontrado.");
                 setLoading(false);
                 return;
             }
 
-            setPageCongregationId(mainData.congregationId || listData.congregationId || null);
+            const currentCongregationId = mainData.congregation_id || listData.congregation_id;
+            setPageCongregationId(currentCongregationId || null);
 
-            // 2. Fetch Addresses (Fallback Strategy)
-            const addresses: PreviewItem[] = [];
-
-            // Try Snapshot Subcollection first
-            const addrRef = collection(db, "shared_lists", shareId, "territory_addresses");
-            const qSnap = query(addrRef, where("territoryId", "==", id));
-            const addrSnap = await getDocs(qSnap);
-
-            if (!addrSnap.empty) {
-                addrSnap.forEach(doc => {
-                    addresses.push({ id: doc.id, ...doc.data() } as PreviewItem);
-                });
+            // Fetch Congregation Category
+            if (currentCongregationId) {
+                const { data: congData } = await supabase
+                    .from('congregations')
+                    .select('category')
+                    .eq('id', currentCongregationId)
+                    .single();
+                if (congData) setCongregationType(congData.category as any);
             }
-            // Note: No fallback to live addresses - shared links use snapshots only
 
-            // 3. Fetch Results (to overlay status)
-            const resultsRef = collection(db, "shared_lists", shareId, "results");
-            const resultsSnap = await getDocs(resultsRef);
-            const linkResults: Record<string, any> = {};
-            resultsSnap.forEach(rdoc => {
-                linkResults[rdoc.id] = rdoc.data();
+            // 3. Fetch Addresses (Try Snapshots first)
+            let addresses: PreviewItem[] = [];
+
+            // Try to get address snapshots for this list
+            const { data: addrSnapshots } = await supabase
+                .from('shared_list_snapshots')
+                .select('data')
+                .eq('shared_list_id', shareId);
+
+            if (addrSnapshots && addrSnapshots.length > 0) {
+                // Filter snapshots to get only relevant addresses for this territory/city
+                const allData = addrSnapshots.map(s => s.data);
+                const filteredData = type === 'city'
+                    ? allData.filter(d => d.city_id === id)
+                    : allData.filter(d => d.territory_id === id);
+
+                if (filteredData.length > 0) {
+                    addresses = filteredData.map(a => ({
+                        id: a.id,
+                        street: a.street,
+                        number: a.number,
+                        complement: a.complement,
+                        residentName: a.resident_name,
+                        googleMapsLink: a.google_maps_link,
+                        lat: a.lat,
+                        lng: a.lng,
+                        isActive: a.is_active,
+                        gender: a.gender,
+                        isDeaf: a.is_deaf,
+                        isMinor: a.is_minor,
+                        isStudent: a.is_student,
+                        isNeurodivergent: a.is_neurodivergent,
+                        observations: a.observations,
+                        visitStatus: a.visit_status,
+                        territoryId: a.territory_id,
+                        cityId: a.city_id
+                    }));
+                }
+            }
+
+            // Fallback to table if no snapshots found or empty
+            if (addresses.length === 0) {
+                const { data: addrData, error: addrError } = await supabase
+                    .from('addresses')
+                    .select('*')
+                    .eq(type === 'city' ? 'city_id' : 'territory_id', id);
+
+                if (!addrError && addrData) {
+                    addresses = addrData.map(a => ({
+                        id: a.id,
+                        street: a.street,
+                        number: a.number,
+                        complement: a.complement,
+                        residentName: a.resident_name,
+                        googleMapsLink: a.google_maps_link,
+                        lat: a.lat,
+                        lng: a.lng,
+                        isActive: a.is_active,
+                        gender: a.gender,
+                        isDeaf: a.is_deaf,
+                        isMinor: a.is_minor,
+                        isStudent: a.is_student,
+                        isNeurodivergent: a.is_neurodivergent,
+                        observations: a.observations,
+                        visitStatus: a.visit_status,
+                        territoryId: a.territory_id,
+                        cityId: a.city_id
+                    }));
+                }
+            }
+
+            // 4. Fetch Results (visits linked to this shared list)
+            const { data: visitsData } = await supabase
+                .from('visits')
+                .select('address_id, status')
+                .eq('shared_list_id', shareId);
+
+            const linkResults: Record<string, string> = {};
+            visitsData?.forEach(v => {
+                linkResults[v.address_id] = v.status;
             });
 
             // Merge
-            // Note: sort addresses by order or street/number if needed.
             const mergedItems = addresses.map(addr => {
-                const result = linkResults[addr.id];
+                const statusFromVisit = linkResults[addr.id];
+                const finalStatus = statusFromVisit || addr.visitStatus;
                 return {
                     ...addr,
-                    visitStatus: result?.status || addr.visitStatus,
-                    completed: (result?.status || addr.visitStatus) === 'contacted'
+                    visitStatus: finalStatus,
+                    completed: finalStatus === 'contacted'
                 };
             });
 
-            // Sort merged items (optional but good for consistency)
+            // Sort merged items
             mergedItems.sort((a, b) => {
                 const streetA = a.street || '';
                 const streetB = b.street || '';
                 if (streetA !== streetB) return streetA.localeCompare(streetB);
-
-                // Try numeric sort for numbers
                 const numA = parseInt(a.number || '0');
                 const numB = parseInt(b.number || '0');
                 if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-
                 return (a.number || '').localeCompare(b.number || '');
             });
 
-            // Set Title/Subtitle
             setTitle(mainData.name);
             setSubtitle(mainData.description || (type === 'territory' ? "Território" : "Cidade"));
-
             setItems(mergedItems);
             setLoading(false);
 
@@ -232,47 +278,35 @@ function SharedPreviewContent() {
         if (!selectedAddressForReport || !shareId) return;
 
         try {
-            const { writeBatch, collection, doc, serverTimestamp, setDoc, updateDoc } = await import('firebase/firestore');
-            const batch = writeBatch(db);
-            const now = serverTimestamp();
+            const visit_date = new Date().toISOString();
 
-            // 1. Shared List Result (Publicly Writable)
-            const resultRef = doc(db, "shared_lists", shareId, "results", selectedAddressForReport.id);
-            batch.set(resultRef, {
-                status: data.status,
-                observations: data.observations || '',
-                updatedAt: now,
-                reportedBy: user?.uid || 'anonymous'
-            }, { merge: true });
-
-            // 2. If Authenticated, try to log actual visit (Best Effort)
-            if (user) {
-                const visitRef = doc(collection(db, "addresses", selectedAddressForReport.id, "visits"));
-                batch.set(visitRef, {
+            // Insert visit record into Supabase
+            const { error: visitError } = await supabase
+                .from('visits')
+                .insert({
+                    address_id: selectedAddressForReport.id,
+                    territory_id: selectedAddressForReport.territoryId,
+                    shared_list_id: shareId,
+                    congregation_id: pageCongregationId,
+                    user_id: user?.id || null,
+                    publisher_name: profileName || 'Publicador (Link)',
                     status: data.status,
-                    date: now,
-                    userId: user.uid,
-                    userName: user.displayName,
                     notes: data.observations || '',
-                    congregationId: pageCongregationId,
-                    cityId: selectedAddressForReport.cityId,
-                    territoryId: selectedAddressForReport.territoryId,
-                    shareId: shareId
+                    visit_date: visit_date,
+                    tags_snapshot: {
+                        is_deaf: data.isDeaf,
+                        is_minor: data.isMinor,
+                        is_student: data.isStudent,
+                        is_neurodivergent: data.isNeurodivergent,
+                        gender: data.gender
+                    }
                 });
 
-                // Try to update address too
-                try {
-                    const addressRef = doc(db, "addresses", selectedAddressForReport.id);
-                    const updates: any = {
-                        visitStatus: data.status,
-                        lastVisitedAt: now
-                    };
-                    if (data.status === 'contacted') updates.completed = true;
-                    batch.update(addressRef, updates); // Add to batch
-                } catch (e) { console.warn("Cannot update address directly"); }
-            }
+            if (visitError) throw visitError;
 
-            await batch.commit();
+            // If it's a "contacted" status, we might want to update the address status too
+            // However, shared links usually don't have full permission to update 'addresses' table directly
+            // unless RLS allows it. Assuming the 'visits' record is enough for the shared view.
 
             // Refresh Local State
             fetchData();
@@ -282,7 +316,8 @@ function SharedPreviewContent() {
             console.error("Error saving visit:", error);
             alert("Erro ao salvar visita. Tente novamente.");
         }
-    };    // The code uses `shareId || null`.
+    };
+    // The code uses `shareId || null`.
 
     // If we have a shareId, we use it.
 

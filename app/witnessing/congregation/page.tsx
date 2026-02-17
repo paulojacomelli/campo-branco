@@ -8,18 +8,17 @@ import {
     Store,
     ArrowRight
 } from 'lucide-react';
-import BottomNav from '@/app/components/BottomNav';
-import { db } from '@/lib/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useSearchParams } from 'next/navigation';
+import BottomNav from '@/app/components/BottomNav';
 
 interface City {
     id: string;
     name: string;
     uf: string;
-    congregationId: string;
+    congregation_id: string; // Note: snake_case from Supabase
 }
 
 function WitnessingCityListContent() {
@@ -36,22 +35,39 @@ function WitnessingCityListContent() {
             return;
         }
 
-        const q = query(
-            collection(db, "cities"),
-            where("congregationId", "==", congregationId)
-        );
+        const fetchCities = async () => {
+            const { data, error } = await supabase
+                .from('cities')
+                .select('*')
+                .eq('congregation_id', congregationId)
+                .order('name');
 
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const citiesData: City[] = [];
-            querySnapshot.forEach((doc) => {
-                citiesData.push({ id: doc.id, ...doc.data() } as City);
-            });
-            citiesData.sort((a, b) => a.name.localeCompare(b.name));
-            setCities(citiesData);
+            if (data) {
+                setCities(data);
+            }
+            if (error) {
+                console.error("Error fetching cities:", error);
+            }
             setLoading(false);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchCities();
+
+        const subscription = supabase
+            .channel(`cities:congrgation=${congregationId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'cities',
+                filter: `congregation_id=eq.${congregationId}`
+            }, (payload) => {
+                fetchCities();
+            })
+            .subscribe();
+
+        return () => {
+            subscription.unsubscribe();
+        };
     }, [congregationId]);
 
     const filteredCities = cities.filter(city =>

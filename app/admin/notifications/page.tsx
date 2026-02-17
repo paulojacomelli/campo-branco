@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, getDocs } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -25,9 +24,9 @@ interface NotificationTemplate {
     title: string;
     body: string;
     type: 'system' | 'reminder' | 'alert';
-    isActive: boolean;
+    is_active: boolean;
     slug?: string; // System trigger identifier
-    createdAt?: any;
+    created_at?: string;
 }
 
 export default function NotificationManagementPage() {
@@ -36,6 +35,23 @@ export default function NotificationManagementPage() {
     const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
     const [loading, setLoading] = useState(true);
 
+    const fetchTemplates = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('notification_templates')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setTemplates(data || []);
+        } catch (error) {
+            console.error("Error fetching templates:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!authLoading && !isSuperAdmin) {
             router.push('/dashboard');
@@ -43,45 +59,51 @@ export default function NotificationManagementPage() {
         }
 
         if (isSuperAdmin) {
-            const q = query(collection(db, 'notification_templates'), orderBy('createdAt', 'desc'));
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const data = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as NotificationTemplate[];
-                setTemplates(data);
-                setLoading(false);
-            });
-            return () => unsubscribe();
+            fetchTemplates();
+
+            const channel = supabase
+                .channel('public:notification_templates')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_templates' }, () => {
+                    fetchTemplates();
+                })
+                .subscribe();
+
+            return () => {
+                supabase.removeChannel(channel);
+            };
         }
     }, [isSuperAdmin, authLoading, router]);
 
     const handleToggleActive = async (template: NotificationTemplate) => {
         try {
-            await updateDoc(doc(db, 'notification_templates', template.id), {
-                isActive: !template.isActive
-            });
+            const { error } = await supabase
+                .from('notification_templates')
+                .update({ is_active: !template.is_active })
+                .eq('id', template.id);
+            if (error) throw error;
         } catch (e) {
             alert("Erro ao atualizar status.");
         }
     };
 
     const handleTestNotification = async (template: NotificationTemplate) => {
-        if (Notification.permission === 'granted') {
-            new Notification(template.title, {
-                body: template.body,
-                icon: "/app-icon.png"
-            });
-            alert("Notificação de teste enviada para este dispositivo.");
-        } else {
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+            if (Notification.permission === 'granted') {
                 new Notification(template.title, {
                     body: template.body,
                     icon: "/app-icon.png"
                 });
+                alert("Teste enviado!");
             } else {
-                alert("Permissão de notificação negada.");
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    new Notification(template.title, {
+                        body: template.body,
+                        icon: "/app-icon.png"
+                    });
+                } else {
+                    alert("Acesso negado.");
+                }
             }
         }
     };
@@ -90,74 +112,14 @@ export default function NotificationManagementPage() {
     // We check if the required slugs exist, and if so, we ensure they are active and have the correct text.
     // If not, we create them.
     useEffect(() => {
-        if (!isSuperAdmin || loading) return;
+        if (!isSuperAdmin || loading || templates.length === 0) return;
 
         const ensureSystemTemplates = async () => {
             const defaults = [
-                {
-                    title: "🗺️ Novo Mapa Atribuído",
-                    body: "Você agora é o responsável por este território. Bom trabalho!",
-                    type: "system",
-                    slug: "map_assigned",
-                    isActive: true
-                },
-                {
-                    title: "📝 Não esqueça de anotar",
-                    body: "Ao encontrar alguém, não se esqueça de anotar como foi a visita no aplicativo.",
-                    type: "reminder",
-                    slug: "visit_note_reminder",
-                    isActive: true
-                },
-                {
-                    title: "📍 Endereços Pendentes",
-                    body: "Ainda tem alguns endereços pendentes neste mapa. Você já fez eles?",
-                    type: "alert",
-                    slug: "pending_addresses",
-                    isActive: true
-                },
-                {
-                    title: "🚀 Meta do Dia",
-                    body: "Falta pouco para fechar seu mapa! Que tal tentar concluir os endereços restantes hoje?",
-                    type: "reminder",
-                    slug: "encourage_finish",
-                    isActive: true
-                },
-                {
-                    title: "📅 Uma Semana de Mapa",
-                    body: "Faz uma semana que você designou este mapa. Tente concluir até o fim de semana!",
-                    type: "reminder",
-                    slug: "encourage_1week",
-                    isActive: true
-                },
-                {
-                    title: "⏳ Duas Semanas - Precisa de Ajuda?",
-                    body: "Este mapa está em aberto há 15 dias. Se precisar de ajuda para concluir, fale com o superintendente.",
-                    type: "alert",
-                    slug: "encourage_2weeks",
-                    isActive: true
-                },
-                {
-                    title: "⚠️ Link Vencendo",
-                    body: "Seu link compartilhado vai vencer em breve. Acesse o painel para renovar.",
-                    type: "system",
-                    slug: "link_expiration",
-                    isActive: true
-                }
+                { title: "🗺️ Novo Mapa Atribuído", body: "Você agora é o responsável por este território. Bom trabalho!", type: "system", slug: "map_assigned", is_active: true },
+                { title: "📝 Não esqueça de anotar", body: "Ao encontrar alguém, não se esqueça de anotar como foi a visita no aplicativo.", type: "reminder", slug: "visit_note_reminder", is_active: true },
+                { title: "📍 Endereços Pendentes", body: "Ainda tem alguns endereços pendentes neste mapa. Você já fez eles?", type: "alert", slug: "pending_addresses", is_active: true }
             ];
-
-            // We only run this once per session to avoid heavy writes? 
-            // Better: Check local state "templates" against defaults.
-            // Since we subscribe to "templates", we can check if they are missing.
-
-            // Note: This logic runs whenever "templates" changes, which is fine as long as we guard it.
-            // But "templates" updates after we write, causing loop if we are not careful.
-            // Let's use a flag or just check if MATCHING exists.
-
-            // Actually, we can just do a one-off check on mount (or when loading finishes) 
-            // but we need the current DB state.
-            // The onSnapshot above gives us the state.
-
-            if (templates.length === 0 && loading) return; // Wait for load
 
             // Diffing
             const missingOrOutdated = defaults.filter(def => {
@@ -175,20 +137,14 @@ export default function NotificationManagementPage() {
             for (const def of missingOrOutdated) {
                 const existing = templates.find(t => t.slug === def.slug);
                 if (existing) {
-                    await updateDoc(doc(db, 'notification_templates', existing.id), {
-                        title: def.title,
-                        body: def.body,
-                        type: def.type,
-                        // isActive: true // Don't force active if user disabled it? 
-                        // User said "update available", implies making them available.
-                        // I'll leave isActive alone if it exists, to respect user choice.
-                    });
+                    await supabase
+                        .from('notification_templates')
+                        .update({ title: def.title, body: def.body, type: def.type })
+                        .eq('id', existing.id);
                 } else {
-                    await addDoc(collection(db, 'notification_templates'), {
-                        ...def,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
+                    await supabase
+                        .from('notification_templates')
+                        .insert([def]);
                 }
             }
         };
@@ -235,7 +191,7 @@ export default function NotificationManagementPage() {
                 ) : (
                     <div className="space-y-4">
                         {templates.map(template => (
-                            <div key={template.id} className={`group bg-surface rounded-2xl p-5 border shadow-sm transition-all hover:shadow-md ${template.isActive ? 'border-surface-border' : 'border-surface-border opacity-75 grayscale-[0.5]'}`}>
+                            <div key={template.id} className={`group bg-surface rounded-2xl p-5 border shadow-sm transition-all hover:shadow-md ${template.is_active ? 'border-surface-border' : 'border-surface-border opacity-75 grayscale-[0.5]'}`}>
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-2">
                                         <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${template.type === 'alert' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' :
@@ -258,15 +214,13 @@ export default function NotificationManagementPage() {
                                         >
                                             <Bell className="w-3.5 h-3.5" /> Testar
                                         </button>
-
                                         <div className="h-4 w-px bg-surface-border mx-1" />
-
                                         <button
                                             onClick={() => handleToggleActive(template)}
-                                            className={`transition-colors ${template.isActive ? 'text-green-500 hover:text-green-600' : 'text-muted hover:text-main'}`}
-                                            title={template.isActive ? "Desativar" : "Ativar"}
+                                            className={`transition-colors ${template.is_active ? 'text-green-500 hover:text-green-600' : 'text-muted hover:text-main'}`}
+                                            title={template.is_active ? "Desativar" : "Ativar"}
                                         >
-                                            {template.isActive ? (
+                                            {template.is_active ? (
                                                 <ToggleRight className="w-8 h-8" />
                                             ) : (
                                                 <ToggleLeft className="w-8 h-8" />
@@ -274,7 +228,6 @@ export default function NotificationManagementPage() {
                                         </button>
                                     </div>
                                 </div>
-
                                 <div>
                                     <h3 className="font-bold text-main text-lg mb-1">{template.title}</h3>
                                     <p className="text-muted text-sm leading-relaxed">{template.body}</p>

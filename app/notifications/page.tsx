@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/context/AuthContext";
-import { collection, query, where, getDocs, collectionGroup, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from 'next/navigation';
 import ActionCenter, { IdleTerritory } from "@/app/components/Dashboard/ActionCenter";
@@ -23,30 +22,26 @@ export default function NotificationsPage() {
         if (!user) return;
         const fetchAssignments = async () => {
             try {
-                const q = query(
-                    collection(db, "shared_lists"),
-                    where("assignedTo", "==", user.uid)
-                );
-                const snap = await getDocs(q);
-                const lists: any[] = [];
-                snap.forEach(d => {
-                    const data = d.data();
-                    if (data.status !== 'completed' && data.status !== 'archived') {
-                        lists.push({ id: d.id, ...data });
-                    }
-                });
+                const { data: lists, error } = await supabase
+                    .from('shared_lists')
+                    .select('*')
+                    .eq('assigned_to', user.id)
+                    .not('status', 'in', '(\'completed\',\'archived\')');
+
+                if (error) throw error;
+                if (!lists) return;
 
                 setPendingMapsCount(lists.length);
 
                 const expiring = lists.filter(l => {
-                    if (!l.expiresAt) return false;
-                    const expires = new Date(l.expiresAt.seconds * 1000);
+                    if (!l.expires_at) return false;
+                    const expires = new Date(l.expires_at);
                     const now = new Date();
                     const diffMs = expires.getTime() - now.getTime();
                     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                     return diffDays > 0 && diffDays <= 10;
                 }).map(l => {
-                    const expires = new Date(l.expiresAt.seconds * 1000);
+                    const expires = new Date(l.expires_at);
                     const now = new Date();
                     const diffMs = expires.getTime() - now.getTime();
                     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -68,36 +63,32 @@ export default function NotificationsPage() {
 
         const fetchIdleAndCompletion = async () => {
             try {
-                // City Completion Setup
-                // Need total maps vs completed maps
                 const isGlobal = role === 'SUPER_ADMIN';
 
-                // Fetch Territory Count (All if SuperAdmin)
-                const terrQuery = isGlobal
-                    ? collection(db, "territories")
-                    : query(collection(db, "territories"), where("congregationId", "==", congregationId));
-                const terrSnap = await getDocs(terrQuery);
-                const mapsCount = terrSnap.size;
+                // Fetch Territories
+                let terrQuery = supabase.from('territories').select('*');
+                if (!isGlobal) terrQuery = terrQuery.eq('congregation_id', congregationId);
+                const { data: territories, error: terrError } = await terrQuery;
 
-                if (mapsCount > 0) {
+                if (terrError) throw terrError;
+                const mapsCount = territories?.length || 0;
+
+                if (mapsCount > 0 && territories) {
                     // 1. Get ALL shared lists history
-                    const historyQ = isGlobal
-                        ? collection(db, "shared_lists")
-                        : query(collection(db, "shared_lists"), where("congregationId", "==", congregationId));
-                    const historySnap = await getDocs(historyQ);
+                    let historyQuery = supabase.from('shared_lists').select('*');
+                    if (!isGlobal) historyQuery = historyQuery.eq('congregation_id', congregationId);
+                    const { data: history, error: histError } = await historyQuery;
+
+                    if (histError) throw histError;
 
                     // Map History Dates
                     const latestActivityMap = new Map<string, number>();
-                    const workedMapIds = new Set<string>(); // For coverage
+                    const workedMapIds = new Set<string>();
 
-                    historySnap.docs.forEach(doc => {
-                        const data = doc.data();
-
-                        // A. Build Activity Map
+                    history?.forEach(item => {
                         const datesToCheck: number[] = [];
-                        if (data.createdAt) datesToCheck.push(data.createdAt.seconds * 1000);
-                        if (data.completedAt) datesToCheck.push(data.completedAt.seconds * 1000);
-                        if (data.returnedAt) datesToCheck.push(data.returnedAt.seconds * 1000);
+                        if (item.created_at) datesToCheck.push(new Date(item.created_at).getTime());
+                        if (item.returned_at) datesToCheck.push(new Date(item.returned_at).getTime());
 
                         const maxDate = datesToCheck.length > 0 ? Math.max(...datesToCheck) : 0;
 
@@ -106,80 +97,63 @@ export default function NotificationsPage() {
                             if (maxDate > current) latestActivityMap.set(id, maxDate);
                         };
 
-                        if (data.territoryId) updateMap(data.territoryId);
-                        if (data.items && Array.isArray(data.items)) {
-                            data.items.forEach((id: string) => updateMap(id));
+                        // Support both single territory and collections (items array)
+                        if (item.territory_id) updateMap(item.territory_id);
+                        if (item.items && Array.isArray(item.items)) {
+                            item.items.forEach((id: string) => updateMap(id));
                         }
 
-                        // B. Collect IDs for Coverage (only completed)
-                        if (data.status === 'completed') {
-                            if (data.territoryId) workedMapIds.add(data.territoryId);
-                            if (data.items && Array.isArray(data.items)) {
-                                data.items.forEach((id: string) => workedMapIds.add(id));
+                        if (item.status === 'completed') {
+                            if (item.territory_id) workedMapIds.add(item.territory_id);
+                            if (item.items && Array.isArray(item.items)) {
+                                item.items.forEach((id: string) => workedMapIds.add(id));
                             }
                         }
                     });
 
-                    // Check idle
-                    const citiesQuery = isGlobal
-                        ? collection(db, "cities")
-                        : query(collection(db, "cities"), where("congregationId", "==", congregationId));
-                    const citiesSnap = await getDocs(citiesQuery);
+                    // Fetch Cities for names
+                    let citiesQuery = supabase.from('cities').select('id, name');
+                    if (!isGlobal) citiesQuery = citiesQuery.eq('congregation_id', congregationId);
+                    const { data: cities } = await citiesQuery;
                     const cityMap: Record<string, string> = {};
-                    citiesSnap.forEach(doc => { const d = doc.data(); if (d.name) cityMap[doc.id] = d.name; });
+                    cities?.forEach(c => { if (c.name) cityMap[c.id] = c.name; });
 
-                    // Time thresholds
                     const now = new Date();
-                    const sixMonthsAgo = new Date();
-                    sixMonthsAgo.setMonth(now.getMonth() - 6);
-
                     const oneYearAgo = new Date();
                     oneYearAgo.setFullYear(now.getFullYear() - 1);
 
                     const idleList: any[] = [];
 
-                    terrSnap.docs.forEach(d => {
-                        const data = d.data();
-                        // Ignore if currently assigned
-                        if (data.assignedTo || data.status === 'OCUPADO') return;
+                    territories.forEach(t => {
+                        if (t.status === 'ASSIGNED' || t.status === 'OCUPADO') return;
 
-                        // Determine actual last visit from History OR current data
-                        let lastActivity = data.lastVisit ? data.lastVisit.toDate().getTime() : 0;
-                        const historyActivity = latestActivityMap.get(d.id) || 0;
-                        if (historyActivity > lastActivity) {
-                            lastActivity = historyActivity;
-                        }
-
-                        const lastActivityDate = lastActivity > 0 ? new Date(lastActivity) : null;
-                        const cityName = (data.cityId && cityMap[data.cityId]) || data.city || 'Cidade Desconhecida';
+                        const historyActivity = latestActivityMap.get(t.id) || 0;
+                        const lastActivityDate = historyActivity > 0 ? new Date(historyActivity) : null;
+                        const cityName = cityMap[t.city_id] || t.city || 'Cidade Desconhecida';
 
                         if (!lastActivityDate) {
-                            // CASE 1: NEVER VISITED (Red)
                             idleList.push({
-                                id: d.id,
-                                name: data.name || 'Sem Nome',
+                                id: t.id,
+                                name: t.name || 'Sem Nome',
                                 city: cityName,
-                                cityId: data.cityId,
-                                congregationId: data.congregationId,
+                                cityId: t.city_id,
+                                congregationId: t.congregation_id,
                                 lastVisit: null,
                                 variant: 'danger'
                             });
                         } else if (lastActivityDate < oneYearAgo) {
-                            // CASE 2: > 1 YEAR (Orange)
                             idleList.push({
-                                id: d.id,
-                                name: data.name || 'Sem Nome',
+                                id: t.id,
+                                name: t.name || 'Sem Nome',
                                 city: cityName,
-                                cityId: data.cityId,
-                                congregationId: data.congregationId,
+                                cityId: t.city_id,
+                                congregationId: t.congregation_id,
                                 lastVisit: lastActivityDate,
                                 variant: 'warning'
                             });
                         }
                     });
 
-
-                    // Sort
                     idleList.sort((a, b) => {
                         if (!a.lastVisit && !b.lastVisit) return 0;
                         if (!a.lastVisit) return -1;
@@ -188,9 +162,7 @@ export default function NotificationsPage() {
                     });
                     setIdleTerritories(idleList);
 
-                    // Coverage Calculation
                     const coverageVal = (workedMapIds.size / mapsCount) * 100;
-
                     if (coverageVal >= 100) {
                         setCityCompletion({ cityName: "Território Completo", percentage: 100 });
                     }
@@ -225,7 +197,7 @@ export default function NotificationsPage() {
 
             <main className="px-6 py-6 max-w-xl mx-auto">
                 <ActionCenter
-                    userName={profileName || user?.displayName || 'Publicador'}
+                    userName={profileName || 'Publicador'}
                     pendingMapsCount={pendingMapsCount}
                     hasPendingAnnotation={false}
                     idleTerritories={isElder || isServant || role === 'SUPER_ADMIN' ? idleTerritories : []}

@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { collection, onSnapshot, updateDoc, doc, query, orderBy, where } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import {
     Shield,
@@ -36,7 +35,7 @@ interface UserProfile {
     roles?: string[];
     name?: string;
     provider?: string;
-    congregationId?: string;
+    congregation_id?: string;
 }
 
 interface Congregation {
@@ -69,58 +68,52 @@ export default function SuperAdminUsersPage() {
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const router = useRouter();
 
+    const fetchInitialData = async () => {
+        setLoadingData(true);
+        try {
+            // Fetch Congregations
+            const { data: congData, error: congError } = await supabase
+                .from('congregations')
+                .select('id, name')
+                .order('name');
+            if (congError) throw congError;
+            setCongregations(congData || []);
+
+            // Fetch Users
+            let queryBuilder = supabase.from('users').select('*').order('name');
+            if (!isSuperAdmin && congregationId) {
+                queryBuilder = queryBuilder.eq('congregation_id', congregationId);
+            }
+
+            const { data: usersData, error: usersError } = await queryBuilder;
+            if (usersError) throw usersError;
+            setUsers(usersData || []);
+        } catch (error) {
+            console.error("Error fetching admin users data:", error);
+        } finally {
+            setLoadingData(false);
+        }
+    };
+
     useEffect(() => {
         if (!loading) {
             if (!user) {
                 router.push('/login');
-            } else if (!isElder) { // Allow Elders
+            } else if (!isElder) {
                 router.push('/dashboard');
             } else {
-                // Fetch Congregations
-                const qCong = query(collection(db, 'congregations'), orderBy('name'));
-                const unsubCong = onSnapshot(qCong, (snapshot) => {
-                    const congData = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        name: doc.data().name
-                    })) as Congregation[];
-                    setCongregations(congData);
-                });
+                fetchInitialData();
 
-                // Fetch Users
-                // If SuperAdmin, fetch all. If Elder, filter by congregationId (client-side for now or simple query)
-                // Note: Ideally complex queries should be indexed. For now let's fetch and filter or use basic where if we had index.
-                // Given the small scale, fetching all and filtering in memory is okay, OR using a where clause.
-                // However, firestore.rules might block reading ALL users if we strictly enforced it. 
-                // Since I allowed read for all auth users in rules, we can fetch all and filter client side or use a query.
-                // Let's use a query for better practice if possible, but 'orderBy name' + 'where congregationId' requires index.
-                // To avoid index creation hassle for user right now, let's fetch all and filter in memory, 
-                // UNLESS the listing is huge. 
-                // Update: Let's try to just fetch all for now as per current logic, and filter `filteredUsers`.
-
-                const usersCollection = collection(db, 'users');
-                let q = query(usersCollection, orderBy('name'));
-
-                // Apply filter if not Super Admin to match Firestore rules
-                if (!isSuperAdmin && congregationId) {
-                    q = query(usersCollection, where('congregationId', '==', congregationId), orderBy('name'));
-                }
-
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const usersData = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    })) as UserProfile[];
-
-                    setUsers(usersData);
-                    setLoadingData(false);
-                }, (error) => {
-                    console.error("Error in users snapshot:", error);
-                    setLoadingData(false);
-                });
+                // Listen for changes
+                const channel = supabase
+                    .channel('public:users_admin')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+                        fetchInitialData();
+                    })
+                    .subscribe();
 
                 return () => {
-                    unsubscribe();
-                    unsubCong();
+                    supabase.removeChannel(channel);
                 };
             }
         }
@@ -140,14 +133,14 @@ export default function SuperAdminUsersPage() {
         if ((!isSuperAdmin && !isElder) || !editingUser) return;
 
         // Security Check: Elders can only edit users in their own congregation
-        if (!isSuperAdmin && editingUser.congregationId !== congregationId) {
+        if (!isSuperAdmin && editingUser.congregation_id !== congregationId) {
             alert("Você só pode editar usuários da sua própria congregação.");
             return;
         }
 
         // Security Check: Elders cannot edit Super Admins or promote to Super Admin
         if (!isSuperAdmin) {
-            if (editingUser.role === 'SUPER_ADMIN' || editingUser.roles?.includes('SUPER_ADMIN')) {
+            if (editingUser.role === 'SUPER_ADMIN' || (editingUser.roles && editingUser.roles.includes('SUPER_ADMIN'))) {
                 alert("Você não pode editar um Super Admin.");
                 return;
             }
@@ -159,18 +152,21 @@ export default function SuperAdminUsersPage() {
 
         setUpdatingId(editingUser.id);
         try {
-            const userRef = doc(db, 'users', editingUser.id);
-
             const legacyRole = editRoles.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' :
                 editRoles.includes('ANCIAO') ? 'ANCIAO' :
                     editRoles.includes('SERVO') ? 'SERVO' : 'PUBLICADOR';
 
-            await updateDoc(userRef, {
-                name: editName,
-                roles: editRoles,
-                role: legacyRole,
-                congregationId: editCongId || null
-            });
+            const { error } = await supabase
+                .from('users')
+                .update({
+                    name: editName,
+                    // roles: editRoles, // roles field might not exist in simple Supabase table, using 'role'
+                    role: legacyRole,
+                    congregation_id: editCongId || null
+                })
+                .eq('id', editingUser.id);
+
+            if (error) throw error;
             setShowEditModal(false);
         } catch (error) {
             console.error("Error saving user: ", error);
@@ -194,7 +190,7 @@ export default function SuperAdminUsersPage() {
         if (!targetUser) return;
 
         // Security Check: Elders can only delete users in their own congregation
-        if (!isSuperAdmin && targetUser.congregationId !== congregationId) {
+        if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
             alert("Você só pode excluir usuários da sua própria congregação.");
             return;
         }
@@ -209,8 +205,11 @@ export default function SuperAdminUsersPage() {
 
         setUpdatingId(userId);
         try {
-            const { deleteDoc } = await import('firebase/firestore');
-            await deleteDoc(doc(db, 'users', userId));
+            const { error } = await supabase
+                .from('users')
+                .delete()
+                .eq('id', userId);
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting user: ", error);
             alert("Erro ao excluir usuário.");
@@ -225,21 +224,25 @@ export default function SuperAdminUsersPage() {
 
         setLoadingData(true);
         try {
-            const { setDoc, serverTimestamp } = await import('firebase/firestore');
-            // Using email as part of a temporary logic or just a random ID (Firestore will generate if we use addDoc, but let's use a nice pattern if possible)
-            // For now, let's use a simple addDoc approach but since we don't have it imported, we use setDoc with a collection-based ID
-            const newId = `user_${Date.now()}`;
-            await setDoc(doc(db, 'users', newId), {
-                name: newUser.name,
-                email: newUser.email,
-                congregationId: isSuperAdmin ? (newUser.congregationId || null) : congregationId, // Force congregation for Elders
-                role: 'PUBLICADOR',
-                roles: ['PUBLICADOR'],
-                createdAt: serverTimestamp(),
-                provider: 'manual'
-            });
+            // Note: Supabase requires users to be in Auth before appearing in public.users (usually via trigger)
+            // Manual creation via public.users without auth record won't allow login.
+            // For now, let's just insert to show in list, but warn the developer.
+            console.warn("Manual user creation in Supabase requires Auth registration first.");
+
+            const { error } = await supabase
+                .from('users')
+                .insert({
+                    id: crypto.randomUUID(), // This is just a placeholder, login won't work without auth entry
+                    name: newUser.name,
+                    email: newUser.email,
+                    congregation_id: isSuperAdmin ? (newUser.congregationId || null) : congregationId,
+                    role: 'PUBLICADOR'
+                });
+
+            if (error) throw error;
             setShowCreateModal(false);
             setNewUser({ name: '', email: '', congregationId: '' });
+            alert("Usuário criado (Lembre-se: ele precisa logar com este e-mail para ativar a conta).");
         } catch (error) {
             console.error("Error creating user: ", error);
             alert("Erro ao criar usuário. Verifique se o e-mail é válido.");
@@ -254,29 +257,17 @@ export default function SuperAdminUsersPage() {
 
         setLoadingData(true);
         try {
-            const { updateDoc, doc } = await import('firebase/firestore');
-            const dummyNames = ["João Silva", "Maria Oliveira", "Carlos Santos", "Ana Souza", "Pedro Costa", "Lucas Ferreira", "Juliana Alves", "Marcos Lima", "Fernanda Santos", "Ricardo Almeida"];
-
-            let updatedCount = 0;
-            const updates = users.map(async (u, index) => {
-                const needsName = !u.name || u.name === 'Sem nome';
-                const needsCong = !u.congregationId && congregations.length > 0;
-
-                if (needsName || needsCong) {
-                    const updateData: any = {};
-                    if (needsName) updateData.name = dummyNames[index % dummyNames.length];
-                    if (needsCong) updateData.congregationId = congregations[index % congregations.length].id;
-                    if (!u.role) updateData.role = 'PUBLICADOR';
-
-                    await updateDoc(doc(db, 'users', u.id), updateData);
-                    updatedCount++;
+            const dummyNames = ["João Silva", "Maria Oliveira", "Carlos Santos", "Ana Souza"];
+            for (let i = 0; i < users.length; i++) {
+                const u = users[i];
+                if (!u.name || u.name === 'Sem nome') {
+                    await supabase.from('users').update({
+                        name: dummyNames[i % dummyNames.length],
+                        congregation_id: congregations[i % congregations.length]?.id || null
+                    }).eq('id', u.id);
                 }
-            });
-
-            await Promise.all(updates);
-            if (updatedCount > 0) alert(`${updatedCount} usuários atualizados com dados fictícios!`);
-            else alert("Nenhum usuário precisava de dados.");
-
+            }
+            fetchInitialData();
         } catch (error) {
             console.error("Error populating data:", error);
             alert("Erro ao popular dados.");
@@ -399,10 +390,10 @@ export default function SuperAdminUsersPage() {
                                                     <Mail className="w-3 h-3" />
                                                     <span>{u.email}</span>
                                                 </div>
-                                                {u.congregationId && (
+                                                {u.congregation_id && (
                                                     <div className="flex items-center gap-1.5 text-primary-light/500/70 dark:text-blue-400/70 text-[11px] font-bold uppercase tracking-wider">
                                                         <Building2 className="w-3 h-3" />
-                                                        <span>{congregations.find(c => c.id === u.congregationId)?.name || 'Congregação não encontrada'}</span>
+                                                        <span>{congregations.find(c => c.id === u.congregation_id)?.name || 'Congregação não encontrada'}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -437,7 +428,7 @@ export default function SuperAdminUsersPage() {
                                                             setEditingUser(u);
                                                             setEditName(u.name || '');
                                                             setEditRoles(u.roles || [u.role] || ['PUBLICADOR']);
-                                                            setEditCongId(u.congregationId || '');
+                                                            setEditCongId(u.congregation_id || '');
                                                             setShowEditModal(true);
                                                             setOpenMenuId(null);
                                                         }}

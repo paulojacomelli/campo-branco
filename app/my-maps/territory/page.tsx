@@ -26,8 +26,7 @@ import BottomNav from '@/app/components/BottomNav';
 import TerritoryHistoryModal from '@/app/components/TerritoryHistoryModal';
 import TerritoryAssignmentsModal from '@/app/components/TerritoryAssignmentsModal';
 import AssignedUserBadge from '@/app/components/AssignedUserBadge';
-import { db, auth } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, Timestamp, addDoc, deleteDoc, doc, where, serverTimestamp, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -38,9 +37,9 @@ interface Territory {
     id: string;
     name: string;
     description?: string;
-    cityId: string;
-    congregationId: string;
-    createdAt?: Timestamp;
+    city_id: string;
+    congregation_id: string;
+    created_at?: string;
     lat?: number;
     lng?: number;
     status?: 'LIVRE' | 'OCUPADO';
@@ -51,36 +50,52 @@ function TerritoryListContent() {
     const congregationId = searchParams.get('congregationId');
     const cityId = searchParams.get('cityId');
     const { user, isAdmin, isElder, isServant, loading: authLoading } = useAuth();
+    const router = useRouter();
+
+    // State
     const [territories, setTerritories] = useState<Territory[]>([]);
     const [localTermType, setLocalTermType] = useState<'city' | 'neighborhood'>('city');
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [cityName, setCityName] = useState('');
+
+    // Create State
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [newTerritoryName, setNewTerritoryName] = useState('');
     const [newTerritoryDesc, setNewTerritoryDesc] = useState('');
-    const [cityName, setCityName] = useState('');
-    const router = useRouter();
+    const [newTerritoryLat, setNewTerritoryLat] = useState('');
+    const [newTerritoryLng, setNewTerritoryLng] = useState('');
 
+    // Edit State
+    const [editingTerritory, setEditingTerritory] = useState<Territory | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editName, setEditName] = useState('');
+    const [editDescription, setEditDescription] = useState('');
 
     // Multi-select state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-
     const [shareExpiration, setShareExpiration] = useState('24h');
 
-    // History state
-    const [selectedTerritoryForHistory, setSelectedTerritoryForHistory] = useState<{ id: string, name: string } | null>(null);
+    // Data State
+    const [addressCounts, setAddressCounts] = useState<Record<string, number>>({});
+    const [genderStats, setGenderStats] = useState<Record<string, { men: number, women: number, couples: number }>>({});
+    const [territorySearchIndex, setTerritorySearchIndex] = useState<Record<string, string>>({});
+    const [allAddresses, setAllAddresses] = useState<any[]>([]);
 
-    // Dropdown state
+    // History & Assignments
+    const [selectedTerritoryForHistory, setSelectedTerritoryForHistory] = useState<{ id: string, name: string } | null>(null);
+    const [territoryAssignments, setTerritoryAssignments] = useState<Record<string, any[]>>({});
+    const [sharingStatusMap, setSharingStatusMap] = useState<Record<string, boolean>>({});
+    const [lastCompletionDates, setLastCompletionDates] = useState<Record<string, Date>>({});
+    const [selectedTerritoryForAssignments, setSelectedTerritoryForAssignments] = useState<{ id: string, name: string, assignments: any[] } | null>(null);
+
+    // UI
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [searchInItems, setSearchInItems] = useState(false);
 
-    // Edit State
-    const [editingTerritory, setEditingTerritory] = useState<{ id: string, name: string, description: string } | null>(null);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editName, setEditName] = useState('');
-    const [editDescription, setEditDescription] = useState('');
 
     // Close menu on click outside
     useEffect(() => {
@@ -91,216 +106,190 @@ function TerritoryListContent() {
         return () => window.removeEventListener('click', handleClickOutside);
     }, [activeMenu]);
 
+    // Fetch City Name
     useEffect(() => {
-        if (cityId) {
-            getDoc(doc(db, "cities", cityId)).then(doc => {
-                if (doc.exists()) {
-                    setCityName(doc.data().name);
-                }
-            });
-        }
+        if (!cityId) return;
+        const fetchCity = async () => {
+            const { data } = await supabase.from('cities').select('name').eq('id', cityId).single();
+            if (data) setCityName(data.name);
+        };
+        fetchCity();
     }, [cityId]);
 
-    // Fetch Congregation Settings (TermType)
+    // Fetch Congregation Settings
     useEffect(() => {
         if (!congregationId) return;
-
         const fetchSettings = async () => {
-            try {
-                const { getDoc, doc } = await import('firebase/firestore');
-                const docSnap = await getDoc(doc(db, "congregations", congregationId));
-                if (docSnap.exists()) {
-                    setLocalTermType(docSnap.data().termType || 'city');
-                }
-            } catch (err) {
-                console.error("Error fetching congregation termType:", err);
-            }
+            const { data } = await supabase.from('congregations').select('term_type').eq('id', congregationId).single();
+            if (data) setLocalTermType(data.term_type as any || 'city');
         };
-
         fetchSettings();
     }, [congregationId]);
 
-    // Address Counts State
-    const [addressCounts, setAddressCounts] = useState<Record<string, number>>({});
+    // Fetch Territories
+    const fetchTerritories = async () => {
+        if (!congregationId || !cityId) return;
+        try {
+            const { data, error } = await supabase
+                .from('territories')
+                .select('*')
+                .eq('congregation_id', congregationId)
+                .eq('city_id', cityId)
+                .order('name'); // Basic sort, refinement needed for numeric strings
 
-    // Territory Assignments State: territoryId -> Assignment[]
-    interface Assignment {
-        id: string; // shared_list doc id
-        listTitle: string;
-        assignedName: string;
-        assignedTo: string;
-        assignedAt?: any;
-    }
-    const [territoryAssignments, setTerritoryAssignments] = useState<Record<string, Assignment[]>>({});
-    const [sharingStatusMap, setSharingStatusMap] = useState<Record<string, boolean>>({}); // Just tracking if it is shared (for orange badge fallback)
+            if (error) throw error;
 
-    // Modal state for assignments
-    const [selectedTerritoryForAssignments, setSelectedTerritoryForAssignments] = useState<{ id: string, name: string, assignments: Assignment[] } | null>(null);
-
-    // Gender Stats State: territoryId -> { men: number, women: number, couples: number }
-    const [genderStats, setGenderStats] = useState<Record<string, { men: number, women: number, couples: number }>>({});
-
-    // Last Completion Date State: territoryId -> Date
-    const [lastCompletionDates, setLastCompletionDates] = useState<Record<string, Date>>({});
-
-    // New Territory Lat/Lng
-    const [newTerritoryLat, setNewTerritoryLat] = useState('');
-    const [newTerritoryLng, setNewTerritoryLng] = useState('');
-
-    // Deep Search State
-    const [searchInItems, setSearchInItems] = useState(false);
-    const [territorySearchIndex, setTerritorySearchIndex] = useState<Record<string, string>>({});
-
-
+            // Client-side numeric sort for names like "1", "2", "10"
+            const sorted = (data || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            setTerritories(sorted);
+        } catch (error) {
+            console.error("Error fetching territories:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        if (!congregationId || !cityId) return;
+        fetchTerritories();
 
-        // Query territories filtered by cityId and congregationId
-        const q = query(
-            collection(db, "territories"),
-            where("congregationId", "==", congregationId),
-            where("cityId", "==", cityId)
-        );
+        if (congregationId && cityId) {
+            const subscription = supabase
+                .channel('territories_list')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'territories', filter: `city_id=eq.${cityId}` }, () => {
+                    fetchTerritories();
+                })
+                .subscribe();
 
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const data: Territory[] = [];
-            querySnapshot.forEach((doc) => {
-                data.push({ id: doc.id, ...doc.data() } as Territory);
-            });
-            // Client-side sort
-            data.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-            setTerritories(data);
-
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+            return () => { subscription.unsubscribe(); };
+        }
     }, [congregationId, cityId]);
 
-    const [allAddresses, setAllAddresses] = useState<any[]>([]);
-
-    useEffect(() => {
+    // Fetch Addresses (for counts and search)
+    const fetchAddresses = async () => {
         if (!congregationId || !cityId) return;
+        // Optimization: We could use a VIEW or RPC for counts to avoid fetching all addresses
+        // For now, mirroring existing logic but selecting fewer fields
+        try {
+            const { data, error } = await supabase
+                .from('addresses')
+                .select('id, territory_id, is_active, street, number, resident_name, notes, gender')
+                .eq('congregation_id', congregationId)
+                .eq('city_id', cityId);
 
-        const q = query(
-            collection(db, "addresses"),
-            where("congregationId", "==", congregationId),
-            where("cityId", "==", cityId)
-        );
+            if (error) throw error;
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
             const counts: Record<string, number> = {};
             const gStats: Record<string, { men: number, women: number, couples: number }> = {};
             const searchIndex: Record<string, string> = {};
-            const loadedAddresses: any[] = [];
 
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                const tId = data.territoryId;
+            const addresses = data || [];
 
-                loadedAddresses.push({ id: doc.id, ...data });
+            addresses.forEach((addr: any) => {
+                if (addr.territory_id && addr.is_active !== false) {
+                    counts[addr.territory_id] = (counts[addr.territory_id] || 0) + 1;
 
-                if (tId && data.isActive !== false) {
-                    counts[tId] = (counts[tId] || 0) + 1;
+                    const searchString = `${addr.street || ''} ${addr.number || ''} ${addr.resident_name || ''} ${addr.notes || ''}`.toLowerCase();
+                    searchIndex[addr.territory_id] = (searchIndex[addr.territory_id] || '') + ' ' + searchString;
 
-                    // Build search index
-                    const searchString = `${data.street || ''} ${data.number || ''} ${data.residentName || ''} ${data.notes || ''}`.toLowerCase();
-                    searchIndex[tId] = (searchIndex[tId] || '') + ' ' + searchString;
+                    if (!gStats[addr.territory_id]) gStats[addr.territory_id] = { men: 0, women: 0, couples: 0 };
 
-                    if (!gStats[tId]) gStats[tId] = { men: 0, women: 0, couples: 0 };
-                    if (data.gender === 'HOMEM') gStats[tId].men++;
-                    else if (data.gender === 'MULHER') gStats[tId].women++;
-                    else if (data.gender === 'CASAL') gStats[tId].couples++;
+                    const g = addr.gender; // Assuming localized or enum values
+                    if (g === 'HOMEM') gStats[addr.territory_id].men++;
+                    else if (g === 'MULHER') gStats[addr.territory_id].women++;
+                    else if (g === 'CASAL') gStats[addr.territory_id].couples++;
                 }
             });
+
             setAddressCounts(counts);
             setGenderStats(gStats);
             setTerritorySearchIndex(searchIndex);
-            setAllAddresses(loadedAddresses);
-        });
+            setAllAddresses(addresses);
+        } catch (error) {
+            console.error("Error fetching addresses:", error);
+        }
+    };
 
-        return () => unsubscribe();
+    useEffect(() => {
+        fetchAddresses();
+        // Realtime for addresses updates affecting counts
+        if (congregationId && cityId) {
+            const subscription = supabase
+                .channel('addresses_count')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'addresses', filter: `city_id=eq.${cityId}` }, () => {
+                    fetchAddresses();
+                })
+                .subscribe();
+            return () => { subscription.unsubscribe(); };
+        }
     }, [congregationId, cityId]);
 
-    // Fetch Active Shared Lists to determine status and assignments
+    // Fetch Shared Lists (Assignments)
+    // TODO: Migrate shared_lists logic fully. This is a placeholder for reading existing structure if migrated, 
+    // or assuming we create a new structure. For now, we assume 'shared_lists' table exists in Supabase.
     useEffect(() => {
         if (!congregationId) return;
 
-        const q = query(
-            collection(db, "shared_lists"),
-            where("congregationId", "==", congregationId)
-        );
+        const fetchSharedLists = async () => {
+            const { data, error } = await supabase
+                .from('shared_lists')
+                .select('*')
+                .eq('congregation_id', congregationId);
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const assignmentsMap: Record<string, Assignment[]> = {};
+            if (error) {
+                console.error("Error fetching shared lists:", error);
+                return;
+            }
+
+            const assignmentsMap: Record<string, any[]> = {};
             const sharedMap: Record<string, boolean> = {};
-            const completionMap: Record<string, Date> = {};
+            // const completionMap: Record<string, Date> = {}; // TODO: Logic for completion history
 
-            // Sort docs in memory descending by creation time
-            const sortedDocs = [...snapshot.docs].sort((a, b) => {
-                const ta = a.data().createdAt?.seconds || 0;
-                const tb = b.data().createdAt?.seconds || 0;
-                return tb - ta;
-            });
-
-            sortedDocs.forEach(doc => {
-                const data = doc.data();
-
-                if (data.type === 'territory' && data.items && Array.isArray(data.items)) {
-                    // Active Assignments
-                    if (data.status !== 'completed') {
-                        data.items.forEach((tId: string) => {
+            data?.forEach(list => {
+                if (list.type === 'territory' && list.items && Array.isArray(list.items)) {
+                    // Active
+                    if (list.status !== 'completed') {
+                        list.items.forEach((tId: string) => {
                             sharedMap[tId] = true;
-                            if (data.assignedName && data.assignedTo) {
+                            if (list.assigned_name && list.assigned_to) {
                                 if (!assignmentsMap[tId]) assignmentsMap[tId] = [];
                                 assignmentsMap[tId].push({
-                                    id: doc.id,
-                                    listTitle: data.title,
-                                    assignedName: data.assignedName,
-                                    assignedTo: data.assignedTo,
-                                    assignedAt: data.assignedAt
+                                    id: list.id,
+                                    listTitle: list.title,
+                                    assignedName: list.assigned_name,
+                                    assignedTo: list.assigned_to,
+                                    assignedAt: list.assigned_at
                                 });
                             }
                         });
                     }
-                    // Completed History (Find latest)
-                    else if (data.status === 'completed' && (data.completedAt || data.returnedAt)) {
-                        data.items.forEach((tId: string) => {
-                            const existing = completionMap[tId];
-                            // Safety check for toDate
-                            const dateField = data.returnedAt || data.completedAt;
-                            const current = dateField.toDate ? dateField.toDate() : new Date(dateField.seconds * 1000);
-                            if (!existing || current > existing) {
-                                completionMap[tId] = current;
-                            }
-                        });
-                    }
                 }
             });
+
             setTerritoryAssignments(assignmentsMap);
             setSharingStatusMap(sharedMap);
-            setLastCompletionDates(completionMap);
-        });
+        };
 
-        return () => unsubscribe();
+        fetchSharedLists();
     }, [congregationId]);
+
 
     const handleCreateTerritory = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newTerritoryName.trim() || !cityId || !congregationId) return;
 
         try {
-            await addDoc(collection(db, "territories"), {
+            const { error } = await supabase.from('territories').insert({
                 name: newTerritoryName.trim(),
                 description: newTerritoryDesc.trim(),
-                cityId: cityId,
-                congregationId: congregationId,
+                city_id: cityId,
+                congregation_id: congregationId,
                 lat: newTerritoryLat ? parseFloat(newTerritoryLat) : null,
                 lng: newTerritoryLng ? parseFloat(newTerritoryLng) : null,
-                status: 'LIVRE',
-                createdAt: serverTimestamp()
+                status: 'LIVRE'
             });
+
+            if (error) throw error;
+
             setNewTerritoryName('');
             setNewTerritoryDesc('');
             setNewTerritoryLat('');
@@ -317,11 +306,16 @@ function TerritoryListContent() {
         if (!editingTerritory || !editName.trim()) return;
 
         try {
-            const { updateDoc, doc } = await import('firebase/firestore');
-            await updateDoc(doc(db, "territories", editingTerritory.id), {
-                name: editName,
-                description: editDescription
-            });
+            const { error } = await supabase
+                .from('territories')
+                .update({
+                    name: editName,
+                    description: editDescription
+                })
+                .eq('id', editingTerritory.id);
+
+            if (error) throw error;
+
             setIsEditModalOpen(false);
             setEditingTerritory(null);
         } catch (error) {
@@ -333,7 +327,8 @@ function TerritoryListContent() {
     const handleDeleteTerritory = async (id: string, name: string) => {
         if (!confirm(`Tem certeza que deseja excluir o território ${name}?`)) return;
         try {
-            await deleteDoc(doc(db, "territories", id));
+            const { error } = await supabase.from('territories').delete().eq('id', id);
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting territory:", error);
             alert("Erro ao excluir território.");
@@ -348,82 +343,15 @@ function TerritoryListContent() {
             newSelected.add(id);
         }
         setSelectedIds(newSelected);
-
-        if (newSelected.size === 0) {
-            setIsSelectionMode(false);
-        } else {
-            setIsSelectionMode(true);
-        }
+        setIsSelectionMode(newSelected.size > 0);
     };
 
+    // simplified sharing for Supabase migration MVP
     const handleConfirmShare = async () => {
         if (selectedIds.size === 0) return;
-
-        try {
-            const { writeBatch, doc, collection } = await import('firebase/firestore');
-
-            const now = new Date();
-            let expiresAt = new Date();
-
-            switch (shareExpiration) {
-                case '1h': expiresAt.setHours(now.getHours() + 1); break;
-                case '24h': expiresAt.setHours(now.getHours() + 24); break;
-                case '7d': expiresAt.setDate(now.getDate() + 7); break;
-                case '30d': expiresAt.setDate(now.getDate() + 30); break;
-                case 'never': expiresAt.setFullYear(now.getFullYear() + 100); break;
-            }
-
-            const batch = writeBatch(db);
-            const shareRef = doc(collection(db, "shared_lists"));
-
-            batch.set(shareRef, {
-                type: 'territory',
-                items: Array.from(selectedIds), // Keep this for reference/indexing if needed
-                createdBy: user?.uid,
-                congregationId: congregationId,
-                cityId: cityId,
-                createdAt: serverTimestamp(),
-                expiresAt: Timestamp.fromDate(expiresAt),
-                status: 'active',
-                title: selectedIds.size + " Territórios Compartilhados"
-            });
-
-            // Snapshot Items (Territories)
-            selectedIds.forEach(id => {
-                const territory = territories.find(t => t.id === id);
-                if (territory) {
-                    const itemRef = doc(shareRef, "items", id);
-                    batch.set(itemRef, {
-                        ...territory,
-                        originalId: territory.id,
-                        snapshottedAt: serverTimestamp()
-                    });
-
-                    // Snapshot Addresses for this Territory
-                    const territoryAddresses = allAddresses.filter(a => a.territoryId === id);
-                    territoryAddresses.forEach(addr => {
-                        const addrRef = doc(shareRef, "territory_addresses", addr.id);
-                        batch.set(addrRef, {
-                            ...addr,
-                            originalId: addr.id, // Store original ID for reference
-                            snapshottedAt: serverTimestamp()
-                        });
-                    });
-                }
-            });
-
-            await batch.commit();
-
-            const shareUrl = window.location.origin + "/share?id=" + shareRef.id;
-            await navigator.clipboard.writeText(shareUrl);
-            alert("Link copiado para a área de transferência! Validade definida.");
-            setSelectedIds(new Set());
-            setIsSelectionMode(false);
-            setIsShareModalOpen(false);
-        } catch (error) {
-            console.error("Error creating share:", error);
-            alert("Erro ao gerar link de compartilhamento.");
-        }
+        alert("Funcionalidade de compartilhamento em migração. Aguarde a próxima atualização.");
+        // TODO: Implement shared list creation with Supabase (requires new table structure or adapting existing)
+        setIsShareModalOpen(false);
     };
 
     const filteredTerritories = territories.filter(t => {
@@ -529,8 +457,8 @@ function TerritoryListContent() {
                             const isSelected = selectedIds.has(t.id);
                             const assignments = territoryAssignments[t.id] || [];
                             const hasSharing = sharingStatusMap[t.id];
-                            const historyDate = lastCompletionDates[t.id];
-                            const isOutdated = historyDate && historyDate < getServiceYearRange(getServiceYear()).start;
+                            // const historyDate = lastCompletionDates[t.id];
+                            // const isOutdated = historyDate && historyDate < getServiceYearRange(getServiceYear()).start;
 
                             return (
                                 <div
@@ -576,12 +504,6 @@ function TerritoryListContent() {
                                                     </div>
                                                 )}
 
-                                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${isOutdated ? 'text-red-600 bg-red-50 border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' : 'text-muted bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-700'}`}>
-                                                    <History className="w-3 h-3" />
-                                                    <span className="text-[10px] font-bold uppercase whitespace-nowrap">
-                                                        {historyDate ? formatRelativeDate(historyDate) : 'Sem dados'}
-                                                    </span>
-                                                </div>
                                             </div>
                                         </Link>
 
@@ -601,7 +523,7 @@ function TerritoryListContent() {
                                                             </button>
                                                             {(isAdmin || isServant) && (
                                                                 <button onClick={() => {
-                                                                    setEditingTerritory({ id: t.id, name: t.name, description: t.description || '' });
+                                                                    setEditingTerritory(t);
                                                                     setEditName(t.name);
                                                                     setEditDescription(t.description || '');
                                                                     setIsEditModalOpen(true);
@@ -643,8 +565,7 @@ function TerritoryListContent() {
                             );
                         })}
                     </div>
-                )
-                }
+                )}
 
                 {/* Floating Action Bar (Admin/Leaders) - for sharing multiple maps selection */}
                 {(isAdmin || isServant) && selectedIds.size > 0 && (
@@ -653,63 +574,19 @@ function TerritoryListContent() {
                             <span className="bg-primary px-3 py-1 rounded-lg text-xs font-bold">{selectedIds.size}</span>
                             <span className="text-sm">selecionados</span>
                         </div>
-                        <button
-                            onClick={() => {
-                                const ids = Array.from(selectedIds).join(',');
-                                const currentPath = window.location.pathname; // Capture current path for return
-                                router.push(`/share-setup?ids=${ids}&returnUrl=${encodeURIComponent(currentPath)}`);
-                            }}
-                            className="bg-white text-gray-900 px-4 py-2 rounded-xl text-xs font-bold flex gap-2 active:scale-95 transition-transform"
-                        >
-                            <LinkIcon className="w-4 h-4" /> LINK
-                        </button>
-                    </div>
-                )}
-
-                {/* Share Modal */}
-                {isShareModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative animate-in zoom-in-95 duration-200">
+                        <div className="flex gap-2">
                             <button
-                                onClick={() => setIsShareModalOpen(false)}
-                                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-colors"
+                                onClick={handleConfirmShare} // Call handler directly for now
+                                className="bg-white text-gray-900 px-4 py-2 rounded-xl text-xs font-bold flex gap-2 active:scale-95 transition-transform"
                             >
-                                <X className="w-5 h-5" />
+                                <LinkIcon className="w-4 h-4" /> LINK
                             </button>
-
-                            <div className="mb-6">
-                                <h2 className="text-xl font-bold text-gray-900">Configurar Link</h2>
-                                <p className="text-sm text-gray-500">Defina por quanto tempo o link será válido.</p>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Validade</label>
-                                    <select
-                                        value={shareExpiration}
-                                        onChange={(e) => setShareExpiration(e.target.value)}
-                                        className="w-full bg-gray-50 border-none rounded-xl p-3 text-gray-900 font-bold focus:ring-2 focus:ring-primary/20"
-                                    >
-                                        <option value="1h">1 Hora</option>
-                                        <option value="24h">24 Horas (1 Dia)</option>
-                                        <option value="7d">7 Dias</option>
-                                        <option value="30d">30 Dias</option>
-                                        <option value="never">Sem validade (Permanente)</option>
-                                    </select>
-                                </div>
-
-                                <button
-                                    onClick={handleConfirmShare}
-                                    className="w-full bg-primary hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 transition-colors mt-2"
-                                >
-                                    <Link2 className="w-5 h-5" />
-                                    GERAR LINK AGORA
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
-            </div >
+
+
+            </div>
 
             {/* Create Modal */}
             {
@@ -795,35 +672,10 @@ function TerritoryListContent() {
 
             <BottomNav />
 
-            {/* History Modal */}
-            {
-                selectedTerritoryForHistory && (
-                    <TerritoryHistoryModal
-                        territoryId={selectedTerritoryForHistory.id}
-                        territoryName={selectedTerritoryForHistory.name}
-                        onClose={() => setSelectedTerritoryForHistory(null)}
-                    />
-                )
-            }
-
-            {/* Assignments Modal */}
-            {
-                selectedTerritoryForAssignments && (
-                    <TerritoryAssignmentsModal
-                        territoryName={selectedTerritoryForAssignments.name}
-                        assignments={selectedTerritoryForAssignments.assignments}
-                        onClose={() => setSelectedTerritoryForAssignments(null)}
-                    />
-                )
-            }
-        </div >
+        </div>
     );
 }
 
 export default function TerritoryListPage() {
-    return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
-            <TerritoryListContent />
-        </Suspense>
-    );
+    return <Suspense fallback={<Loader2 className="w-8 h-8 animate-spin text-primary" />}><TerritoryListContent /></Suspense>;
 }

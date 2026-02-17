@@ -2,20 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { X, Pencil, Loader2, MapPin } from 'lucide-react';
-import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
 interface WitnessingPoint {
     id: string;
     name: string;
     address: string;
-    cityId: string;
-    congregationId: string;
+    city_id: string;
+    congregation_id: string;
     lat?: number;
     lng?: number;
     status: 'AVAILABLE' | 'OCCUPIED';
     schedule?: string;
-    currentPublishers?: string[];
+    current_publishers?: string[];
 }
 
 interface EditPointModalProps {
@@ -81,13 +80,18 @@ export default function EditPointModal({ isOpen, onClose, point, cityName }: Edi
 
         setLoading(true);
         try {
-            await updateDoc(doc(db, "witnessing_points", point.id), {
-                name: name.trim(),
-                address: address.trim(),
-                lat: lat ? parseFloat(lat) : null,
-                lng: lng ? parseFloat(lng) : null,
-                schedule: schedule.trim()
-            });
+            const { error } = await supabase
+                .from('witnessing_points')
+                .update({
+                    name: name.trim(),
+                    address: address.trim(),
+                    lat: lat ? parseFloat(lat) : null,
+                    lng: lng ? parseFloat(lng) : null,
+                    schedule: schedule.trim()
+                })
+                .eq('id', point.id);
+
+            if (error) throw error;
             onClose();
         } catch (error) {
             console.error("Error updating point:", error);

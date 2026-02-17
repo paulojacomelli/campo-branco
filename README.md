@@ -42,15 +42,15 @@ Este aplicativo é uma iniciativa **independente e open source**. Ele **não** �
 - **Frontend:** [Next.js 15](https://nextjs.org/) (App Router), React 19
 - **Estilização:** [Tailwind CSS](https://tailwindcss.com/)
 - **Mapas:** [Leaflet](https://leafletjs.com/) & OpenStreetMap
-- **Backend & Auth:** [Firebase](https://firebase.google.com/) (Firestore, Auth, Functions)
-- **Segurança:** Autenticação via Tokens JWT (Jose) e Middleware de proteção.
+- **Banco de Dados & Auth:** [Supabase](https://supabase.com/) (PostgreSQL)
+- **Hospedagem:** [Firebase Hosting](https://firebase.google.com/hosting)
 - **PWA:** `@ducanh2912/next-pwa`
 
 ## 🛠️ Configuração e Instalação
 
 ### 1. Pré-requisitos
 - Node.js 18+
-- Conta no Firebase (Projeto Blaze recomendado)
+- Projeto no Supabase (Banco de Dados e Auth configurados)
 
 ### 2. Instalação
 ```bash
@@ -63,11 +63,10 @@ npm install
 Crie um arquivo `.env.local` na raiz do projeto:
 
 ```env
-# Firebase Client SDK
-NEXT_PUBLIC_FIREBASE_API_KEY=seu_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=seu_projeto.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=seu_projeto
-...
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon-publica
+SUPABASE_SERVICE_ROLE_KEY=sua-chave-service-role-privada
 ```
 
 ### 4. Rodando o Projeto
@@ -78,17 +77,16 @@ npm run dev
 
 ## 🔥 Firebase Hosting
 
-Este projeto foi configurado de forma agnóstica, não utilizando "hosting targets". Para fazer o deploy:
+Embora o banco de dados tenha sido migrado para o Supabase, o **Firebase Hosting** continua sendo utilizado para hospedagem estática e PWA.
 
 1.  Certifique-se de estar logado: `firebase login`
-2.  Inicialize o hosting (se necessário): `firebase init hosting`
-3.  Faça o deploy: `firebase deploy`
+2.  Faça o deploy: `npm run build && firebase deploy`
 
 ### Redirects Customizados
 
 Se desejar configurar redirecionamentos de domínio (ex: de um domínio antigo para o novo), você deve editar o arquivo `firebase.json` manualmente. Adicione a chave `redirects` dentro de `hosting`. Consulte a [documentação do Firebase](https://firebase.google.com/docs/hosting/full-config#redirects) para mais detalhes.
 
-## � Testes e QA
+##  Testes e QA
 
 O projeto possui scripts automatizados para garantir a qualidade do código.
 

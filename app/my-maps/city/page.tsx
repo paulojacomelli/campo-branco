@@ -25,8 +25,7 @@ import HelpModal from '@/app/components/HelpModal';
 import MapView from '@/app/components/MapView';
 import CongregationSelector from '@/app/components/CongregationSelector';
 import BottomNav from '@/app/components/BottomNav';
-import { db, auth } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, Timestamp, addDoc, deleteDoc, doc, where, serverTimestamp, updateDoc, getDocs, collectionGroup } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -36,17 +35,17 @@ interface City {
     id: string;
     name: string;
     uf: string;
-    createdAt?: Timestamp;
-    congregationId: string;
+    created_at?: string;
+    congregation_id: string;
     lat?: number;
     lng?: number;
-    parentCity?: string;
+    parent_city?: string;
 }
 
 function CityListContent() {
     const searchParams = useSearchParams();
     const congregationId = searchParams.get('congregationId');
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, logout } = useAuth();
     const router = useRouter();
     const [cities, setCities] = useState<City[]>([]);
     const [loading, setLoading] = useState(true);
@@ -76,26 +75,45 @@ function CityListContent() {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
 
+    const fetchCities = async () => {
+        if (!congregationId) return;
+        try {
+            const { data, error } = await supabase
+                .from('cities')
+                .select('*')
+                .eq('congregation_id', congregationId)
+                .order('name');
+            if (error) throw error;
+            setCities(data || []);
+        } catch (error) {
+            console.error("Error fetching cities:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!congregationId) return;
 
-        const q = query(
-            collection(db, "cities"),
-            where("congregationId", "==", congregationId)
-        );
+        fetchCities();
 
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const citiesData: City[] = [];
-            querySnapshot.forEach((doc) => {
-                citiesData.push({ id: doc.id, ...doc.data() } as City);
-            });
-            // Sort alphabetically
-            citiesData.sort((a, b) => a.name.localeCompare(b.name));
-            setCities(citiesData);
-            setLoading(false);
-        });
+        const channel = supabase
+            .channel('public:cities_list')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'cities', filter: `congregation_id=eq.${congregationId}` }, () => {
+                fetchCities();
+            })
+            .subscribe();
 
-        return () => unsubscribe();
+        return () => {
+            if (channel) {
+                supabase.removeChannel(channel).catch(err => {
+                    // Silently ignore websocket close errors during cleanup
+                    if (!err.message?.includes('WebSocket is closed')) {
+                        console.error('Error removing channel:', err);
+                    }
+                });
+            }
+        };
     }, [congregationId]);
 
     // Fetch Congregation Settings (TermType)
@@ -104,10 +122,13 @@ function CityListContent() {
 
         const fetchSettings = async () => {
             try {
-                const { getDoc, doc } = await import('firebase/firestore');
-                const docSnap = await getDoc(doc(db, "congregations", congregationId));
-                if (docSnap.exists()) {
-                    setLocalTermType(docSnap.data().termType || 'city');
+                const { data, error } = await supabase
+                    .from('congregations')
+                    .select('term_type')
+                    .eq('id', congregationId)
+                    .single();
+                if (data && !error) {
+                    setLocalTermType(data.term_type || 'city');
                 }
             } catch (err) {
                 console.error("Error fetching congregation termType:", err);
@@ -126,106 +147,69 @@ function CityListContent() {
                 const currentYear = getServiceYear();
                 const { start, end } = getServiceYearRange(currentYear);
 
-                // 1. Fetch all territories for this congregation to get totals per city
-                const terrQuery = query(collection(db, "territories"), where("congregationId", "==", congregationId));
-                const terrSnap = await getDocs(terrQuery);
+                // 1. Fetch all territories for this congregation
+                const { data: territories } = await supabase
+                    .from('territories')
+                    .select('id, city_id')
+                    .eq('congregation_id', congregationId);
 
-                const cityTotals: Record<string, number> = {}; // cityId -> total count
-                const territoryCityMap: Record<string, string> = {}; // territoryId -> cityId
+                const cityTotals: Record<string, number> = {};
+                const territoryCityMap: Record<string, string> = {};
 
-                terrSnap.forEach(doc => {
-                    const data = doc.data();
-                    if (data.cityId) {
-                        cityTotals[data.cityId] = (cityTotals[data.cityId] || 0) + 1;
-                        territoryCityMap[doc.id] = data.cityId;
+                territories?.forEach(t => {
+                    if (t.city_id) {
+                        cityTotals[t.city_id] = (cityTotals[t.city_id] || 0) + 1;
+                        territoryCityMap[t.id] = t.city_id;
                     }
                 });
 
-                // 2. Fetch completed assignments AND build Share->City Map
-                const listQuery = query(collection(db, "shared_lists"), where("congregationId", "==", congregationId));
-                const listSnap = await getDocs(listQuery);
+                // 2. Fetch completed assignments
+                const { data: history } = await supabase
+                    .from('shared_lists')
+                    .select('*')
+                    .eq('congregation_id', congregationId)
+                    .eq('status', 'completed')
+                    .gte('returned_at', start.toISOString())
+                    .lte('returned_at', end.toISOString());
 
                 const completedUniqueByCity: Record<string, Set<string>> = {};
                 const completedVolumeByCity: Record<string, number> = {};
-                const shareMap: Record<string, string> = {}; // shareId -> cityId
 
-                listSnap.forEach(doc => {
-                    const data = doc.data();
-
-                    // Map Share to City (if applicable)
-                    let cityId: string | null = null;
-                    if (data.cityId) {
-                        cityId = data.cityId;
-                    } else if (data.items && data.items.length > 0) {
-                        // Use the city of the first item as proxy
-                        cityId = territoryCityMap[data.items[0]];
-                    }
-
-                    if (cityId) {
-                        shareMap[doc.id] = cityId;
-                    }
-
-                    if (data.type !== 'territory' || !data.items || data.items.length === 0) return;
-
-                    let completionDate: Date | null = null;
-                    if (data.returnedAt?.toDate) completionDate = data.returnedAt.toDate();
-                    else if (data.completedAt?.toDate) completionDate = data.completedAt.toDate();
-
-                    if (!completionDate) return;
-
-                    if (completionDate >= start && completionDate <= end) {
-                        data.items.forEach((tId: string) => {
-                            const cId = territoryCityMap[tId];
-                            if (cId) {
-                                if (!completedUniqueByCity[cId]) completedUniqueByCity[cId] = new Set();
-                                completedUniqueByCity[cId].add(tId);
-                                completedVolumeByCity[cId] = (completedVolumeByCity[cId] || 0) + 1;
-                            }
-                        });
+                history?.forEach(h => {
+                    if (h.territory_id) {
+                        const cId = territoryCityMap[h.territory_id];
+                        if (cId) {
+                            if (!completedUniqueByCity[cId]) completedUniqueByCity[cId] = new Set();
+                            completedUniqueByCity[cId].add(h.territory_id);
+                            completedVolumeByCity[cId] = (completedVolumeByCity[cId] || 0) + 1;
+                        }
                     }
                 });
 
-                // 2.5 Fetch Address Status for Breakdown Colors
-                // We use addresses instead of visits because it's more reliable (already has cityId/territoryId)
-                const addrQuery = query(
-                    collection(db, "addresses"),
-                    where("congregationId", "==", congregationId)
-                );
+                // 3. Fetch Address Status for Breakdown
+                const { data: addresses } = await supabase
+                    .from('addresses')
+                    .select('id, city_id, territory_id, status, last_visited_at')
+                    .eq('congregation_id', congregationId)
+                    .gte('last_visited_at', start.toISOString())
+                    .lte('last_visited_at', end.toISOString());
 
                 const statusByCity: Record<string, { contacted: number, not_contacted: number, moved: number, do_not_visit: number, total_visits: number }> = {};
 
-                try {
-                    const addrSnap = await getDocs(addrQuery);
-                    addrSnap.forEach(doc => {
-                        const aData = doc.data();
-                        if (aData.isActive === false) return; // Ignore inactive
+                addresses?.forEach(a => {
+                    const cId = a.city_id || (a.territory_id ? territoryCityMap[a.territory_id] : null);
+                    if (!cId) return;
 
-                        const cId = aData.cityId || (aData.territoryId ? territoryCityMap[aData.territoryId] : null);
-                        if (!cId) return;
+                    if (!statusByCity[cId]) statusByCity[cId] = { contacted: 0, not_contacted: 0, moved: 0, do_not_visit: 0, total_visits: 0 };
 
-                        // Only count if visited in current service year
-                        let lastVisit: Date | null = null;
-                        if (aData.lastVisitedAt?.toDate) lastVisit = aData.lastVisitedAt.toDate();
-                        else if (aData.lastVisitedAt?.seconds) lastVisit = new Date(aData.lastVisitedAt.seconds * 1000);
+                    statusByCity[cId].total_visits++;
+                    if (a.status === 'contacted') statusByCity[cId].contacted++;
+                    else if (a.status === 'not_contacted') statusByCity[cId].not_contacted++;
+                    else if (a.status === 'moved') statusByCity[cId].moved++;
+                    else if (a.status === 'do_not_visit') statusByCity[cId].do_not_visit++;
+                });
 
-                        if (lastVisit && lastVisit >= start && lastVisit <= end) {
-                            if (!statusByCity[cId]) statusByCity[cId] = { contacted: 0, not_contacted: 0, moved: 0, do_not_visit: 0, total_visits: 0 };
-
-                            const status = aData.visitStatus;
-                            if (status) {
-                                statusByCity[cId].total_visits++;
-                                if (status === 'contacted') statusByCity[cId].contacted++;
-                                else if (status === 'not_contacted') statusByCity[cId].not_contacted++;
-                                else if (status === 'moved') statusByCity[cId].moved++;
-                                else if (status === 'do_not_visit') statusByCity[cId].do_not_visit++;
-                            }
-                        }
-                    });
-                } catch (err) {
-                    console.error("Error fetching addresses for breakdown:", err);
-                }
-
-                // 3. Compile Result
+                // 4. Compile Result
                 const stats: Record<string, {
                     total: number,
                     completedUnique: number,
@@ -243,7 +227,6 @@ function CityListContent() {
                 });
 
                 setCoverageStats(stats);
-
             } catch (error) {
                 console.error("Error fetching coverage stats:", error);
             }
@@ -267,15 +250,19 @@ function CityListContent() {
         if (!newCityName.trim() || !congregationId) return;
 
         try {
-            await addDoc(collection(db, "cities"), {
-                name: newCityName.trim(),
-                uf: newCityUF,
-                congregationId: congregationId,
-                parentCity: localTermType === 'neighborhood' ? newParentCity.trim() : null,
-                lat: newCityLat ? parseFloat(newCityLat) : null,
-                lng: newCityLng ? parseFloat(newCityLng) : null,
-                createdAt: Timestamp.now()
-            });
+            const { error } = await supabase
+                .from('cities')
+                .insert([{
+                    name: newCityName.trim(),
+                    uf: newCityUF,
+                    congregation_id: congregationId,
+                    parent_city: localTermType === 'neighborhood' ? newParentCity.trim() : null,
+                    lat: newCityLat ? parseFloat(newCityLat) : null,
+                    lng: newCityLng ? parseFloat(newCityLng) : null
+                }]);
+
+            if (error) throw error;
+
             setNewCityName('');
             setNewParentCity('');
             setNewCityLat('');
@@ -292,23 +279,18 @@ function CityListContent() {
         if (!editingCity || !editingCity.name.trim()) return;
 
         try {
-            const res = await fetch('/api/city/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cityId: editingCity.id,
+            const { error } = await supabase
+                .from('cities')
+                .update({
                     name: editingCity.name,
                     uf: editingCity.uf,
-                    parentCity: editingCity.parentCity,
+                    parent_city: editingCity.parent_city,
                     lat: editingCity.lat,
                     lng: editingCity.lng
                 })
-            });
+                .eq('id', editingCity.id);
 
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Erro ao atualizar dados.");
-            }
+            if (error) throw error;
 
             setIsEditModalOpen(false);
             setEditingCity(null);
@@ -322,7 +304,12 @@ function CityListContent() {
         if (!confirm("Tem certeza que deseja excluir " + name + "?")) return;
 
         try {
-            await deleteDoc(doc(db, "cities", id));
+            const { error } = await supabase
+                .from('cities')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
             setOpenMenuId(null);
         } catch (error) {
             console.error("Error deleting city:", error);
@@ -332,12 +319,7 @@ function CityListContent() {
 
     const handleSignOut = async () => {
         try {
-            await auth.signOut();
-            await fetch('/api/auth/session', { method: 'DELETE' });
-            document.cookie = "__session=; path=/; max-age=0";
-            document.cookie = "auth_token=; path=/; max-age=0";
-            document.cookie = "role=; path=/; max-age=0";
-            document.cookie = "congregationId=; path=/; max-age=0";
+            await logout();
             window.location.href = '/login';
         } catch (error) {
             console.error("Logout error:", error);
@@ -520,8 +502,8 @@ function CityListContent() {
                                                 <div className="flex items-center justify-between mb-1">
                                                     <div>
                                                         <h3 className="font-bold text-main text-base truncate leading-tight">{city.name}</h3>
-                                                        {city.parentCity && (
-                                                            <p className="text-[10px] text-muted font-black uppercase tracking-wider">{city.parentCity}</p>
+                                                        {city.parent_city && (
+                                                            <p className="text-[10px] text-muted font-black uppercase tracking-wider">{city.parent_city}</p>
                                                         )}
                                                     </div>
                                                     {(stats && stats.total > 0) && (
@@ -785,8 +767,8 @@ function CityListContent() {
                                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cidade do Bairro</label>
                                         <input
                                             type="text"
-                                            value={editingCity.parentCity || ''}
-                                            onChange={e => setEditingCity({ ...editingCity, parentCity: e.target.value })}
+                                            value={editingCity.parent_city || ''}
+                                            onChange={e => setEditingCity({ ...editingCity, parent_city: e.target.value })}
                                             className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
                                             placeholder="Cidade"
                                             required
@@ -873,24 +855,23 @@ function CityListContent() {
                     </div>
                     <div className="flex-1 relative cursor-crosshair h-full">
                         <MapView
-                            items={[]}
-                            onMapClick={(e) => {
-                                setTempCoords({ lat: e.lat, lng: e.lng });
+                            items={tempCoords ? [{
+                                id: 'temp-marker',
+                                lat: tempCoords.lat,
+                                lng: tempCoords.lng,
+                                title: 'Localização Selecionada',
+                                status: 'PENDENTE'
+                            }] : []}
+                            onMapClick={(lat, lng) => {
+                                setTempCoords({ lat, lng });
                             }}
-                            initialCenter={
+                            center={
                                 (editingCity?.lat && editingCity?.lng)
-                                    ? { lat: editingCity.lat, lng: editingCity.lng }
+                                    ? { lat: parseFloat(editingCity.lat.toString()), lng: parseFloat(editingCity.lng.toString()) }
                                     : (newCityLat && newCityLng)
                                         ? { lat: parseFloat(newCityLat), lng: parseFloat(newCityLng) }
                                         : undefined
                             }
-                            selectedLocation={tempCoords ? tempCoords : (
-                                (editingCity?.lat && editingCity?.lng)
-                                    ? { lat: editingCity.lat, lng: editingCity.lng }
-                                    : (newCityLat && newCityLng)
-                                        ? { lat: parseFloat(newCityLat), lng: parseFloat(newCityLng) }
-                                        : undefined
-                            )}
                         />
                         {/* Center Marker Help */}
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold pointer-events-none shadow-xl border border-white/10 z-10 whitespace-nowrap">

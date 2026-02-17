@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import {
     Plus,
     X,
@@ -28,8 +28,7 @@ import EditPointModal from '@/app/components/Witnessing/EditPointModal';
 import UserAvatar from '@/app/components/UserAvatar';
 import AssignedUserBadge from '@/app/components/AssignedUserBadge';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
-import { db } from '@/lib/firebase';
-import { collection, query, where, onSnapshot, serverTimestamp, addDoc, deleteDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useSearchParams } from 'next/navigation';
@@ -38,15 +37,15 @@ interface WitnessingPoint {
     id: string;
     name: string;
     address: string;
-    cityId: string;
-    congregationId: string;
+    city_id: string; // snake_case
+    congregation_id: string; // snake_case
     lat?: number;
     lng?: number;
     status: 'AVAILABLE' | 'OCCUPIED';
     schedule?: string;
-    currentPublishers?: string[];
+    current_publishers?: string[]; // snake_case
     // New field for rich data
-    activeUsers?: { uid: string, name: string, timestamp?: number }[];
+    active_users?: { uid: string, name: string, timestamp?: number }[]; // snake_case
 }
 
 function WitnessingPointListContent() {
@@ -76,67 +75,83 @@ function WitnessingPointListContent() {
     // Fetch City Name
     useEffect(() => {
         if (cityId) {
-            getDoc(doc(db, "cities", cityId)).then(doc => {
-                if (doc.exists()) {
-                    setCityName(doc.data().name);
-                }
-            });
+            supabase.from('cities').select('name').eq('id', cityId).single()
+                .then(({ data }) => {
+                    if (data) setCityName(data.name);
+                });
         }
     }, [cityId]);
 
-    // Fetch Points
+    // Fetch Points & Subscription
+    const fetchPoints = useCallback(async () => {
+        if (!congregationId || !cityId) return;
+
+        const { data, error } = await supabase
+            .from('witnessing_points')
+            .select('*')
+            .eq('congregation_id', congregationId)
+            .eq('city_id', cityId)
+            .order('name');
+
+        if (data) setPoints(data);
+        if (error) console.error("Error fetching points:", error);
+        setLoading(false);
+    }, [congregationId, cityId]);
+
     useEffect(() => {
         if (!congregationId || !cityId) {
             setLoading(false);
             return;
         }
 
-        const q = query(
-            collection(db, "witnessing_points"),
-            where("congregationId", "==", congregationId),
-            where("cityId", "==", cityId)
-        );
+        fetchPoints();
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data: WitnessingPoint[] = [];
-            snapshot.forEach((doc) => {
-                data.push({ id: doc.id, ...doc.data() } as WitnessingPoint);
-            });
-            data.sort((a, b) => a.name.localeCompare(b.name));
-            setPoints(data);
-            setLoading(false);
-        });
+        const subscription = supabase
+            .channel(`points:city=${cityId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'witnessing_points',
+                filter: `city_id=eq.${cityId}`
+            }, () => {
+                fetchPoints();
+            })
+            .subscribe();
 
-        return () => unsubscribe();
-    }, [congregationId, cityId]);
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, [congregationId, cityId, fetchPoints]);
 
-    // Cleanup Expired Check-ins (Lazy approach: Run on client load/update)
+    // Cleanup Expired Check-ins
     useEffect(() => {
         const checkExpired = async () => {
             const now = Date.now();
             const FIVE_HOURS = 5 * 60 * 60 * 1000;
+            let needsUpdate = false;
 
             for (const point of points) {
-                if (!point.activeUsers) continue;
+                if (!point.active_users) continue;
 
-                const validUsers = point.activeUsers.filter(u => {
-                    // Keep if no timestamp (legacy) or if timestamp is recent
+                const validUsers = point.active_users.filter(u => {
                     if (!u.timestamp) return true;
                     return (now - u.timestamp) < FIVE_HOURS;
                 });
 
-                if (validUsers.length !== point.activeUsers.length) {
-                    // Found expired users! Update DB.
-                    // Recalculate status
-                    const newStatus = (validUsers.length > 0 || (point.currentPublishers && point.currentPublishers.length > 0))
+                if (validUsers.length !== point.active_users.length) {
+                    const newStatus = (validUsers.length > 0 || (point.current_publishers && point.current_publishers.length > 0))
                         ? 'OCCUPIED'
-                        : 'AVAILABLE' as 'AVAILABLE' | 'OCCUPIED';
+                        : 'AVAILABLE';
 
                     try {
-                        await updateDoc(doc(db, "witnessing_points", point.id), {
-                            activeUsers: validUsers,
-                            status: newStatus
-                        });
+                        await supabase
+                            .from('witnessing_points')
+                            .update({
+                                active_users: validUsers,
+                                status: newStatus
+                            })
+                            .eq('id', point.id);
+
                         console.log(`Cleaned up expired users for point: ${point.name}`);
                     } catch (error) {
                         console.error("Error cleaning up expired point:", error);
@@ -146,6 +161,8 @@ function WitnessingPointListContent() {
         };
 
         if (points.length > 0) {
+            // Run once per load/update to check integrity
+            // Ideally this should be a scheduled function on the backend, but client-side lazy cleanup works for now.
             checkExpired();
         }
     }, [points]);
@@ -162,7 +179,8 @@ function WitnessingPointListContent() {
     const handleDeletePoint = async (id: string, name: string) => {
         if (!confirm(`Tem certeza que deseja excluir o ponto "${name}"?`)) return;
         try {
-            await deleteDoc(doc(db, "witnessing_points", id));
+            const { error } = await supabase.from('witnessing_points').delete().eq('id', id);
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting point:", error);
             alert("Erro ao excluir ponto.");
@@ -191,27 +209,27 @@ function WitnessingPointListContent() {
         setIsEditModalOpen(true);
     };
 
-    // 1. Initial Check: Triggered by user click
+    // 1. Initial Check
     const handleCheckInClick = (point: WitnessingPoint) => {
         if (!user) return;
-        const userName = profileName || user.displayName || user.email?.split('@')[0] || 'Publicador';
-        const userId = user.uid;
+        const userName = profileName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Publicador';
+        const userId = user.id;
 
         // Is user checked in HERE?
-        const legacyIndex = (point.currentPublishers || []).indexOf(userName);
-        const activeIndex = (point.activeUsers || []).findIndex(u => u.uid === userId);
-        const activeByNameIndex = (point.activeUsers || []).findIndex(u => u.name === userName);
+        const legacyIndex = (point.current_publishers || []).indexOf(userName);
+        const activeIndex = (point.active_users || []).findIndex(u => u.uid === userId);
+        const activeByNameIndex = (point.active_users || []).findIndex(u => u.name === userName);
         const isCheckedInHere = legacyIndex >= 0 || activeIndex >= 0 || activeByNameIndex >= 0;
 
         if (isCheckedInHere) {
             // If already here, just toggle out (no confirmation needed)
             executeCheckInOut(point, true); // true = checkout
         } else {
-            // If trying to enter, check for collision
+            // Check collision
             const otherPoint = points.find(p =>
                 p.id !== point.id && (
-                    p.activeUsers?.some(u => u.uid === userId || u.name === userName) ||
-                    p.currentPublishers?.includes(userName)
+                    p.active_users?.some(u => u.uid === userId || u.name === userName) ||
+                    p.current_publishers?.includes(userName)
                 )
             );
 
@@ -227,21 +245,19 @@ function WitnessingPointListContent() {
         }
     };
 
-    // 2. Execution Logic: Performs the actual DB updates
+    // 2. Execution Logic
     const executeCheckInOut = async (point: WitnessingPoint, isCheckingOut: boolean) => {
         if (!user) return;
-        const userName = profileName || user.displayName || user.email?.split('@')[0] || 'Publicador';
-        const userId = user.uid;
+        const userName = profileName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Publicador';
+        const userId = user.id;
 
-        let newPublishers = [...(point.currentPublishers || [])];
-        let newActiveUsers = [...(point.activeUsers || [])];
+        let newPublishers = [...(point.current_publishers || [])];
+        let newActiveUsers = [...(point.active_users || [])];
 
         if (isCheckingOut) {
-            // Check Out
             newPublishers = newPublishers.filter(n => n !== userName);
             newActiveUsers = newActiveUsers.filter(u => u.uid !== userId && u.name !== userName);
         } else {
-            // Check In
             if (!newActiveUsers.some(u => u.uid === userId)) {
                 newActiveUsers.push({ uid: userId, name: userName, timestamp: Date.now() });
             }
@@ -253,37 +269,43 @@ function WitnessingPointListContent() {
         const newStatus = (newPublishers.length > 0 || newActiveUsers.length > 0) ? 'OCCUPIED' : 'AVAILABLE';
 
         try {
-            await updateDoc(doc(db, "witnessing_points", point.id), {
-                currentPublishers: newPublishers,
-                activeUsers: newActiveUsers,
-                status: newStatus
-            });
+            const { error } = await supabase
+                .from('witnessing_points')
+                .update({
+                    current_publishers: newPublishers,
+                    active_users: newActiveUsers,
+                    status: newStatus
+                })
+                .eq('id', point.id);
+
+            if (error) throw error;
         } catch (error) {
             console.error("Error updating status:", error);
             alert("Erro ao atualizar status.");
         }
     };
 
-    // 3. Confirm Switch: Triggered by Modal Confirmation
+    // 3. Confirm Switch
     const handleConfirmSwitch = async () => {
         if (!conflictingPoint || !pendingCheckInPoint || !user) return;
-        const userName = profileName || user.displayName || user.email?.split('@')[0] || 'Publicador';
-        const userId = user.uid;
+        const userName = profileName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Publicador';
+        const userId = user.id;
 
-        // Auto-Checkout from Conflicting Point
         try {
-            const otherActive = (conflictingPoint.activeUsers || []).filter(u => u.uid !== userId && u.name !== userName);
-            const otherLegacy = (conflictingPoint.currentPublishers || []).filter(n => n !== userName);
+            // Checkout from old
+            const otherActive = (conflictingPoint.active_users || []).filter(u => u.uid !== userId && u.name !== userName);
+            const otherLegacy = (conflictingPoint.current_publishers || []).filter(n => n !== userName);
             const otherStatus = (otherActive.length > 0 || otherLegacy.length > 0) ? 'OCCUPIED' : 'AVAILABLE';
 
-            await updateDoc(doc(db, "witnessing_points", conflictingPoint.id), {
-                activeUsers: otherActive,
-                currentPublishers: otherLegacy,
+            await supabase.from('witnessing_points').update({
+                active_users: otherActive,
+                current_publishers: otherLegacy,
                 status: otherStatus
-            });
+            }).eq('id', conflictingPoint.id);
 
-            // After successful checkout, enter new point
+            // Checkin to new
             await executeCheckInOut(pendingCheckInPoint, false);
+            setIsConfirmModalOpen(false);
         } catch (err) {
             console.error("Error auto-checking out:", err);
             alert("Erro ao sair do ponto anterior.");
@@ -376,10 +398,10 @@ function WitnessingPointListContent() {
                             {filteredPoints.map(point => {
                                 const isOccupied = point.status === 'OCCUPIED';
 
-                                // Determine checked-in status based on UID (new) or Name (legacy)
+                                // Determine checked-in status
                                 const userIsCheckedIn =
-                                    point.activeUsers?.some(u => u.uid === user?.uid) ||
-                                    point.currentPublishers?.includes(user?.displayName || '');
+                                    point.active_users?.some(u => u.uid === user?.id) ||
+                                    point.current_publishers?.includes(user?.user_metadata?.full_name || user?.email || '');
 
                                 return (
                                     <div
@@ -399,7 +421,7 @@ function WitnessingPointListContent() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            {/* Navigation Button (Visible to All) */}
+                                            {/* Navigation Button */}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -460,14 +482,13 @@ function WitnessingPointListContent() {
 
                                         <div className="flex items-center justify-between mt-4 pt-3 border-t border-surface-border">
                                             <div className="flex flex-wrap gap-2 items-center">
-                                                {(point.activeUsers && point.activeUsers.length > 0) || (point.currentPublishers && point.currentPublishers.length > 0) ? (
+                                                {(point.active_users && point.active_users.length > 0) || (point.current_publishers && point.current_publishers.length > 0) ? (
                                                     <>
-                                                        {/* Prefer ActiveUsers (Rich Data) */}
-                                                        {point.activeUsers && point.activeUsers.length > 0 ? (
-                                                            point.activeUsers.map((pub, i) => (
+                                                        {/* Active Users */}
+                                                        {point.active_users && point.active_users.length > 0 ? (
+                                                            point.active_users.map((pub, i) => (
                                                                 <div key={`active-${i}`} className="bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 flex items-center justify-center">
                                                                     <span className="text-xs font-bold text-main uppercase tracking-wide">
-                                                                        {/* Force render of name if UID is missing or component fails visually */}
                                                                         {pub.uid ? (
                                                                             <AssignedUserBadge userId={pub.uid} fallbackName={pub.name} />
                                                                         ) : (
@@ -477,8 +498,8 @@ function WitnessingPointListContent() {
                                                                 </div>
                                                             ))
                                                         ) : (
-                                                            /* Fallback Legacy Publishers (Strings) */
-                                                            point.currentPublishers?.map((name, i) => (
+                                                            /* Legacy */
+                                                            point.current_publishers?.map((name, i) => (
                                                                 <div key={`legacy-${i}`} className="bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 flex items-center justify-center">
                                                                     <span className="text-xs font-bold text-main uppercase tracking-wide">
                                                                         {name}
@@ -516,7 +537,7 @@ function WitnessingPointListContent() {
                     )}
                 </div>
 
-                {/* Map View - At the bottom */}
+                {/* Map View */}
                 <div className="h-96 w-full relative border-t border-surface-border">
                     <MapView
                         items={filteredPoints.map(p => ({
@@ -524,9 +545,9 @@ function WitnessingPointListContent() {
                             lat: p.lat || 0,
                             lng: p.lng || 0,
                             title: p.name,
-                            number: p.name, // Display Name on the pin chip
-                            subtitle: p.currentPublishers && p.currentPublishers.length > 0
-                                ? `Ocupado por: ${p.currentPublishers.join(', ')}`
+                            number: p.name,
+                            subtitle: p.current_publishers && p.current_publishers.length > 0
+                                ? `Ocupado por: ${p.current_publishers.join(', ')}`
                                 : 'Livre',
                             status: p.status === 'OCCUPIED' ? 'OCUPADO' : 'LIVRE',
                             color: p.status === 'OCCUPIED' ? 'red' : 'green',

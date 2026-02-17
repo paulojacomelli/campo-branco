@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense } from 'react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, documentId, getDocs, updateDoc, serverTimestamp, Timestamp, setDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import {
     Map as MapIcon,
     Loader2,
@@ -54,7 +53,7 @@ interface SharedListViewProps {
 export default function SharedListView({ id: propId }: SharedListViewProps) {
     const searchParams = useSearchParams();
     const id = propId || searchParams.get('id');
-    const { user } = useAuth();
+    const { user, profileName } = useAuth();
     const router = useRouter();
 
     const [loading, setLoading] = useState(true);
@@ -91,21 +90,22 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
             }
 
             try {
-                // 1. Fetch List Metadata (Directly from Firestore)
-                const docRef = doc(db, "shared_lists", id);
-                const docSnap = await getDoc(docRef);
+                // 1. Fetch List Metadata from Supabase
+                const { data: list, error: listError } = await supabase
+                    .from('shared_lists')
+                    .select('*')
+                    .eq('id', id)
+                    .single();
 
-                if (!docSnap.exists()) {
+                if (listError || !list) {
                     setError("Link não encontrado.");
                     setLoading(false);
                     return;
                 }
 
-                const list = docSnap.data() as SharedList;
-
-                if (list.expiresAt) {
+                if (list.expires_at) {
                     const now = new Date();
-                    const expires = list.expiresAt.toDate ? list.expiresAt.toDate() : new Date(list.expiresAt.seconds * 1000);
+                    const expires = new Date(list.expires_at);
                     if (now > expires) {
                         setError("Link expirado.");
                         setLoading(false);
@@ -113,76 +113,98 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     }
                 }
 
-                setListData(list);
+                setListData({
+                    ...list,
+                    assignedTo: list.assigned_to,
+                    assignedName: list.assigned_name,
+                    congregationId: list.congregation_id,
+                    territoryId: list.territory_id,
+                    cityId: list.city_id,
+                    expiresAt: list.expires_at
+                } as any);
 
                 // Show responsibility modal if no one is assigned and list is active
-                if (!list.assignedTo && !list.assignedName && list.status !== 'completed') {
+                if (!list.assigned_to && !list.assigned_name && list.status !== 'completed') {
                     setIsResponsibilityModalOpen(true);
                 }
 
-                // 2. Fetch Snapshotted Items (Public Subcollection)
-                console.log(`[SharedListView] Fetching items for list ${id}...`);
-                const itemsRef = collection(db, "shared_lists", id, "items");
-                const itemsSnap = await getDocs(itemsRef);
-                console.log(`[SharedListView] Items snapshot size: ${itemsSnap.size}`);
+                // 2. Fetch Scoped Results (Visits) for this shared list
+                const { data: visits, error: visitsError } = await supabase
+                    .from('visits')
+                    .select('*')
+                    .eq('shared_list_id', id);
 
-                const fetchedItems: any[] = [];
-
-                if (!itemsSnap.empty) {
-                    itemsSnap.forEach(doc => {
-                        fetchedItems.push(doc.data());
+                const linkResults: Record<string, any> = {};
+                if (visits) {
+                    visits.forEach(v => {
+                        linkResults[v.address_id] = v;
                     });
-                } else if (list.items && list.items.length > 0) {
-                    console.log("[SharedListView] Subcollection empty, falling back to live items from ID array.");
-
-                    // Determine collection
-                    let collectionName = 'territories';
-                    if (list.type === 'city') collectionName = 'cities';
-                    if (list.type === 'address') collectionName = 'addresses';
-
-                    // Chunk queries to avoid "in" limits (max 30 usually, keep safe at 10)
-                    const chunks = [];
-                    for (let i = 0; i < list.items.length; i += 10) {
-                        chunks.push(list.items.slice(i, i + 10));
-                    }
-
-                    for (const chunk of chunks) {
-                        // Use documentId() to query by ID
-                        const q = query(collection(db, collectionName), where(documentId(), "in", chunk));
-                        const snap = await getDocs(q);
-                        snap.forEach(d => fetchedItems.push({ id: d.id, ...d.data() }));
-                    }
                 }
 
-                // 3. Fetch Scoped Results (Public Subcollection - Client Side)
-                const resultsRef = collection(db, "shared_lists", id, "results");
-                const resultsSnap = await getDocs(resultsRef);
-                const linkResults: Record<string, any> = {};
-                resultsSnap.forEach(rdoc => {
-                    linkResults[rdoc.id] = rdoc.data();
-                });
+                // 3. Fetch Items (Territories/Cities/Addresses)
+                let fetchedItems: any[] = [];
+                const itemIds = list.items || [];
+
+                if (itemIds.length > 0) {
+                    // Try to fetch from Snapshots first
+                    const { data: snapData } = await supabase
+                        .from('shared_list_snapshots')
+                        .select('data')
+                        .eq('shared_list_id', id)
+                        .in('item_id', itemIds);
+
+                    if (snapData && snapData.length > 0) {
+                        fetchedItems = snapData.map(s => ({ ...s.data, id: s.data.id }));
+                    } else {
+                        // Fallback to main tables
+                        let tableName = 'territories';
+                        if (list.type === 'city') tableName = 'cities';
+                        if (list.type === 'address') tableName = 'addresses';
+
+                        const { data: itemsData } = await supabase
+                            .from(tableName)
+                            .select('*')
+                            .in('id', itemIds);
+
+                        if (itemsData) fetchedItems = itemsData;
+                    }
+                }
 
                 // Merge Items with Results
                 const mergedItems = fetchedItems.map((item: any) => {
                     const result = linkResults[item.id];
-                    // Fallback to the item's own status if no link-specific result exists (and it was active at snapshot time)
                     return {
                         ...item,
-                        completed: (result?.status || item.visitStatus) === 'contacted',
-                        visitStatus: result?.status || item.visitStatus || ''
+                        completed: (result?.status || item.visit_status) === 'contacted',
+                        visitStatus: result?.status || item.visit_status || ''
                     };
                 });
 
-                console.log(`[SharedListView] Merging ${fetchedItems.length} items with ${Object.keys(linkResults).length} results.`);
-
                 setItems(mergedItems);
-                console.log(`[SharedListView] setItems called with ${mergedItems.length} items.`);
 
                 // 4. Calculate Counts and Stats (if Territory)
                 if (list.type === 'territory') {
-                    // Fetch Snapshotted Addresses for Stats
-                    const addrRef = collection(db, "shared_lists", id, "territory_addresses");
-                    const addrSnap = await getDocs(addrRef);
+                    // We need ALL addresses of these territories
+                    // If we have snapshots, we can use them
+                    const { data: addrSnapshots } = await supabase
+                        .from('shared_list_snapshots')
+                        .select('data')
+                        .eq('shared_list_id', id);
+
+                    let allAddresses: any[] = [];
+                    if (addrSnapshots && addrSnapshots.length > fetchedItems.length) {
+                        // Filrando pelo que parece ser endereço (tem street ou territory_id)
+                        allAddresses = addrSnapshots
+                            .map(s => s.data)
+                            .filter(d => d.territory_id);
+                    } else if (list.items && list.items.length > 0) {
+                        // Fallback to main addresses table
+                        const { data: addrData } = await supabase
+                            .from('addresses')
+                            .select('*')
+                            .in('territory_id', list.items);
+                        if (addrData) allAddresses = addrData;
+                    }
 
                     const counts: Record<string, number> = {};
                     const stats = {
@@ -195,22 +217,15 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                         contested: 0
                     };
 
-                    addrSnap.forEach((doc) => {
-                        const addr = doc.data();
-
-                        // Count per territory - ONLY if active
-                        if (addr.territoryId && addr.isActive !== false) {
-                            counts[addr.territoryId] = (counts[addr.territoryId] || 0) + 1;
-                        }
-
-                        if (addr.isActive !== false) {
+                    allAddresses.forEach((addr: any) => {
+                        if (addr.is_active !== false) {
+                            counts[addr.territory_id] = (counts[addr.territory_id] || 0) + 1;
                             stats.total++;
 
-                            // Override status with link-specific result
                             const result = linkResults[addr.id];
-                            const currentStatus = result?.status;
+                            const currentStatus = result?.status || addr.visit_status;
 
-                            if (currentStatus) {
+                            if (currentStatus && currentStatus !== 'none') {
                                 stats.processed++;
                                 if (currentStatus === 'contacted') stats.contacted++;
                                 else if (currentStatus === 'not_contacted') stats.not_contacted++;
@@ -245,11 +260,13 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
             const expiresAt = new Date();
             expiresAt.setHours(expiresAt.getHours() + 24);
 
-            await updateDoc(doc(db, "shared_lists", id), {
-                expiresAt: Timestamp.fromDate(expiresAt),
-                returnedAt: serverTimestamp(),
+            const { error } = await supabase.from('shared_lists').update({
+                expires_at: expiresAt.toISOString(),
+                returned_at: new Date().toISOString(),
                 status: 'completed'
-            });
+            }).eq('id', id);
+
+            if (error) throw error;
 
             alert("Mapa devolvido com sucesso! O acesso será encerrado em 24 horas.");
             window.location.reload();
@@ -269,18 +286,31 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
         ));
 
         try {
-            const res = await fetch(`/api/share/${id}/return-item`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ territoryId, action: 'return' })
-            });
+            // Update snapshot entry to mark as completed
+            const { error: snapError } = await supabase
+                .from('shared_list_snapshots')
+                .update({ data: { ...items.find(i => i.id === territoryId), visitStatus: 'completed' } })
+                .eq('shared_list_id', id)
+                .eq('item_id', territoryId);
 
-            if (!res.ok) throw new Error("Erro ao processar devolução.");
+            if (snapError) throw snapError;
 
-            const data = await res.json();
+            // Check if all items are completed
+            const allCompleted = items.every(item =>
+                item.id === territoryId ? true : item.visitStatus === 'completed'
+            );
 
-            if (data.listCompleted) {
-                alert("Todos os territórios foram devolvidos! O mapa será concluído.");
+            if (allCompleted) {
+                const expiresAt = new Date();
+                expiresAt.setHours(expiresAt.getHours() + 24);
+
+                await supabase.from('shared_lists').update({
+                    expires_at: expiresAt.toISOString(),
+                    returned_at: new Date().toISOString(),
+                    status: 'completed'
+                }).eq('id', id);
+
+                alert("Todos os territórios foram devolvidos! O mapa será encerrado em 24h.");
                 window.location.reload();
             }
 
@@ -303,13 +333,13 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
         ));
 
         try {
-            const res = await fetch(`/api/share/${id}/return-item`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ territoryId, action: 'undo' })
-            });
+            const { error: snapError } = await supabase
+                .from('shared_list_snapshots')
+                .update({ data: { ...items.find(i => i.id === territoryId), visitStatus: 'active' } })
+                .eq('shared_list_id', id)
+                .eq('item_id', territoryId);
 
-            if (!res.ok) throw new Error("Erro ao desfazer devolução.");
+            if (snapError) throw snapError;
 
         } catch (e) {
             console.error(e);
@@ -329,126 +359,100 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
         if (!id) return;
         setAccepting(true);
         try {
-            // 1. Assign territory to user
-            await updateDoc(doc(db, "shared_lists", id), {
-                assignedTo: user.uid,
-                assignedName: user.displayName || 'Irmão sem Nome',
-                assignedAt: serverTimestamp()
-            });
+            // 1. Assign territory to user in Supabase
+            const { error: listError } = await supabase
+                .from('shared_lists')
+                .update({
+                    assigned_to: user.id,
+                    assigned_name: profileName || 'Irmão sem Nome'
+                })
+                .eq('id', id);
+
+            if (listError) throw listError;
 
             // 2. Automatic Binding: If user has no congregation, bind to this one
             if (listData?.congregationId) {
-                const userRef = doc(db, "users", user.uid);
-                const userSnap = await getDocs(query(collection(db, "users"), where("email", "==", user.email)));
+                const { data: userData, error: userFetchError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
 
-                let targetRef = userRef;
-                if (!userSnap.empty) targetRef = userSnap.docs[0].ref;
-
-                const userDoc = await getDoc(targetRef);
-
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    if (!userData.congregationId) {
-                        await updateDoc(targetRef, {
-                            congregationId: listData.congregationId,
-                            role: 'PUBLICADOR',
-                            updatedAt: serverTimestamp()
-                        });
-                        window.location.reload();
-                        return;
-                    }
-                } else {
-                    await setDoc(targetRef, {
-                        email: user.email,
-                        name: user.displayName,
-                        congregationId: listData.congregationId,
-                        role: 'PUBLICADOR',
-                        createdAt: serverTimestamp()
-                    });
+                if (userData && !userData.congregation_id) {
+                    await supabase.from('users').update({
+                        congregation_id: listData.congregationId,
+                        role: 'PUBLICADOR'
+                    }).eq('id', user.id);
                     window.location.reload();
                     return;
                 }
             }
 
             setIsResponsibilityModalOpen(false);
-            setListData(prev => prev ? { ...prev, assignedTo: user.uid, assignedName: user.displayName || 'Irmão sem Nome' } : null);
+            setListData(prev => prev ? { ...prev, assignedTo: user.id, assignedName: profileName || 'Irmão sem Nome' } : null);
         } catch (e) {
             console.error("Error accepting responsibility:", e);
             alert("Erro ao aceitar responsabilidade ou vincular à congregação.");
         } finally {
             setAccepting(false);
         }
-
     };
 
     const handleSaveVisit = async (data: any) => {
         if (!visitingItem || !id) return;
 
-        // Optimistic UI Update (Feedback Instantâneo)
+        // Optimistic UI Update
         setItems(prev => prev.map(item =>
             item.id === visitingItem.id
                 ? { ...item, completed: data.status === 'contacted', visitStatus: data.status }
                 : item
         ));
 
-        // Armazena ID temporário para reverter em caso de erro fatal
         const savedItem = visitingItem;
         setVisitingItem(null);
 
         try {
-            const { writeBatch } = await import('firebase/firestore');
-            const batch = writeBatch(db);
-            const now = serverTimestamp();
+            const visit_date = new Date().toISOString();
 
-            // 1. Visit Log
-            const visitRef = doc(collection(db, "addresses", savedItem.id, "visits"));
-            batch.set(visitRef, {
+            // 1. Visit Log in Supabase
+            const { error: visitError } = await supabase.from('visits').insert({
+                address_id: savedItem.id,
+                shared_list_id: id,
                 status: data.status,
-                date: now,
-                userId: user?.uid,
-                userName: user?.displayName || 'Publicador',
+                visit_date: visit_date,
+                user_id: user?.id,
+                publisher_name: profileName || 'Publicador',
                 notes: data.observations || '',
-                congregationId: listData?.congregationId || listData?.context?.congregationId,
-                cityId: savedItem.cityId || listData?.cityId,
-                territoryId: savedItem.territoryId || listData?.territoryId,
-                tagsSnapshot: {
+                congregation_id: listData?.congregationId,
+                territory_id: savedItem.territory_id || listData?.territoryId,
+                tags_snapshot: {
                     isDeaf: data.isDeaf || false,
                     isMinor: data.isMinor || false,
                     isStudent: data.isStudent || false,
                     isNeurodivergent: data.isNeurodivergent || false
-                },
-                shareId: id
+                }
             });
 
-            // 2. Shared List Result (Public/Open)
-            const resultRef = doc(db, "shared_lists", id, "results", savedItem.id);
-            batch.set(resultRef, {
-                status: data.status,
-                observations: data.observations || '',
-                updatedAt: now,
-                reportedBy: user?.uid
-            }, { merge: true });
+            if (visitError) throw visitError;
 
-            await batch.commit();
+            // 2. Address Update in Supabase
+            const addressUpdates: any = {
+                visit_status: data.status,
+                last_visited_at: visit_date,
+                is_deaf: data.isDeaf || false,
+                is_minor: data.isMinor || false,
+                is_student: data.isStudent || false,
+                is_neurodivergent: data.isNeurodivergent || false,
+                observations: data.observations || ''
+            };
+            if (data.status === 'contacted') addressUpdates.completed = true;
 
-            // 3. Address Update (Best Effort)
-            try {
-                const addressRef = doc(db, "addresses", savedItem.id);
-                const addressUpdates: any = {
-                    visitStatus: data.status,
-                    lastVisitedAt: now,
-                    isDeaf: data.isDeaf || false,
-                    isMinor: data.isMinor || false,
-                    isStudent: data.isStudent || false,
-                    isNeurodivergent: data.isNeurodivergent || false,
-                    observations: data.observations || ''
-                };
-                if (data.status === 'contacted') addressUpdates.completed = true;
+            const { error: addrError } = await supabase
+                .from('addresses')
+                .update(addressUpdates)
+                .eq('id', savedItem.id);
 
-                await updateDoc(addressRef, addressUpdates);
-            } catch (localErr) {
-                console.warn("Address update skipped (permissions):", localErr);
-            }
+            if (addrError) console.warn("Address update skipped (permissions/schema):", addrError);
 
         } catch (e) {
             console.error("Error saving visit:", e);
@@ -746,17 +750,17 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                         </span>
                                                     )}
 
-                                                    {item.isDeaf && (
+                                                    {item.is_deaf && (
                                                         <span className="flex items-center gap-1 bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                             <Ear className="w-3 h-3" /> Surdo
                                                         </span>
                                                     )}
-                                                    {item.isMinor && (
+                                                    {item.is_minor && (
                                                         <span className="flex items-center gap-1 bg-primary-light/30 text-primary-dark px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                             <Baby className="w-3 h-3" /> Menor
                                                         </span>
                                                     )}
-                                                    {item.isStudent && (
+                                                    {item.is_student && (
                                                         <span className="flex items-center gap-1 bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                             <GraduationCap className="w-3 h-3" /> Estudante
                                                         </span>
@@ -868,10 +872,13 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
             {visitingItem && (
                 <VisitReportModal
-                    isOpen={!!visitingItem}
-                    onClose={() => setVisitingItem(null)}
                     address={visitingItem}
+                    onClose={() => setVisitingItem(null)}
                     onSave={handleSaveVisit}
+                    onViewHistory={() => {
+                        setViewingHistoryItem(visitingItem);
+                        setVisitingItem(null);
+                    }}
                 />
             )}
 

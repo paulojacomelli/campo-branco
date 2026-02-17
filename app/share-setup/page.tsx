@@ -2,12 +2,10 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import {
     Loader2,
     ArrowLeft,
-    Link as LinkIcon,
     Copy,
     ExternalLink,
     Share2,
@@ -50,25 +48,24 @@ function ShareSetupContent() {
             }
 
             try {
-                const chunks = [];
-                for (let i = 0; i < ids.length; i += 10) {
-                    chunks.push(ids.slice(i, i + 10));
-                }
+                const { data: fetched, error: fetchError } = await supabase
+                    .from('territories')
+                    .select('*')
+                    .in('id', ids);
 
-                const fetched: any[] = [];
-                for (const chunk of chunks) {
-                    const q = query(collection(db, "territories"), where("__name__", "in", chunk));
-                    const snap = await getDocs(q);
-                    snap.forEach(d => fetched.push({ id: d.id, ...d.data() }));
-                }
+                if (fetchError) throw fetchError;
+                setTerritories(fetched || []);
 
-                setTerritories(fetched);
+                // Fetch City Name if possible
+                if (fetched && fetched.length > 0 && fetched[0].city_id) {
+                    const { data: cityData } = await supabase
+                        .from('cities')
+                        .select('name')
+                        .eq('id', fetched[0].city_id)
+                        .single();
 
-                // Fetch City Name if possible (assuming all from same city or taking first)
-                if (fetched.length > 0 && fetched[0].cityId) {
-                    const cityDoc = await getDoc(doc(db, "cities", fetched[0].cityId));
-                    if (cityDoc.exists()) {
-                        setCityName(cityDoc.data().name);
+                    if (cityData) {
+                        setCityName(cityData.name);
                     }
                 }
             } catch (err) {
@@ -89,12 +86,13 @@ function ShareSetupContent() {
         setGenerating(true);
         try {
             const now = new Date();
-            let expiresAt = new Date();
+            let expiresAt: Date | null = new Date();
 
             switch (expiration) {
                 case '7d': expiresAt.setDate(now.getDate() + 7); break;
                 case '14d': expiresAt.setDate(now.getDate() + 14); break;
                 case '30d': expiresAt.setDate(now.getDate() + 30); break;
+                case 'never': expiresAt = null; break;
             }
 
             let title = "Territórios Compartilhados";
@@ -104,84 +102,70 @@ function ShareSetupContent() {
                 title = `${territories.length} Territórios - ${cityName || territories[0].city || 'Vários'}`;
             }
 
-            let shareDoc;
-            try {
-                shareDoc = await addDoc(collection(db, "shared_lists"), {
+            // Create shared list in Supabase
+            const { data: shareData, error: shareError } = await supabase
+                .from('shared_lists')
+                .insert({
                     type: 'territory',
                     items: territories.map(t => t.id),
-                    createdBy: user?.uid,
-                    congregationId: territories[0].congregationId,
-                    cityId: territories[0].cityId,
-                    createdAt: serverTimestamp(),
-                    expiresAt: expiration === 'never' ? null : Timestamp.fromDate(expiresAt),
+                    created_by: user?.id,
+                    congregation_id: territories[0].congregation_id,
+                    city_id: territories[0].city_id,
+                    expires_at: expiresAt ? expiresAt.toISOString() : null,
                     status: 'active',
                     title: title,
-                    assignedTo: null,
-                    assignedName: null,
                     context: territories.length === 1 ? {
                         territoryId: territories[0].id,
-                        cityId: territories[0].cityId,
+                        cityId: territories[0].city_id,
                         territoryName: territories[0].name || '',
                         cityName: cityName || territories[0].city || '',
                         featuredDetails: cityName || territories[0].city || ''
                     } : {}
-                });
-            } catch (createError) {
-                console.error("Error creating shared list:", createError);
-                throw createError;
-            }
+                })
+                .select()
+                .single();
 
+            if (shareError) throw shareError;
 
             // START SNAPSHOT LOGIC
-            // 1. Snapshot Territories into 'items' subcollection
-            const batch = null; // We'll do parallel promises for simplicity to avoid batch limits logic complexity for now
-            const snapshotPromises = [];
+            const snapshotEntries = [];
 
             // Snapshot Territories
             for (const t of territories) {
-                const itemRef = doc(db, "shared_lists", shareDoc.id, "items", t.id);
-                snapshotPromises.push(setDoc(itemRef, {
-                    ...t,
-                    congregationId: territories[0].congregationId,
-                    createdBy: user?.uid
-                }));
-            }
-
-            // Snapshot Addresses
-            // We need to fetch all addresses for these territories
-            const territoryIds = territories.map(t => t.id);
-            // Chunk address queries
-            const addressChunks = [];
-            for (let i = 0; i < territoryIds.length; i += 10) {
-                addressChunks.push(territoryIds.slice(i, i + 10));
-            }
-
-            for (const chunk of addressChunks) {
-                const qAddr = query(collection(db, "addresses"), where("territoryId", "in", chunk));
-                const snapAddr = await getDocs(qAddr);
-
-                snapAddr.forEach(aDoc => {
-                    const addrRef = doc(db, "shared_lists", shareDoc.id, "territory_addresses", aDoc.id);
-                    snapshotPromises.push(setDoc(addrRef, {
-                        ...aDoc.data(),
-                        congregationId: territories[0].congregationId,
-                        createdBy: user?.uid
-                    }));
+                snapshotEntries.push({
+                    shared_list_id: shareData.id,
+                    item_id: t.id,
+                    data: t
                 });
             }
 
+            // Snapshot Addresses
+            const territoryIds = territories.map(t => t.id);
+            const { data: addresses, error: addrError } = await supabase
+                .from('addresses')
+                .select('*')
+                .in('territory_id', territoryIds);
 
-            try {
-                console.log(`[SNAPSHOT] Starting ${snapshotPromises.length} write operations...`);
-                await Promise.all(snapshotPromises);
-                console.log("[SNAPSHOT] All writes completed successfully!");
-            } catch (snapshotError) {
-                console.error("[SNAPSHOT] Failed during batch write:", snapshotError);
-                throw snapshotError;
+            if (addresses) {
+                for (const addr of addresses) {
+                    snapshotEntries.push({
+                        shared_list_id: shareData.id,
+                        item_id: addr.id,
+                        data: addr
+                    });
+                }
+            }
+
+            if (snapshotEntries.length > 0) {
+                const { error: snapError } = await supabase
+                    .from('shared_list_snapshots')
+                    .insert(snapshotEntries);
+
+                if (snapError) console.warn("[SNAPSHOT] Failed to save snapshots:", snapError);
             }
             // END SNAPSHOT LOGIC
 
-            const link = `${window.location.origin}/share?id=${shareDoc.id}`;
+            const link = `${window.location.origin}/share?id=${shareData.id}`;
             setGeneratedLink(link);
             return link;
         } catch (error) {

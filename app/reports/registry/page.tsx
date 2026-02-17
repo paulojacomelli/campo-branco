@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { ChevronLeft, ChevronRight, Plus, Save, X, Edit2, Trash2, Calendar, User, FileText, Download, Printer } from "lucide-react";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -84,21 +83,28 @@ export default function RegistryPage() {
             const { start, end } = getServiceYearRange(currentServiceYear);
 
             // 1. Fetch Territories and Cities
-            const terrQuery = query(collection(db, "territories"), where("congregationId", "==", congregationId));
-            const cityQuery = query(collection(db, "cities"), where("congregationId", "==", congregationId));
+            const { data: terrData, error: terrError } = await supabase.from("territories").select("*").eq("congregation_id", congregationId);
+            const { data: cityData, error: cityError } = await supabase.from("cities").select("*").eq("congregation_id", congregationId);
 
-            const [terrSnap, citySnap] = await Promise.all([getDocs(terrQuery), getDocs(cityQuery)]);
+            if (terrError) {
+                console.error("Error fetching territories in registry:", terrError);
+                throw terrError;
+            }
+            if (cityError) {
+                console.error("Error fetching cities in registry:", cityError);
+                throw cityError;
+            }
 
             const cityMap = new Map<string, string>();
-            citySnap.docs.forEach(d => cityMap.set(d.id, d.data().name));
+            cityData?.forEach(d => cityMap.set(d.id, d.name));
 
-            const terrs: Territory[] = terrSnap.docs.map(d => ({
+            const terrs: Territory[] = terrData?.map(d => ({
                 id: d.id,
-                name: d.data().name,
-                cityId: d.data().cityId,
-                cityName: cityMap.get(d.data().cityId),
-                manualLastCompletedDate: d.data().manualLastCompletedDate?.toDate()
-            }));
+                name: d.name,
+                cityId: d.city_id,
+                cityName: cityMap.get(d.city_id),
+                manualLastCompletedDate: d.manual_last_completed_date ? new Date(d.manual_last_completed_date) : undefined
+            })) || [];
 
             // Sort by City then Name (numeric aware)
             terrs.sort((a, b) => {
@@ -109,31 +115,27 @@ export default function RegistryPage() {
             setTerritories(terrs);
 
             // 2. Fetch Shared Lists (Assignments) within range
-            // We fetch slightly wider range or all and filter to ensure we catch edge cases
-            const listQuery = query(collection(db, "shared_lists"), where("congregationId", "==", congregationId));
-            const listSnap = await getDocs(listQuery);
+            const { data: listData, error: listError } = await supabase.from("shared_lists").select("*").eq("congregation_id", congregationId);
+
+            if (listError) {
+                console.error("Error fetching history in registry:", listError);
+                throw listError;
+            }
 
             const assignmentsMap: Record<string, Assignment[]> = {};
             const completedDatesMap: Record<string, Date> = {}; // For the "Last completed" column
 
-            listSnap.forEach(docSnap => {
-                const data = docSnap.data();
+            listData?.forEach(data => {
                 if (data.type !== 'territory' || !data.items || data.items.length === 0) return;
 
                 // Determine dates
-                const createdDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt?.seconds * 1000 || 0);
-                const returnDate = data.returnedAt?.toDate ? data.returnedAt.toDate() :
-                    (data.completedAt?.toDate ? data.completedAt.toDate() :
-                        (data.status === 'completed' ? new Date() : undefined)); // Fallback if completed but no date?
+                const createdDate = new Date(data.created_at || 0);
+                const returnDate = data.returned_at ? new Date(data.returned_at) :
+                    (data.completed_at ? new Date(data.completed_at) :
+                        (data.status === 'completed' ? new Date() : undefined));
 
                 // Check if this assignment belongs to the current service year
-                // Logic: If assigned OR completed within the range? 
-                // Usually registry records when it was assigned or completed within the year.
-                // We'll include if Start Date falls in year OR End Date falls in year.
                 const inRange = (createdDate >= start && createdDate <= end) || (returnDate && returnDate >= start && returnDate <= end);
-
-                // For "Last Completed Date" column (assignments BEFORE this service year)
-                // We want the Latest completion date that is < Start of Service Year
 
                 data.items.forEach((tId: string) => {
                     // Handle "Last Completed" calculation (automatic from history)
@@ -148,13 +150,13 @@ export default function RegistryPage() {
                     if (inRange) {
                         if (!assignmentsMap[tId]) assignmentsMap[tId] = [];
                         assignmentsMap[tId].push({
-                            id: docSnap.id,
+                            id: data.id,
                             territoryId: tId,
-                            publisherName: data.assignedName || data.title || 'Indefinido',
-                            publisherId: data.assignedTo,
+                            publisherName: data.assigned_name || data.title || 'Indefinido',
+                            publisherId: data.assigned_to,
                             assignedDate: createdDate,
                             completedDate: returnDate,
-                            isManual: data.isManualRegistry // Flag if created manually via this page
+                            isManual: data.is_manual_registry // Flag if created manually via this page
                         });
                     }
                 });
@@ -199,31 +201,33 @@ export default function RegistryPage() {
             const payload: any = {
                 type: 'territory',
                 items: [selectedTerritoryId],
-                congregationId: congregationId,
-                assignedName: editingAssignment.publisherName,
-                assignedTo: editingAssignment.publisherId || null,
-                createdAt: Timestamp.fromDate(new Date(editingAssignment.assignedDate)),
+                congregation_id: congregationId,
+                assigned_name: editingAssignment.publisherName,
+                assigned_to: editingAssignment.publisherId || null,
+                created_at: new Date(editingAssignment.assignedDate).toISOString(),
                 status: editingAssignment.completedDate ? 'completed' : 'active',
                 title: 'Registro Manual', // metadata
-                isManualRegistry: true // marker
+                is_manual_registry: true // marker
             };
 
             if (editingAssignment.completedDate) {
-                payload.returnedAt = Timestamp.fromDate(new Date(editingAssignment.completedDate));
-                payload.expiresAt = Timestamp.fromDate(new Date(editingAssignment.completedDate.getTime() + 86400000)); // +1 day just to be safe
+                payload.returned_at = new Date(editingAssignment.completedDate).toISOString();
+                payload.expires_at = new Date(editingAssignment.completedDate.getTime() + 86400000).toISOString(); // +1 day just to be safe
             } else {
                 // If active, give it 30 days default?
                 const exp = new Date(editingAssignment.assignedDate);
                 exp.setDate(exp.getDate() + 30);
-                payload.expiresAt = Timestamp.fromDate(exp);
+                payload.expires_at = exp.toISOString();
             }
 
             if (editingAssignment.id) {
                 // Update
-                await updateDoc(doc(db, "shared_lists", editingAssignment.id), payload);
+                const { error } = await supabase.from("shared_lists").update(payload).eq("id", editingAssignment.id);
+                if (error) throw error;
             } else {
                 // Create
-                await addDoc(collection(db, "shared_lists"), payload);
+                const { error } = await supabase.from("shared_lists").insert([payload]);
+                if (error) throw error;
             }
 
             setIsModalOpen(false);
@@ -240,10 +244,12 @@ export default function RegistryPage() {
 
         try {
             const updatePayload = {
-                manualLastCompletedDate: editingLegacy.date ? Timestamp.fromDate(editingLegacy.date) : null
+                manual_last_completed_date: editingLegacy.date ? editingLegacy.date.toISOString() : null
             };
 
-            await updateDoc(doc(db, "territories", editingLegacy.territoryId), updatePayload);
+            const { error } = await supabase.from("territories").update(updatePayload).eq("id", editingLegacy.territoryId);
+            if (error) throw error;
+
             setIsLegacyModalOpen(false);
             setEditingLegacy(null);
             fetchData();
@@ -256,7 +262,8 @@ export default function RegistryPage() {
     const handleDeleteAssignment = async (id: string) => {
         if (!confirm("Tem certeza que deseja remover este registro?")) return;
         try {
-            await deleteDoc(doc(db, "shared_lists", id));
+            const { error } = await supabase.from("shared_lists").delete().eq("id", id);
+            if (error) throw error;
             fetchData();
         } catch (e) {
             console.error(e);

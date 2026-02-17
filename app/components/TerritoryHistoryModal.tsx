@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import {
     X,
     History,
     User,
     Calendar,
-    Clock,
     CheckCircle2,
     Loader2
 } from 'lucide-react';
@@ -22,10 +20,10 @@ interface TerritoryHistoryModalProps {
 
 interface HistoryEntry {
     id: string;
-    createdBy: string;
-    userName?: string;
-    createdAt: any;
-    returnedAt: any;
+    created_by: string;
+    user_name?: string;
+    created_at: string;
+    returned_at: string | null;
     status: string;
 }
 
@@ -37,68 +35,26 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                if (!congregationId) return;
+                if (!congregationId || !territoryId) return;
 
                 // Query shared_lists where the items array contains this territoryId
-                // AND it belongs to the user's congregation
-                const q = query(
-                    collection(db, "shared_lists"),
-                    where("items", "array-contains", territoryId),
-                    where("congregationId", "==", congregationId)
-                );
+                const { data, error } = await supabase
+                    .from('shared_lists')
+                    .select('*')
+                    .eq('congregation_id', congregationId)
+                    .contains('items', [territoryId])
+                    .order('created_at', { ascending: false });
 
-                const snapshot = await getDocs(q);
-                console.log(`[History] Found ${snapshot.size} records for territory ${territoryId}`);
+                if (error) throw error;
 
-                const entries: HistoryEntry[] = [];
-
-                // Fetch user names for each entry
-                const userCache: Record<string, string> = {};
-
-                for (const d of snapshot.docs) {
-                    const data = d.data();
-                    const assignedId = data.assignedTo;
-                    const assignedNameVal = data.assignedName;
-
-                    let userName = 'Não atribuído';
-
-                    // Priority 1: assignedName directly from data (snapshot of time)
-                    if (assignedNameVal) {
-                        userName = assignedNameVal;
-                    }
-                    // Priority 2: resolve assignedTo ID
-                    else if (assignedId) {
-                        if (userCache[assignedId]) {
-                            userName = userCache[assignedId];
-                        } else {
-                            try {
-                                const userDoc = await getDoc(doc(db, "users", assignedId));
-                                if (userDoc.exists()) {
-                                    userName = userDoc.data().name || 'Usuário Sem Nome';
-                                    userCache[assignedId] = userName;
-                                }
-                            } catch (e) {
-                                console.warn("Error fetching user", assignedId);
-                            }
-                        }
-                    }
-
-                    entries.push({
-                        id: d.id,
-                        createdBy: data.createdBy,
-                        userName,
-                        createdAt: data.createdAt,
-                        returnedAt: data.returnedAt,
-                        status: data.status || 'active'
-                    });
-                }
-
-                // Sort in memory by createdAt descending
-                entries.sort((a, b) => {
-                    const timeA = a.createdAt?.seconds || 0;
-                    const timeB = b.createdAt?.seconds || 0;
-                    return timeB - timeA;
-                });
+                const entries: HistoryEntry[] = (data || []).map(item => ({
+                    id: item.id,
+                    created_by: item.created_by,
+                    user_name: item.assigned_name || 'Usuário',
+                    created_at: item.created_at,
+                    returned_at: item.returned_at,
+                    status: item.status || 'active'
+                }));
 
                 setHistory(entries);
                 setLoading(false);
@@ -111,10 +67,9 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
         fetchHistory();
     }, [territoryId, congregationId]);
 
-    const formatDate = (ts: any) => {
-        if (!ts) return 'N/A';
-        const date = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
-        return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const formatDate = (dateStr: string | null) => {
+        if (!dateStr) return 'N/A';
+        return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     };
 
     return (
@@ -150,7 +105,7 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
                                     </div>
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-bold text-muted uppercase tracking-widest leading-none mb-1">Responsável</p>
-                                        <p className="font-bold text-main truncate">{entry.userName}</p>
+                                        <p className="font-bold text-main truncate">{entry.user_name}</p>
                                     </div>
                                     <div className="ml-auto">
                                         {entry.status === 'completed' ? (
@@ -167,14 +122,14 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
                                             <Calendar className="w-3.5 h-3.5" />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">Início</span>
                                         </div>
-                                        <p className="text-sm font-bold text-main pl-5">{formatDate(entry.createdAt)}</p>
+                                        <p className="text-sm font-bold text-main pl-5">{formatDate(entry.created_at)}</p>
                                     </div>
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-1.5 text-muted">
                                             <CheckCircle2 className={`w-3.5 h-3.5 ${entry.status === 'completed' ? 'text-green-500' : 'text-muted'}`} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">Devolução</span>
                                         </div>
-                                        <p className="text-sm font-bold text-main pl-5">{entry.status === 'completed' ? formatDate(entry.returnedAt) : 'Pendente'}</p>
+                                        <p className="text-sm font-bold text-main pl-5">{entry.status === 'completed' ? formatDate(entry.returned_at) : 'Pendente'}</p>
                                     </div>
                                 </div>
                             </div>

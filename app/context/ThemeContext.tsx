@@ -1,8 +1,7 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 
 export type ThemeMode = 'light' | 'dark' | 'auto' | 'system';
 
@@ -94,20 +93,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setLoaded(true);
     }, []);
 
-    // Sync from Firestore (authoritative)
+    // Sync from Supabase (authoritative)
     useEffect(() => {
         if (user && loaded) {
             const fetchPrefs = async () => {
                 try {
-                    const ref = doc(db, "users", user.uid);
-                    const snap = await getDoc(ref);
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        if (data.preferences) {
-                            if (data.preferences.textSize) setTextSize(data.preferences.textSize);
-                            if (data.preferences.displayScale) setDisplayScale(data.preferences.displayScale);
-                            if (data.preferences.themeMode) setThemeMode(data.preferences.themeMode);
-                        }
+                    const { data, error } = await supabase
+                        .from('users')
+                        .select('preferences')
+                        .eq('id', user.id)
+                        .maybeSingle();
+
+                    if (!error && data?.preferences) {
+                        const prefs = data.preferences as any;
+                        if (prefs.textSize) setTextSize(prefs.textSize);
+                        if (prefs.displayScale) setDisplayScale(prefs.displayScale);
+                        if (prefs.themeMode) setThemeMode(prefs.themeMode);
                     }
                 } catch (error) {
                     console.error("Error fetching preferences:", error);
@@ -122,16 +123,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setDisplayScale(newDisplayScale);
         setThemeMode(newThemeMode);
 
+        const prefsObject = {
+            textSize: newTextSize,
+            displayScale: newDisplayScale,
+            themeMode: newThemeMode
+        };
+
+        localStorage.setItem("app-preferences", JSON.stringify(prefsObject));
+
         if (user) {
             try {
-                const ref = doc(db, "users", user.uid);
-                await updateDoc(ref, {
-                    preferences: {
-                        textSize: newTextSize,
-                        displayScale: newDisplayScale,
-                        themeMode: newThemeMode
-                    }
-                });
+                await supabase
+                    .from('users')
+                    .update({
+                        preferences: prefsObject
+                    })
+                    .eq('id', user.id);
             } catch (error) {
                 console.error("Error saving preferences:", error);
             }

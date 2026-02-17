@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs, where, documentId, limit } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/app/context/AuthContext';
 import {
     X,
@@ -35,63 +34,43 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
 
     useEffect(() => {
         if (!addressId) return;
-
         const fetchHistory = async () => {
             setLoading(true);
             try {
-                if (isSharedView) {
-                    // Client-side fetch for shared view (Direct Firestore)
-                    // We rely on Firestore Security Rules to validate the shareId and allow read.
-                    // Ideally we should filter by valid visits or limit fields, but for now matching the API behavior.
+                // Fetch visits from Supabase 'visits' table
+                let { data: rawVisits, error } = await supabase
+                    .from('visits')
+                    .select('*')
+                    .eq('address_id', addressId)
+                    .order('visit_date', { ascending: false })
+                    .limit(50);
 
-                    const q = query(
-                        collection(db, "addresses", addressId, "visits"),
-                        orderBy("date", "desc"),
-                        limit(50)
-                    );
+                if (error) throw error;
+                if (!rawVisits) rawVisits = [];
 
-                    const snapshot = await getDocs(q);
-                    const rawVisits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Fetch real names for users
+                const userIds = Array.from(new Set(rawVisits.map((v: any) => v.user_id).filter(id => id)));
+                const userNamesMap = new Map<string, string>();
 
-                    // Anonymize or format names for shared view
-                    const enrichedVisits = rawVisits.map((v: any) => ({
-                        ...v,
-                        displayName: v.userName || 'Publicador'
-                    }));
+                if (userIds.length > 0) {
+                    const { data: usersData } = await supabase
+                        .from('users')
+                        .select('id, name')
+                        .in('id', userIds);
 
-                    setVisits(enrichedVisits);
-                } else {
-                    // Client-side Firestore fetch for logged-in users
-                    if (!user || !congregationId) return;
-
-                    const q = query(
-                        collection(db, "addresses", addressId, "visits"),
-                        where("congregationId", "==", congregationId),
-                        orderBy("date", "desc")
-                    );
-                    const snapshot = await getDocs(q);
-                    const rawVisits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                    // Fetch real names for users
-                    const userIds = Array.from(new Set(rawVisits.map((v: any) => v.userId).filter(id => id && id !== 'anon')));
-                    const userNamesMap = new Map<string, string>();
-
-                    if (userIds.length > 0) {
-                        const userQ = query(collection(db, "users"), where(documentId(), "in", userIds.slice(0, 30)));
-                        const userSnap = await getDocs(userQ);
-                        userSnap.docs.forEach(d => {
-                            const data = d.data();
-                            userNamesMap.set(d.id, data.profileName || data.name || data.displayName);
+                    if (usersData) {
+                        usersData.forEach((u: any) => {
+                            userNamesMap.set(u.id, u.name);
                         });
                     }
-
-                    const mergedVisits = rawVisits.map((v: any) => ({
-                        ...v,
-                        displayName: userNamesMap.get(v.userId) || v.userName || 'Publicador'
-                    }));
-
-                    setVisits(mergedVisits);
                 }
+
+                const mergedVisits = rawVisits.map((v: any) => ({
+                    ...v,
+                    displayName: userNamesMap.get(v.user_id) || v.publisher_name || 'Publicador'
+                }));
+
+                setVisits(mergedVisits);
             } catch (error) {
                 console.error("Error fetching history:", error);
             } finally {
@@ -157,13 +136,13 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                                             <p className="font-bold text-gray-900 dark:text-white text-sm">{getStatusLabel(visit.status)}</p>
                                             <div className="flex flex-wrap gap-1 mt-0.5">
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mr-2">
-                                                    {visit.date?.seconds ? new Date(visit.date.seconds * 1000).toLocaleDateString() : 'Data desconhecida'}
+                                                    {visit.visit_date ? new Date(visit.visit_date).toLocaleDateString() : 'Data desconhecida'}
                                                 </p>
                                                 {/* Tags Snapshot Display */}
-                                                {visit.tagsSnapshot?.isDeaf && <span title="Surdo"><Ear className="w-3 h-3 text-yellow-600 dark:text-yellow-400" /></span>}
-                                                {visit.tagsSnapshot?.isMinor && <span title="Menor"><Baby className="w-3 h-3 text-primary dark:text-blue-400" /></span>}
-                                                {visit.tagsSnapshot?.isStudent && <span title="Estudante"><GraduationCap className="w-3 h-3 text-purple-600 dark:text-purple-400" /></span>}
-                                                {visit.tagsSnapshot?.isNeurodivergent && <span title="Neurodivergente"><Brain className="w-3 h-3 text-teal-600 dark:text-teal-400" /></span>}
+                                                {visit.tags_snapshot?.isDeaf && <span title="Surdo"><Ear className="w-3 h-3 text-yellow-600 dark:text-yellow-400" /></span>}
+                                                {visit.tags_snapshot?.isMinor && <span title="Menor"><Baby className="w-3 h-3 text-primary dark:text-blue-400" /></span>}
+                                                {visit.tags_snapshot?.isStudent && <span title="Estudante"><GraduationCap className="w-3 h-3 text-purple-600 dark:text-purple-400" /></span>}
+                                                {visit.tags_snapshot?.isNeurodivergent && <span title="Neurodivergente"><Brain className="w-3 h-3 text-teal-600 dark:text-teal-400" /></span>}
                                             </div>
                                         </div>
                                     </div>

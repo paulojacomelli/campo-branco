@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
-import { adminDb } from '@/lib/firebase-admin';
-import { verifyFirebaseIdToken } from '@/lib/jose-auth';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export interface AuthorizedUser {
     uid: string;
@@ -12,49 +11,44 @@ export interface AuthorizedUser {
 }
 
 export async function checkAuth(): Promise<AuthorizedUser | null> {
-    const session = (await cookies()).get('__session')?.value;
-
-    if (!session) {
-        return null;
-    }
-
     try {
-        // Verify Session Cookie using Admin SDK
-        // (Since we are now using createSessionCookie in login, we must verify it as such)
-        const { adminAuth } = await import('@/lib/firebase-admin');
-        if (!adminAuth) {
-            throw new Error("Admin Auth not initialized for verification");
+        const supabase = createServerComponentClient({ cookies });
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+            return null;
         }
 
-        const decodedClaims = await adminAuth.verifySessionCookie(session, true /** checkRevoked */);
-        const uid = decodedClaims.uid;
+        const user = session.user;
+        const uid = user.id;
 
-        // Fetch full user profile from Firestore to get roles/congregation
-        // We still use adminDb for Firestore, which should be initialized with 
-        // Application Default Credentials in production if no env vars are provided.
-        if (adminDb) {
-            const userDoc = await adminDb.collection('users').doc(uid).get();
-            if (userDoc.exists) {
-                const userData = userDoc.data();
-                return {
-                    uid,
-                    email: decodedClaims.email as string,
-                    role: userData?.role || 'PUBLICADOR',
-                    roles: userData?.roles || [userData?.role || 'PUBLICADOR'],
-                    congregationId: userData?.congregationId,
-                    ...userData
-                };
-            }
+        // Fetch full user profile from Supabase profiles table
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', uid)
+            .single();
+
+        if (userError || !userData) {
+            // Default to publisher if no profile found
+            return {
+                uid,
+                email: user.email,
+                role: 'PUBLISHER',
+                roles: ['PUBLISHER'],
+            };
         }
 
         return {
             uid,
-            email: decodedClaims.email as string,
-            role: 'PUBLICADOR',
-            roles: ['PUBLICADOR'],
+            email: user.email,
+            role: userData.role || 'PUBLISHER',
+            roles: userData.roles || [userData.role || 'PUBLISHER'],
+            congregationId: userData.congregation_id,
+            ...userData
         };
     } catch (error) {
-        console.error('[AUTH] Session verification failed:', error);
+        console.error('[AUTH] Supabase session verification failed:', error);
         return null;
     }
 }

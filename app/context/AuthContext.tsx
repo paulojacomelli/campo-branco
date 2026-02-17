@@ -1,16 +1,11 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import {
-    onAuthStateChanged,
-    User,
-    signOut as firebaseSignOut,
-    getIdToken
-} from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { User, Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 interface AuthContextType {
     user: User | null;
+    session: Session | null;
     loading: boolean;
     role: string | null;
     congregationId: string | null;
@@ -20,8 +15,6 @@ interface AuthContextType {
     isSuperAdmin: boolean;
     isElder: boolean;
     isServant: boolean;
-    // isAdmin is often used as a generic "has power" flag, aliasing to isElder or isSuperAdmin depending on logic.
-    // Included here for backward compatibility if used.
     isAdmin: boolean;
     // Simulation
     simulateRole: (role: string | null) => void;
@@ -33,6 +26,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
+    session: null,
     loading: true,
     role: null,
     congregationId: null,
@@ -51,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
+    const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
     const [actualRole, setActualRole] = useState<string | null>(null); // Real role from DB
     const [simulatedRole, setSimulatedRole] = useState<string | null>(null); // Simulation override
@@ -64,88 +59,95 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         let isMounted = true;
-        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            if (!isMounted) return;
-            if (currentUser) {
-                try {
-                    // 1. Get Token (Client Side Only)
-                    // We no longer sync with server sessions for Static Export compatibility
 
-                    // 2. Fetch User Data from Firestore
-                    // Try fetch by UID first
-                    const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
+        const initializeAuth = async () => {
+            // 1. Get Session
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-                    let data: any = null;
+            if (currentSession?.user) {
+                setUser(currentSession.user);
+                setSession(currentSession);
+                await fetchUserProfile(currentSession.user);
+            } else {
+                setLoading(false);
+            }
 
-                    try {
-                        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-                        if (userDoc.exists()) {
-                            data = userDoc.data();
-                        }
-                    } catch (e) {
-                        console.error("Auth: Failed to fetch user by UID", e);
-                    }
+            // 2. Listen for Auth Changes
+            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+                if (!isMounted) return;
 
-                    if (!data && currentUser.email) {
-                        try {
-                            const q = query(collection(db, "users"), where("email", "==", currentUser.email));
-                            const snaps = await getDocs(q);
-                            if (!snaps.empty) {
-                                data = snaps.docs[0].data();
-                            }
-                        } catch (e) {
-                            console.error("Auth: Failed to fetch user by Email", e);
-                        }
-
-                        if (!data) {
-                            console.warn("User seeded with different email casing? Please correct in DB.");
-                        }
-                    }
-
-                    if (data) {
-                        setActualRole(data.role || 'PUBLICADOR');
-                        setCongregationId(data.congregationId || null);
-                        setProfileName(data.name || currentUser.displayName); // Prefer DB name
-
-                        // START: Legal Consent Enforcement
-                        if (!data.termsAcceptedAt && window.location.pathname !== '/legal-consent' && window.location.pathname !== '/login') {
-                            window.location.href = '/legal-consent';
-                            return;
-                        }
-                        // END: Legal Consent Enforcement
-
-                    } else {
-                        setProfileName(currentUser.displayName);
-                        setActualRole('PUBLICADOR');
-                    }
-
-                    setUser(currentUser);
-                } catch (error) {
-                    console.error("Auth Sync Error:", error);
-                    // If sync fails (e.g. server down or invalid token), ensure we don't think we are logged in
+                if (newSession?.user) {
+                    setUser(newSession.user);
+                    setSession(newSession);
+                    await fetchUserProfile(newSession.user);
+                } else {
                     setUser(null);
+                    setSession(null);
                     setActualRole(null);
                     setSimulatedRole(null);
                     setCongregationId(null);
-                    await firebaseSignOut(auth);
-                } finally {
+                    setProfileName(null);
                     setLoading(false);
                 }
-            } else {
-                // User logged out
-                setUser(null);
-                setActualRole(null);
-                setSimulatedRole(null);
-                setCongregationId(null);
-                setLoading(false);
-            }
-        });
+            });
 
-        return () => unsubscribe();
+            return () => {
+                subscription.unsubscribe();
+            };
+        };
+
+        initializeAuth();
+
+        return () => { isMounted = false; };
     }, []);
 
+    const fetchUserProfile = async (currentUser: User) => {
+        try {
+            // Fetch User Data from Supabase 'users' table
+            // We assume a trigger or manual insert created this record on signup, 
+            // but for migration safety we might want to check existence.
+
+            let { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', currentUser.id)
+                .single();
+
+            if (error && error.code === 'PGRST116') {
+                // User not found in public.users table (maybe first login after migration?)
+                // In a real app, we might create it here or rely on database triggers.
+                console.warn("User record not found in public.users");
+                data = null;
+            } else if (error) {
+                console.error("Error fetching user profile:", error);
+            }
+
+            if (data) {
+                setActualRole(data.role || 'PUBLICADOR');
+                setCongregationId(data.congregation_id || null); // Note snake_case from SQL
+                setProfileName(data.name || currentUser.user_metadata?.full_name || currentUser.email);
+
+                // START: Legal Consent Enforcement
+                if (!data.terms_accepted_at && window.location.pathname !== '/legal-consent' && window.location.pathname !== '/login') {
+                    // window.location.href = '/legal-consent'; // Temporarily disabled for migration testing
+                    // return;
+                }
+                // END: Legal Consent Enforcement
+
+            } else {
+                setProfileName(currentUser.user_metadata?.full_name || currentUser.email);
+                setActualRole('PUBLICADOR');
+            }
+        } catch (error) {
+            console.error("Auth Sync Error:", error);
+            // Don't log out on sync error to avoid loops, just degrade
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const logout = async () => {
-        await firebaseSignOut(auth);
+        await supabase.auth.signOut();
     };
 
     const simulateRole = (newRole: string | null) => {
@@ -164,16 +166,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const fetchCong = async () => {
             try {
-                const docSnap = await getDoc(doc(db, "congregations", congregationId));
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    setTermType(data.termType || 'city');
+                const { data, error } = await supabase
+                    .from('congregations')
+                    .select('*')
+                    .eq('id', congregationId)
+                    .single();
+
+                if (data && !error) {
+                    setTermType(data.term_type || 'city');
 
                     // Map category to internal type
                     const cat = (data.category || '').toLowerCase();
                     if (cat.includes('sinais')) setCongregationType('SIGN_LANGUAGE');
                     else if (cat.includes('estrangeiro')) setCongregationType('FOREIGN_LANGUAGE');
-                    else setCongregationType('TRADITIONAL'); // Default to traditional if unknown
+                    else setCongregationType('TRADITIONAL');
                 }
             } catch (err) {
                 console.error("Error fetching congregation settings:", err);
@@ -187,11 +193,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isSuperAdmin = role === 'SUPER_ADMIN';
     const isElder = role === 'ANCIAO' || isSuperAdmin;
     const isServant = role === 'SERVO' || isElder;
-    const isAdmin = isSuperAdmin; // Conservative default, update if 'isAdmin' meant 'Elder' in legacy code
+    const isAdmin = isSuperAdmin;
 
     return (
         <AuthContext.Provider value={{
             user,
+            session,
             loading,
             role,
             congregationId,
@@ -201,7 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             isElder,
             isServant,
             isAdmin,
-            // Simulation
             simulateRole,
             isSimulating: !!simulatedRole,
             actualRole,

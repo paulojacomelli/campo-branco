@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Building2, ChevronDown } from 'lucide-react';
 
@@ -22,17 +21,34 @@ export default function CongregationSelector({ currentId, className = '' }: Cong
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const q = query(collection(db, "congregations"), orderBy("name"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data: Congregation[] = [];
-            snapshot.forEach((doc) => {
-                data.push({ id: doc.id, name: doc.data().name });
-            });
-            setCongregations(data);
-            setLoading(false);
-        });
+        const fetchCongregations = async () => {
+            const { data, error } = await supabase
+                .from('congregations')
+                .select('id, name')
+                .order('name');
 
-        return () => unsubscribe();
+            if (data) {
+                setCongregations(data);
+            }
+            if (error) {
+                console.error("Error fetching congregations:", error);
+            }
+            setLoading(false);
+        };
+
+        fetchCongregations();
+
+        // Optional: Realtime subscription
+        const subscription = supabase
+            .channel('public:congregations')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'congregations' }, (payload) => {
+                fetchCongregations(); // Simple re-fetch on change
+            })
+            .subscribe();
+
+        return () => {
+            subscription.unsubscribe();
+        };
     }, []);
 
     const handleChange = (newId: string) => {
@@ -41,9 +57,6 @@ export default function CongregationSelector({ currentId, className = '' }: Cong
     };
 
     if (loading) return <div className="animate-pulse w-32 h-8 bg-gray-200 rounded-lg"></div>;
-
-    // If only one or none, maybe just show text or nothing? 
-    // But for Super Admin transparency, let's keep it interactive even if just 1.
 
     return (
         <div className={`relative group ${className}`}>

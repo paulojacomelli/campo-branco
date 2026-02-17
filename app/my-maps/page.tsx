@@ -19,19 +19,18 @@ import {
 } from 'lucide-react';
 import HelpModal from '@/app/components/HelpModal';
 import BottomNav from '@/app/components/BottomNav';
-import { db, auth } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
 interface Congregation {
     id: string;
     name: string;
     category?: string;
-    createdAt?: Timestamp;
+    created_at?: string;
 }
 
 export default function CongregationListPage() {
-    const { user, isSuperAdmin, loading: authLoading, congregationId } = useAuth(); // Added congregationId from useAuth
+    const { user, isSuperAdmin, loading: authLoading, congregationId, logout } = useAuth(); // Added congregationId and logout from useAuth
     const router = useRouter();
 
     // State
@@ -63,20 +62,37 @@ export default function CongregationListPage() {
         }
     }, [user, authLoading, congregationId, isSuperAdmin, router]);
 
+    const fetchCongregations = async () => {
+        if (!isSuperAdmin) return;
+        try {
+            const { data, error } = await supabase
+                .from('congregations')
+                .select('*')
+                .order('name');
+            if (error) throw error;
+            setCongregations(data || []);
+        } catch (error) {
+            console.error("Error fetching congregations:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!isSuperAdmin) return;
 
-        const q = query(collection(db, "congregations"), orderBy("name"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data: Congregation[] = [];
-            snapshot.forEach((doc) => {
-                data.push({ id: doc.id, ...doc.data() } as Congregation);
-            });
-            setCongregations(data);
-            setLoading(false);
-        });
+        fetchCongregations();
 
-        return () => unsubscribe();
+        const channel = supabase
+            .channel('public:congregations_list')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'congregations' }, () => {
+                fetchCongregations();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [isSuperAdmin]);
 
     // Close menu on click outside
@@ -94,9 +110,13 @@ export default function CongregationListPage() {
         if (!currentCongregation || !congregationName.trim()) return;
 
         try {
-            await updateDoc(doc(db, "congregations", currentCongregation.id), {
-                name: congregationName.trim()
-            });
+            const { error } = await supabase
+                .from('congregations')
+                .update({ name: congregationName.trim() })
+                .eq('id', currentCongregation.id);
+
+            if (error) throw error;
+
             setCongregationName('');
             setCurrentCongregation(null);
             setIsEditModalOpen(false);
@@ -110,7 +130,12 @@ export default function CongregationListPage() {
         if (!confirm(`Tem certeza que deseja excluir a congregação "${name}"? Isso pode deixar cidades e territórios órfãos.`)) return;
 
         try {
-            await deleteDoc(doc(db, "congregations", id));
+            const { error } = await supabase
+                .from('congregations')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting congregation:", error);
             alert("Erro ao excluir congregação.");
@@ -125,12 +150,7 @@ export default function CongregationListPage() {
 
     const handleSignOut = async () => {
         try {
-            await auth.signOut();
-            await fetch('/api/auth/session', { method: 'DELETE' });
-            document.cookie = "__session=; path=/; max-age=0";
-            document.cookie = "auth_token=; path=/; max-age=0";
-            document.cookie = "role=; path=/; max-age=0";
-            document.cookie = "congregationId=; path=/; max-age=0";
+            await logout();
             window.location.href = '/login';
         } catch (error) {
             console.error("Logout error:", error);

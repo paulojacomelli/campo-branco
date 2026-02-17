@@ -1,29 +1,24 @@
-'use server'
-
-import { adminDb } from '@/lib/firebase-admin'
+import { createServerActionClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/auth'
 
-const COLLECTION = 'witnessing_points';
+const TABLE = 'witnessing_points';
 
 export async function getWitnessingPoints(cityId: string) {
     try {
         await requireAuth();
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        const snapshot = await adminDb.collection(COLLECTION)
-            .where('cityId', '==', cityId)
-            .orderBy('createdAt', 'desc')
-            .get();
+        const { data, error } = await supabase
+            .from(TABLE)
+            .select('*')
+            .eq('city_id', cityId)
+            .order('created_at', { ascending: false });
 
-        const points = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate()?.toISOString(),
-            updatedAt: doc.data().updatedAt?.toDate()?.toISOString(),
-        }));
+        if (error) throw error;
 
-        return { success: true, data: points }
+        return { success: true, data }
     } catch (error: any) {
         console.error('Error fetching witnessing points:', error)
         return { success: false, error: error.message || 'Failed to fetch points' }
@@ -40,24 +35,35 @@ export async function createWitnessingPoint(data: {
 }) {
     try {
         const user = await requireAuth(['SERVO', 'ANCIAO']);
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        // Ensure city belongs to user's congregation (or super admin)
+        // Security check
         if (user.role !== 'SUPER_ADMIN') {
-            const cityDoc = await adminDb.collection('cities').doc(data.cityId).get();
-            const cityData = cityDoc.data();
-            if (!cityDoc.exists || cityData?.congregationId !== user.congregationId) {
+            const { data: city, error: cityError } = await supabase
+                .from('cities')
+                .select('congregation_id')
+                .eq('id', data.cityId)
+                .single();
+
+            if (cityError || !city || city.congregation_id !== user.congregationId) {
                 throw new Error('Forbidden');
             }
         }
 
-        await adminDb.collection(COLLECTION).add({
-            ...data,
-            status: 'AVAILABLE',
-            congregationId: user.congregationId, // Store for security rules
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        });
+        const { error } = await supabase
+            .from(TABLE)
+            .insert({
+                name: data.name,
+                address: data.address,
+                city_id: data.cityId,
+                lat: data.latitude,
+                lng: data.longitude,
+                schedule: data.schedule,
+                status: 'AVAILABLE',
+                congregation_id: user.congregationId,
+            });
+
+        if (error) throw error;
 
         revalidatePath(`/witnessing`)
         return { success: true }
@@ -70,19 +76,17 @@ export async function createWitnessingPoint(data: {
 export async function getWitnessingPointById(id: string) {
     try {
         await requireAuth();
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        const doc = await adminDb.collection(COLLECTION).doc(id).get();
-        if (!doc.exists) return { success: false, error: 'Point not found' };
+        const { data, error } = await supabase
+            .from(TABLE)
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        const point = {
-            id: doc.id,
-            ...doc.data(),
-            createdAt: doc.data()?.createdAt?.toDate()?.toISOString(),
-            updatedAt: doc.data()?.updatedAt?.toDate()?.toISOString(),
-        };
+        if (error) throw error;
 
-        return { success: true, data: point }
+        return { success: true, data }
     } catch (error: any) {
         console.error('Error fetching point:', error)
         return { success: false, error: error.message || 'Failed to fetch point' }
@@ -98,21 +102,33 @@ export async function updateWitnessingPointDetails(id: string, data: {
 }) {
     try {
         const user = await requireAuth(['SERVO', 'ANCIAO']);
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        const docRef = adminDb.collection(COLLECTION).doc(id);
-        const doc = await docRef.get();
-        if (!doc.exists) throw new Error('Not found');
+        const { data: point, error: fetchError } = await supabase
+            .from(TABLE)
+            .select('congregation_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !point) throw new Error('Not found');
 
         // Security check
-        if (user.role !== 'SUPER_ADMIN' && doc.data()?.congregationId !== user.congregationId) {
+        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 
-        await docRef.update({
-            ...data,
-            updatedAt: new Date()
-        });
+        const { error } = await supabase
+            .from(TABLE)
+            .update({
+                name: data.name,
+                address: data.address,
+                lng: data.longitude,
+                lat: data.latitude,
+                schedule: data.schedule,
+            })
+            .eq('id', id);
+
+        if (error) throw error;
 
         revalidatePath(`/witnessing`)
         return { success: true }
@@ -125,24 +141,31 @@ export async function updateWitnessingPointDetails(id: string, data: {
 export async function updateWitnessingPointStatus(id: string, status: string, publishersAsString: string | null) {
     try {
         const user = await requireAuth();
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        const docRef = adminDb.collection(COLLECTION).doc(id);
-        const doc = await docRef.get();
-        if (!doc.exists) throw new Error('Not found');
+        const { data: point, error: fetchError } = await supabase
+            .from(TABLE)
+            .select('congregation_id')
+            .eq('id', id)
+            .single();
 
-        const pointData = doc.data();
+        if (fetchError || !point) throw new Error('Not found');
 
         // Ensure point belongs to user's congregation
-        if (user.role !== 'SUPER_ADMIN' && pointData?.congregationId !== user.congregationId) {
+        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 
-        await docRef.update({
-            status,
-            currentPublishers: publishersAsString,
-            updatedAt: new Date()
-        });
+        const { error } = await supabase
+            .from(TABLE)
+            .update({
+                status,
+                current_publishers: publishersAsString ? [publishersAsString] : [], // Adjust based on schema (text[])
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id);
+
+        if (error) throw error;
 
         revalidatePath(`/witnessing`)
         return { success: true }
@@ -155,17 +178,27 @@ export async function updateWitnessingPointStatus(id: string, status: string, pu
 export async function deleteWitnessingPoint(id: string) {
     try {
         const user = await requireAuth(['SERVO', 'ANCIAO']);
-        if (!adminDb) throw new Error('Database not initialized');
+        const supabase = createServerActionClient({ cookies });
 
-        const docRef = adminDb.collection(COLLECTION).doc(id);
-        const doc = await docRef.get();
-        if (!doc.exists) throw new Error('Not found');
+        const { data: point, error: fetchError } = await supabase
+            .from(TABLE)
+            .select('congregation_id')
+            .eq('id', id)
+            .single();
 
-        if (user.role !== 'SUPER_ADMIN' && doc.data()?.congregationId !== user.congregationId) {
+        if (fetchError || !point) throw new Error('Not found');
+
+        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 
-        await docRef.delete();
+        const { error } = await supabase
+            .from(TABLE)
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
         revalidatePath(`/witnessing`)
         return { success: true }
     } catch (error: any) {

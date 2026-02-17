@@ -2,14 +2,13 @@
 
 import { useAuth } from '@/app/context/AuthContext';
 import { LogOut, User, Shield, Link as LinkIcon, Users, MapPin, Plus, Loader2, Building2, X } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function UnassignedPage() {
-    const { user, logout, loading } = useAuth();
+    const { user, logout, loading, profileName } = useAuth();
     const router = useRouter();
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -37,33 +36,33 @@ export default function UnassignedPage() {
 
         setCreating(true);
         try {
-            // 1. Create Congregation
-            const congData: any = {
-                name: newName.trim(),
-                city: newCity.trim(),
-                category: newCategory.trim() || null,
-                termType: newTermType,
-                createdAt: serverTimestamp(),
-                createdBy: user.uid
-            };
+            // 1. Create Congregation in Supabase
+            // Note: city_id in schema is UUID, but here we have text. 
+            // For now, we omit city_id or we could create a city entry if needed.
+            const { data: congData, error: congError } = await supabase
+                .from('congregations')
+                .insert([{
+                    name: newName.trim(),
+                    category: newCategory.trim() || null,
+                    term_type: newTermType
+                }])
+                .select()
+                .single();
 
-            let congId;
-            if (customId.trim()) {
-                const id = customId.trim().toLowerCase().replace(/\s+/g, '-');
-                await setDoc(doc(db, "congregations", id), congData);
-                congId = id;
-            } else {
-                const congRef = await addDoc(collection(db, "congregations"), congData);
-                congId = congRef.id;
-            }
+            if (congError) throw congError;
+            const congId = congData.id;
 
             // 2. Update User Profile to ANCIAO of this congregation
-            const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, {
-                congregationId: congId,
-                role: 'ANCIAO',
-                updatedAt: serverTimestamp()
-            });
+            const { error: userError } = await supabase
+                .from('users')
+                .update({
+                    congregation_id: congId,
+                    role: 'ANCIAO',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', user.id);
+
+            if (userError) throw userError;
 
             // 3. Force reload to update context and redirect
             window.location.href = '/dashboard';
@@ -88,7 +87,7 @@ export default function UnassignedPage() {
                 <div className="space-y-4">
                     <h1 className="text-2xl font-black text-gray-900 tracking-tight">Acesso Restrito</h1>
                     <p className="text-gray-500 font-medium text-sm leading-relaxed">
-                        Olá, <strong>{user?.displayName || 'visitante'}</strong>. Sua conta foi criada, mas você ainda não pertence a nenhuma congregação.
+                        Olá, <strong>{profileName || 'visitante'}</strong>. Sua conta foi criada, mas você ainda não pertence a nenhuma congregação.
                     </p>
                 </div>
 
@@ -116,6 +115,15 @@ export default function UnassignedPage() {
                             <div>
                                 <span className="font-bold text-gray-800">Aceite um Território</span>
                                 <p className="text-xs mt-1">Se você abrir um link de território compartilhado e clicar em &quot;Aceitar&quot;, você será vinculado automaticamente.</p>
+                            </div>
+                        </li>
+                        <li className="flex gap-3">
+                            <div className="bg-white p-2 rounded-lg shadow-sm h-fit">
+                                <Building2 className="w-4 h-4 text-orange-500" />
+                            </div>
+                            <div>
+                                <span className="font-bold text-gray-800">Administrador?</span>
+                                <p className="text-xs mt-1">Se você é o responsável, pode <button onClick={() => setIsCreateModalOpen(true)} className="text-orange-600 font-bold hover:underline">criar uma nova congregação</button> para começar.</p>
                             </div>
                         </li>
                     </ul>

@@ -38,8 +38,7 @@ import HelpModal from '@/app/components/HelpModal';
 import VisitHistoryModal from '@/app/components/VisitHistoryModal';
 import BottomNav from '@/app/components/BottomNav';
 import MapView, { MapItem } from '@/app/components/MapView';
-import { db, auth } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, Timestamp, addDoc, deleteDoc, updateDoc, doc, where, serverTimestamp, getDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { getServiceYear, getServiceYearRange } from '@/lib/serviceYearUtils';
@@ -50,26 +49,26 @@ interface Address {
     street: string;
     number: string;
     complement?: string;
-    territoryId: string;
-    congregationId: string;
-    cityId: string;
+    territory_id: string; // Changed from territoryId
+    congregation_id: string; // Changed from congregationId
+    city_id: string; // Changed from cityId
     completed?: boolean;
-    visitedAt?: Timestamp;
+    visited_at?: string; // Changed from visitedAt (Timestamp)
     lat?: number;
     lng?: number;
-    isActive?: boolean;
-    googleMapsLink?: string;
-    peopleCount?: number;
-    residentName?: string;
-    isDeaf?: boolean;
-    isMinor?: boolean;
-    isStudent?: boolean;
+    is_active?: boolean; // Changed from isActive
+    google_maps_link?: string; // Changed from googleMapsLink
+    people_count?: number; // Changed from peopleCount
+    resident_name?: string; // Changed from residentName
+    is_deaf?: boolean; // Changed from isDeaf
+    is_minor?: boolean; // Changed from isMinor
+    is_student?: boolean; // Changed from isStudent
     observations?: string;
     gender?: 'HOMEM' | 'MULHER' | 'CASAL';
-    isNeurodivergent?: boolean;
-    visitStatus?: 'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'none';
-    lastVisitedAt?: Timestamp;
-    sortOrder?: number;
+    is_neurodivergent?: boolean; // Changed from isNeurodivergent
+    visit_status?: 'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'none'; // Changed from visitStatus
+    last_visited_at?: string; // Changed from lastVisitedAt (Timestamp)
+    sort_order?: number; // Changed from sortOrder
 }
 
 function AddressListContent() {
@@ -124,6 +123,15 @@ function AddressListContent() {
     const [isMapSelectionMode, setIsMapSelectionMode] = useState(true);
     const [pickerTempCoords, setPickerTempCoords] = useState<{ lat: number; lng: number } | null>(null);
 
+    // View Mode
+    const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+
+    // Multi-select state
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [shareExpiration, setShareExpiration] = useState('24h');
+
     // Map Picker State
     const [isPickingLocation, setIsPickingLocation] = useState(false);
 
@@ -138,51 +146,6 @@ function AddressListContent() {
         territory: ''
     });
 
-    useEffect(() => {
-        const fetchContextNames = async () => {
-            try {
-                if (!congregationId || !cityId || !territoryId) return;
-
-                const [congDoc, cityDoc, terrDoc] = await Promise.all([
-                    getDoc(doc(db, "congregations", congregationId)),
-                    getDoc(doc(db, "cities", cityId)),
-                    getDoc(doc(db, "territories", territoryId))
-                ]);
-
-                setContextNames({
-                    congregation: congDoc.exists() ? (congDoc.data().name || 'Sem nome') : 'Não encontrada',
-                    city: cityDoc.exists() ? (cityDoc.data().name || 'Sem nome') : 'Não encontrada',
-                    territory: terrDoc.exists() ? (terrDoc.data().name || 'Sem nome') : 'Não encontrada'
-                });
-
-                if (congDoc.exists()) {
-                    const data = congDoc.data();
-                    setLocalTermType(data?.termType || 'city');
-
-                    // Local Congregation Type Detection
-                    const cat = (data?.category || '').toLowerCase();
-                    if (cat.includes('sinais')) setLocalCongregationType('SIGN_LANGUAGE');
-                    else if (cat.includes('estrangeiro')) setLocalCongregationType('FOREIGN_LANGUAGE');
-                    else setLocalCongregationType('TRADITIONAL');
-                }
-                if (cityDoc.exists()) {
-                    setParentCity(cityDoc.data().parentCity || null);
-                }
-            } catch (error) {
-                console.error("Error fetching context names:", error);
-                setContextNames({
-                    congregation: 'Erro',
-                    city: 'Erro',
-                    territory: 'Erro'
-                });
-            }
-        };
-
-        if (congregationId && cityId && territoryId) {
-            fetchContextNames();
-        }
-    }, [congregationId, cityId, territoryId]);
-
     // Close menu on click outside
     useEffect(() => {
         const handleClickOutside = () => setOpenMenuId(null);
@@ -192,49 +155,129 @@ function AddressListContent() {
         return () => window.removeEventListener('click', handleClickOutside);
     }, [openMenuId]);
 
-    // Load available options
+    // Fetch Context Names & Options
     useEffect(() => {
-        if (!isCreateModalOpen) return;
+        if (!congregationId || !cityId || !territoryId) return;
 
-        // Simplified approach: Render Selectors that trigger fetches.
-    }, [isCreateModalOpen, selectedCongregationId]);
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                const [congRes, cityRes, terrRes] = await Promise.all([
+                    supabase.from('congregations').select('name, term_type, category').eq('id', congregationId).single(),
+                    supabase.from('cities').select('name, parent_city').eq('id', cityId).single(),
+                    supabase.from('territories').select('name').eq('id', territoryId).single()
+                ]);
 
-    // Fetch Lists Logic
-    useEffect(() => {
-        if (!isCreateModalOpen) return;
+                setContextNames({
+                    congregation: congRes.data?.name || 'Não encontrada',
+                    city: cityRes.data?.name || 'Não encontrada',
+                    territory: terrRes.data?.name || 'Não encontrada'
+                });
 
-        // Fetch Cities
-        const fetchCities = async () => {
-            onSnapshot(query(collection(db, "cities"), where("congregationId", "==", selectedCongregationId)), snap => {
-                setAvailableCities(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
-            });
+                if (congRes.data) {
+                    setLocalTermType(congRes.data.term_type as any || 'city');
+                    const cat = (congRes.data.category || '').toLowerCase();
+                    if (cat.includes('sinais')) setLocalCongregationType('SIGN_LANGUAGE');
+                    else if (cat.includes('estrangeiro')) setLocalCongregationType('FOREIGN_LANGUAGE');
+                    else setLocalCongregationType('TRADITIONAL');
+                }
+                if (cityRes.data) {
+                    setParentCity(cityRes.data.parent_city || null);
+                }
+
+            } catch (error) {
+                console.error("Error fetching context:", error);
+            } finally {
+                setLoading(false);
+            }
         };
 
-        // Fetch Territories
-        const fetchTerritories = async () => {
-            const q = query(
-                collection(db, "territories"),
-                where("congregationId", "==", selectedCongregationId),
-                where("cityId", "==", selectedCityId)
-            );
-            onSnapshot(q, snap => {
-                setAvailableTerritories(snap.docs.map(d => ({ id: d.id, name: d.data().name })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
-            });
-        };
+        fetchData();
+    }, [congregationId, cityId, territoryId]);
 
-        fetchCities();
-        fetchTerritories();
 
-        // Congregations (Mocking/Fetching minimal)
-        if (congregationId) {
-            getDoc(doc(db, "congregations", congregationId)).then(snap => {
-                if (snap.exists()) setAvailableCongregations([{ id: snap.id, name: snap.data().name }]);
+    // Fetch Addresses
+    const fetchAddresses = async () => {
+        if (!congregationId || !territoryId) return;
+
+        try {
+            const { data, error } = await supabase
+                .from('addresses')
+                .select('*')
+                .eq('congregation_id', congregationId)
+                .eq('territory_id', territoryId)
+                .order('sort_order', { ascending: true });
+
+            if (error) throw error;
+
+            const sorted = (data || []).sort((a: any, b: any) => {
+                const orderA = a.sort_order ?? 999999;
+                const orderB = b.sort_order ?? 999999;
+                if (orderA !== orderB) return orderA - orderB;
+                if (a.street === b.street) {
+                    return a.number.localeCompare(b.number, undefined, { numeric: true });
+                }
+                return a.street.localeCompare(b.street);
             });
+
+            setAddresses(sorted);
+        } catch (error) {
+            console.error("Error fetching addresses:", error);
+        } finally {
+            setLoading(false);
         }
+    };
+
+    useEffect(() => {
+        fetchAddresses();
+
+        const subscription = supabase
+            .channel('addresses_list')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'addresses',
+                filter: `territory_id=eq.${territoryId}`
+            }, () => {
+                fetchAddresses();
+            })
+            .subscribe();
+
+        return () => { subscription.unsubscribe(); };
+    }, [congregationId, territoryId]);
+
+    // Fetch Available Options for Edit Modal
+    useEffect(() => {
+        if (!isCreateModalOpen) return;
+
+        const fetchOptions = async () => {
+            const { data: cities } = await supabase.from('cities').select('id, name').eq('congregation_id', selectedCongregationId);
+            if (cities) setAvailableCities(cities);
+
+            const { data: territories } = await supabase
+                .from('territories')
+                .select('id, name')
+                .eq('congregation_id', selectedCongregationId)
+                .eq('city_id', selectedCityId)
+                .order('name');
+
+            if (territories) {
+                const sortedT = territories.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                setAvailableTerritories(sortedT);
+            }
+
+            if (congregationId) {
+                const { data: cong } = await supabase.from('congregations').select('id, name').eq('id', congregationId).single();
+                if (cong) setAvailableCongregations([{ id: cong.id, name: cong.name }]);
+            }
+        };
+
+        fetchOptions();
     }, [isCreateModalOpen, selectedCongregationId, selectedCityId, congregationId]);
 
+
+    // Init form
     useEffect(() => {
-        // Init form with params or edited data
         if (!editingId && congregationId && cityId && territoryId) {
             setSelectedCongregationId(congregationId);
             setSelectedCityId(cityId);
@@ -242,101 +285,59 @@ function AddressListContent() {
         }
     }, [isCreateModalOpen, editingId, congregationId, cityId, territoryId]);
 
+
     const generateMapsLink = () => {
         if (combinedAddress) {
             setGoogleMapsLink(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(combinedAddress)}`);
         }
     };
 
-
-    // View Mode
-    const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-
-    // Multi-select state
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-    const [shareExpiration, setShareExpiration] = useState('24h');
-
-
-    useEffect(() => {
-        if (!congregationId || !territoryId) return;
-
-        const q = query(
-            collection(db, "addresses"),
-            where("congregationId", "==", congregationId),
-            where("territoryId", "==", territoryId)
-        );
-
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const data: Address[] = [];
-            querySnapshot.forEach((doc) => {
-                data.push({ id: doc.id, ...doc.data() } as Address);
-            });
-            // Sort by sortOrder first, then street/number
-            data.sort((a, b) => {
-                const orderA = a.sortOrder ?? 999999;
-                const orderB = b.sortOrder ?? 999999;
-                if (orderA !== orderB) return orderA - orderB;
-
-                if (a.street === b.street) {
-                    return a.number.localeCompare(b.number, undefined, { numeric: true });
-                }
-                return a.street.localeCompare(b.street);
-            });
-            setAddresses(data);
-            setLoading(false);
-        });
-
-
-        return () => unsubscribe();
-    }, [congregationId, territoryId]);
-
+    // Actions
     const handleCreateAddress = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!combinedAddress.trim()) return;
 
-        // Automatic number extraction (heuristic)
         let finalNumber = 'S/N';
         const numberMatch = combinedAddress.match(/,\s*(\d+)/) || combinedAddress.match(/\s(\d+)(?:\s|$)/);
-        if (numberMatch) {
-            finalNumber = numberMatch[1];
-        }
+        if (numberMatch) finalNumber = numberMatch[1];
 
         const finalStreet = combinedAddress.trim();
-        let finalLat = lat ? parseFloat(lat) : null;
-        let finalLng = lng ? parseFloat(lng) : null;
+        const finalLat = lat ? parseFloat(lat) : null;
+        const finalLng = lng ? parseFloat(lng) : null;
 
         try {
             const addressData = {
                 street: finalStreet,
                 number: finalNumber,
                 complement: '',
-                territoryId: selectedTerritoryId,
-                congregationId: selectedCongregationId,
-                cityId: selectedCityId,
+                territory_id: selectedTerritoryId,
+                congregation_id: selectedCongregationId,
+                city_id: selectedCityId,
                 lat: finalLat,
                 lng: finalLng,
-                isActive,
-                googleMapsLink,
-                peopleCount: peopleCount ? parseInt(peopleCount) : 0,
-                residentName,
+                is_active: isActive,
+                google_maps_link: googleMapsLink,
+                people_count: peopleCount ? parseInt(peopleCount) : 0,
+                resident_name: residentName,
                 gender: gender || null,
-                isDeaf,
-                isMinor,
-                isStudent,
-                isNeurodivergent,
-                observations
+                is_deaf: isDeaf,
+                is_minor: isMinor,
+                is_student: isStudent,
+                is_neurodivergent: isNeurodivergent,
+                observations,
+                updated_at: new Date().toISOString()
             };
 
             if (editingId) {
-                await updateDoc(doc(db, "addresses", editingId), addressData);
+                const { error } = await supabase.from('addresses').update(addressData).eq('id', editingId);
+                if (error) throw error;
             } else {
-                await addDoc(collection(db, "addresses"), {
+                const { error } = await supabase.from('addresses').insert({
                     ...addressData,
-                    createdAt: serverTimestamp(),
-                    completed: false,
+                    created_at: new Date().toISOString(),
+                    completed: false
                 });
+                if (error) throw error;
             }
 
             resetForm();
@@ -366,28 +367,21 @@ function AddressListContent() {
 
     const handleEditAddress = (addr: Address) => {
         setEditingId(addr.id);
-        if (addr.street.includes(addr.number)) {
-            setCombinedAddress(addr.street);
-        } else {
-            setCombinedAddress(`${addr.street}, ${addr.number}`);
-        }
-
+        setCombinedAddress(addr.street.includes(addr.number) ? addr.street : `${addr.street}, ${addr.number}`);
         setLat(addr.lat?.toString() || '');
         setLng(addr.lng?.toString() || '');
-
-        setSelectedCongregationId(addr.congregationId);
-        setSelectedCityId(addr.cityId);
-        setSelectedTerritoryId(addr.territoryId);
-
-        setIsActive(addr.isActive ?? true);
-        setGoogleMapsLink(addr.googleMapsLink || '');
-        setPeopleCount(addr.peopleCount?.toString() || '');
-        setResidentName(addr.residentName || '');
+        setSelectedCongregationId(addr.congregation_id);
+        setSelectedCityId(addr.city_id);
+        setSelectedTerritoryId(addr.territory_id);
+        setIsActive(addr.is_active ?? true);
+        setGoogleMapsLink(addr.google_maps_link || '');
+        setPeopleCount(addr.people_count?.toString() || '');
+        setResidentName(addr.resident_name || '');
         setGender(addr.gender || '');
-        setIsDeaf(addr.isDeaf || false);
-        setIsMinor(addr.isMinor || false);
-        setIsStudent(addr.isStudent || false);
-        setIsNeurodivergent(addr.isNeurodivergent || false);
+        setIsDeaf(addr.is_deaf || false);
+        setIsMinor(addr.is_minor || false);
+        setIsStudent(addr.is_student || false);
+        setIsNeurodivergent(addr.is_neurodivergent || false);
         setObservations(addr.observations || '');
         setIsCreateModalOpen(true);
     };
@@ -395,88 +389,25 @@ function AddressListContent() {
     const handleDeleteAddress = async (id: string) => {
         if (!confirm("Excluir endereço?")) return;
         try {
-            await deleteDoc(doc(db, "addresses", id));
+            const { error } = await supabase.from('addresses').delete().eq('id', id);
+            if (error) throw error;
         } catch (error) {
             console.error("Error deleting address:", error);
         }
-    }
-
+    };
 
     const toggleSelection = (id: string) => {
         const newSelected = new Set(selectedIds);
-        if (newSelected.has(id)) {
-            newSelected.delete(id);
-        } else {
-            newSelected.add(id);
-        }
+        if (newSelected.has(id)) newSelected.delete(id);
+        else newSelected.add(id);
         setSelectedIds(newSelected);
-
-        if (newSelected.size === 0) {
-            setIsSelectionMode(false);
-        } else {
-            setIsSelectionMode(true);
-        }
+        setIsSelectionMode(newSelected.size > 0);
     };
 
     const handleConfirmShare = async () => {
         if (selectedIds.size === 0) return;
-
-        try {
-            const { writeBatch, doc, collection } = await import('firebase/firestore');
-            const now = new Date();
-            let expiresAt = new Date();
-
-            switch (shareExpiration) {
-                case '1h': expiresAt.setHours(now.getHours() + 1); break;
-                case '24h': expiresAt.setHours(now.getHours() + 24); break;
-                case '7d': expiresAt.setDate(now.getDate() + 7); break;
-                case '30d': expiresAt.setDate(now.getDate() + 30); break;
-                case 'never': expiresAt.setFullYear(now.getFullYear() + 100); break;
-            }
-
-            const batch = writeBatch(db);
-            const shareRef = doc(collection(db, "shared_lists"));
-
-            batch.set(shareRef, {
-                type: 'address',
-                items: Array.from(selectedIds),
-                // itemsSnapshot: addresses.filter(a => selectedIds.has(a.id)), // Removed legacy snapshot field in favor of subcollection
-                createdBy: user?.uid,
-                congregationId: congregationId,
-                cityId: cityId,
-                territoryId: territoryId,
-                createdAt: serverTimestamp(),
-                expiresAt: Timestamp.fromDate(expiresAt),
-                status: 'active',
-                title: selectedIds.size + " Endereços Compartilhados"
-            });
-
-            // Snapshot Items
-            selectedIds.forEach(id => {
-                const address = addresses.find(a => a.id === id);
-                if (address) {
-                    const itemRef = doc(shareRef, "items", id);
-                    batch.set(itemRef, {
-                        ...address,
-                        originalId: address.id,
-                        snapshottedAt: serverTimestamp()
-                    });
-                }
-            });
-
-            await batch.commit();
-
-            // FIXED: Use query param for static export compatibility
-            const shareUrl = window.location.origin + "/share?id=" + shareRef.id;
-            await navigator.clipboard.writeText(shareUrl);
-            alert("Link copiado para a área de transferência! Validade definida.");
-            setSelectedIds(new Set());
-            setIsSelectionMode(false);
-            setIsShareModalOpen(false);
-        } catch (error) {
-            console.error("Error creating share:", error);
-            alert("Erro ao gerar link de compartilhamento.");
-        }
+        alert("Compartilhamento em desenvolvimento (Supabase Migration).");
+        setIsShareModalOpen(false);
     };
 
     const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -487,16 +418,13 @@ function AddressListContent() {
     const handleDragOver = (e: React.DragEvent, id: string) => {
         e.preventDefault();
         if (id === draggedId) return;
-
         const overIndex = addresses.findIndex(a => a.id === id);
         const dragIndex = addresses.findIndex(a => a.id === draggedId);
-
         if (dragIndex === -1 || overIndex === -1) return;
 
         const newAddresses = [...addresses];
         const [removed] = newAddresses.splice(dragIndex, 1);
         newAddresses.splice(overIndex, 0, removed);
-
         setAddresses(newAddresses);
     };
 
@@ -505,11 +433,9 @@ function AddressListContent() {
         setDraggedId(null);
 
         try {
-            const updates = addresses.map((addr, index) => {
-                return updateDoc(doc(db, "addresses", addr.id), {
-                    sortOrder: index
-                });
-            });
+            const updates = addresses.map((addr, index) =>
+                supabase.from('addresses').update({ sort_order: index }).eq('id', addr.id)
+            );
             await Promise.all(updates);
         } catch (error) {
             console.error("Error updating sort order:", error);
@@ -521,9 +447,35 @@ function AddressListContent() {
         a.number.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const activeAddresses = filteredAddresses.filter(a => a.isActive !== false);
-    const inactiveAddresses = filteredAddresses.filter(a => a.isActive === false);
+    const activeAddresses = filteredAddresses.filter(a => a.is_active !== false);
+    const inactiveAddresses = filteredAddresses.filter(a => a.is_active === false);
 
+    const handleGeocodeSuccess = async (id: string, lat: number, lng: number) => {
+        try {
+            await supabase.from('addresses').update({ lat, lng }).eq('id', id);
+        } catch (error) {
+            console.error("Error syncing geocoded coords:", error);
+        }
+    };
+
+    const handleOpenMap = (item: any) => {
+        const query = `${item.street}, ${item.number}`;
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        let url = '';
+        if (isIOS) url = `maps://?q=${encodeURIComponent(query)}`;
+        else if (isAndroid) url = `geo:0,0?q=${encodeURIComponent(query)}`;
+        else url = item.google_maps_link || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+        window.open(url, '_blank');
+    };
+
+    const handleMapClick = (clickLat: number, clickLng: number) => {
+        if (isMapPickerOpen && isMapSelectionMode) {
+            setPickerTempCoords({ lat: clickLat, lng: clickLng });
+        }
+    };
+
+    // --- RENDER HELPERS ---
     const renderAddressCard = (addr: Address, index: number) => (
         <div
             key={addr.id}
@@ -534,7 +486,7 @@ function AddressListContent() {
             className={`group bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all ${draggedId === addr.id ? 'opacity-20 transition-none scale-95' : ''} ${openMenuId === addr.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}
         >
             <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-3 flex-1 min-w-0 ${!addr.isActive ? 'opacity-60 grayscale' : ''}`}>
+                <div className={`flex items-center gap-3 flex-1 min-w-0 ${!addr.is_active ? 'opacity-60 grayscale' : ''}`}>
                     {/* Drag Handle */}
                     {!isSelectionMode && (
                         <div className="cursor-grab active:cursor-grabbing text-muted hover:text-primary-500 transition-colors">
@@ -557,10 +509,9 @@ function AddressListContent() {
                     {/* Gender/Number Badge */}
                     {(() => {
                         let lastVisitFormatted = "Sem visitas este ano";
-                        if (addr.lastVisitedAt) {
-                            const lv = addr.lastVisitedAt;
-                            const lastVisit = lv.toDate ? lv.toDate() : new Date((lv as any).seconds * 1000);
-                            lastVisitFormatted = `Última visita: ${lastVisit.toLocaleDateString()}`;
+                        if (addr.last_visited_at) {
+                            const lvDate = new Date(addr.last_visited_at);
+                            lastVisitFormatted = `Última visita: ${lvDate.toLocaleDateString()}`;
                         }
 
                         // Gender Mode (Sign Language / Foreign)
@@ -608,13 +559,13 @@ function AddressListContent() {
                         </h3>
 
                         <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
-                            {addr.peopleCount ? (
+                            {addr.people_count ? (
                                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md" title="Número de Pessoas">
                                     <Users className="w-3 h-3" />
-                                    <span className="font-bold">{addr.peopleCount}</span>
+                                    <span className="font-bold">{addr.people_count}</span>
                                 </div>
                             ) : null}
-                            {!isTraditional && addr.residentName && <span className="font-semibold text-gray-700 dark:text-gray-300">{addr.residentName}</span>}
+                            {!isTraditional && addr.resident_name && <span className="font-semibold text-gray-700 dark:text-gray-300">{addr.resident_name}</span>}
 
                             {!isTraditional && (
                                 <>
@@ -634,29 +585,29 @@ function AddressListContent() {
                                             {addr.gender === 'HOMEM' ? 'Homem' : addr.gender === 'MULHER' ? 'Mulher' : 'Casal'}
                                         </span>
                                     )}
-                                    {addr.isDeaf && (
+                                    {addr.is_deaf && (
                                         <span className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                             <Ear className="w-3 h-3" /> Surdo
                                         </span>
                                     )}
-                                    {addr.isMinor && (
+                                    {addr.is_minor && (
                                         <span className="flex items-center gap-1 bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                             <Baby className="w-3 h-3" /> Menor
                                         </span>
                                     )}
-                                    {addr.isStudent && (
+                                    {addr.is_student && (
                                         <span className="flex items-center gap-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                             <GraduationCap className="w-3 h-3" /> Estudante
                                         </span>
                                     )}
-                                    {addr.isNeurodivergent && (
+                                    {addr.is_neurodivergent && (
                                         <span className="flex items-center gap-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                             <Brain className="w-3 h-3" /> Neurodivergente
                                         </span>
                                     )}
                                 </>
                             )}
-                            {(addr as any).visitStatus === 'moved' && (
+                            {addr.visit_status === 'moved' && (
                                 <span className="flex items-center gap-1 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                     <Truck className="w-3 h-3" /> Mudou-se
                                 </span>
@@ -752,49 +703,15 @@ function AddressListContent() {
         </div>
     );
 
-    // --- Geocode Sync Logic ---
-    const handleGeocodeSuccess = async (id: string, lat: number, lng: number) => {
-        try {
-            console.log(`[Sync] Saving coordinates for ${id}: ${lat}, ${lng}`);
-            await updateDoc(doc(db, "addresses", id), { lat, lng });
-        } catch (error) {
-            console.error("Error syncing geocoded coords:", error);
-        }
-    };
-
     if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-
-    const handleOpenMap = (item: any) => {
-        const query = `${item.street}, ${item.number}`;
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const isAndroid = /Android/i.test(navigator.userAgent);
-
-        let url = '';
-        if (isIOS) {
-            url = `maps://?q=${encodeURIComponent(query)}`;
-        } else if (isAndroid) {
-            url = `geo:0,0?q=${encodeURIComponent(query)}`;
-        } else {
-            url = item.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-        }
-
-        window.open(url, '_blank');
-    };
-
-    const handleMapClick = (clickLat: number, clickLng: number) => {
-        if (isMapPickerOpen && isMapSelectionMode) {
-            setPickerTempCoords({ lat: clickLat, lng: clickLng });
-        }
-    };
 
     return (
         <div className="bg-background min-h-screen pb-24 font-sans text-main">
-
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-sm">
                 <div className="flex items-center gap-3">
                     <Link
-                        href={`/my-maps/city?congregationId=${congregationId}&cityId=${cityId}`}
+                        href={`/my-maps/territory?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`}
                         className="p-2 bg-gray-100 dark:bg-gray-800 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                         title="Voltar"
                     >
@@ -922,17 +839,17 @@ function AddressListContent() {
                                 variant: 'numbered' as const,
                                 index: idx + 1,
                                 number: a.number,
-                                residentName: a.residentName,
+                                residentName: a.resident_name,
                                 gender: a.gender,
-                                status: ((a as any).visitStatus === 'contacted' ? 'OCUPADO' :
-                                    (a as any).visitStatus === 'do_not_visit' ? 'NAO_VISITAR' :
-                                        (a as any).visitStatus === 'moved' ? 'MUDOU' :
-                                            (a as any).visitStatus === 'not_contacted' ? 'NAO_CONTATADO' : 'LIVRE') as MapItem['status'],
-                                lastVisit: a.lastVisitedAt && a.lastVisitedAt.toDate ? a.lastVisitedAt.toDate().toLocaleDateString() : undefined,
-                                isDeaf: a.isDeaf,
-                                isMinor: a.isMinor,
-                                isStudent: a.isStudent,
-                                isNeurodivergent: a.isNeurodivergent
+                                status: ((a as any).visit_status === 'contacted' ? 'OCUPADO' :
+                                    (a as any).visit_status === 'do_not_visit' ? 'NAO_VISITAR' :
+                                        (a as any).visit_status === 'moved' ? 'MUDOU' :
+                                            (a as any).visit_status === 'not_contacted' ? 'NAO_CONTATADO' : 'LIVRE') as MapItem['status'],
+                                lastVisit: a.last_visited_at && new Date(a.last_visited_at).toLocaleDateString(),
+                                isDeaf: a.is_deaf,
+                                isMinor: a.is_minor,
+                                isStudent: a.is_student,
+                                isNeurodivergent: a.is_neurodivergent
                             })),
                             ...(isInactiveExpanded ? inactiveAddresses.map((a, idx) => ({
                                 id: a.id,
@@ -943,17 +860,17 @@ function AddressListContent() {
                                 variant: 'numbered' as const,
                                 index: activeAddresses.length + idx + 1,
                                 number: a.number,
-                                residentName: a.residentName,
+                                residentName: a.resident_name,
                                 gender: a.gender,
-                                status: ((a as any).visitStatus === 'contacted' ? 'OCUPADO' :
-                                    (a as any).visitStatus === 'do_not_visit' ? 'NAO_VISITAR' :
-                                        (a as any).visitStatus === 'moved' ? 'MUDOU' :
-                                            (a as any).visitStatus === 'not_contacted' ? 'NAO_CONTATADO' : 'LIVRE') as MapItem['status'],
-                                lastVisit: a.lastVisitedAt && a.lastVisitedAt.toDate ? a.lastVisitedAt.toDate().toLocaleDateString() : undefined,
-                                isDeaf: a.isDeaf,
-                                isMinor: a.isMinor,
-                                isStudent: a.isStudent,
-                                isNeurodivergent: a.isNeurodivergent
+                                status: ((a as any).visit_status === 'contacted' ? 'OCUPADO' :
+                                    (a as any).visit_status === 'do_not_visit' ? 'NAO_VISITAR' :
+                                        (a as any).visit_status === 'moved' ? 'MUDOU' :
+                                            (a as any).visit_status === 'not_contacted' ? 'NAO_CONTATADO' : 'LIVRE') as MapItem['status'],
+                                lastVisit: a.last_visited_at && new Date(a.last_visited_at).toLocaleDateString(),
+                                isDeaf: a.is_deaf,
+                                isMinor: a.is_minor,
+                                isStudent: a.is_student,
+                                isNeurodivergent: a.is_neurodivergent
                             })) : [])
                         ]}
                         showLegend={false}

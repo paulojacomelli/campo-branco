@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, updateDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { Loader2, Bug, CheckCircle2, Clock, MapPin, Monitor } from 'lucide-react';
 import { useAuth } from '@/app/context/AuthContext';
 import Link from 'next/link';
@@ -11,11 +10,11 @@ interface Report {
     id: string;
     description: string;
     screenshot: string;
-    userId: string;
-    userName: string;
+    user_id: string;
+    user_name: string;
     url: string;
-    userAgent: string;
-    createdAt: any;
+    user_agent: string;
+    created_at: string;
     status: 'open' | 'resolved';
 }
 
@@ -24,28 +23,49 @@ export default function AdminReportsPage() {
     const [reports, setReports] = useState<Report[]>([]);
     const [loading, setLoading] = useState(true);
 
+    const fetchReports = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('error_reports')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setReports(data || []);
+        } catch (error) {
+            console.error("Error fetching reports:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        if (!isSuperAdmin) return;
+        if (isSuperAdmin) {
+            fetchReports();
 
-        const fetchReports = async () => {
-            try {
-                const q = query(collection(db, "reports"), orderBy("createdAt", "desc"));
-                const snapshot = await getDocs(q);
-                const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
-                setReports(data);
-            } catch (error) {
-                console.error("Error fetching reports:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
+            const channel = supabase
+                .channel('public:error_reports')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'error_reports' }, () => {
+                    fetchReports();
+                })
+                .subscribe();
 
-        fetchReports();
+            return () => {
+                supabase.removeChannel(channel);
+            };
+        }
     }, [isSuperAdmin]);
 
     const handleResolve = async (id: string) => {
         try {
-            await updateDoc(doc(db, "reports", id), { status: 'resolved' });
+            const { error } = await supabase
+                .from('error_reports')
+                .update({ status: 'resolved' })
+                .eq('id', id);
+
+            if (error) throw error;
+            // setReports handles via real-time or manual update
             setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'resolved' } : r));
         } catch (error) {
             console.error("Error resolving report:", error);
@@ -113,7 +133,7 @@ export default function AdminReportsPage() {
                                                 </span>
                                                 <span className="text-xs text-muted flex items-center gap-1">
                                                     <Clock className="w-3 h-3" />
-                                                    {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString() : new Date(report.createdAt).toLocaleString()}
+                                                    {new Date(report.created_at).toLocaleString()}
                                                 </span>
                                             </div>
                                             <h3 className="font-bold text-lg leading-snug">{report.description}</h3>
@@ -136,11 +156,11 @@ export default function AdminReportsPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Monitor className="w-3.5 h-3.5" />
-                                            <span className="truncate max-w-md" title={report.userAgent}>{report.userAgent}</span>
+                                            <span className="truncate max-w-md" title={report.user_agent}>{report.user_agent}</span>
                                         </div>
                                         <div className="flex items-center gap-2 border-t border-gray-200 dark:border-slate-700 pt-2 mt-2">
                                             <span className="font-bold text-main">Reportado por:</span>
-                                            {report.userName} (ID: {report.userId})
+                                            {report.user_name} (ID: {report.user_id})
                                         </div>
                                     </div>
                                 </div>

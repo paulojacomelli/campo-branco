@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { X, Plus, Loader2 } from 'lucide-react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
 interface NewPointModalProps {
     isOpen: boolean;
@@ -59,18 +58,20 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
 
         setLoading(true);
         try {
-            await addDoc(collection(db, "witnessing_points"), {
+            const { error } = await supabase.from('witnessing_points').insert({
                 name: name.trim(),
                 address: address.trim(),
-                cityId,
-                congregationId,
+                city_id: cityId,
+                congregation_id: congregationId,
                 lat: lat ? parseFloat(lat) : null,
                 lng: lng ? parseFloat(lng) : null,
                 schedule: schedule.trim(),
                 status: 'AVAILABLE',
-                currentPublishers: [],
-                createdAt: serverTimestamp()
+                current_publishers: []
             });
+
+            if (error) throw error;
+
             setName('');
             setAddress('');
             setLat('');

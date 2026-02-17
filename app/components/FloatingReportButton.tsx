@@ -4,8 +4,11 @@ import { useState } from 'react';
 import { Camera, X, CheckCircle2, Loader2, Bug } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import Image from 'next/image';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/app/context/AuthContext';
 
 export default function FloatingReportButton() {
+    const { user } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
@@ -44,20 +47,19 @@ export default function FloatingReportButton() {
 
         setLoading(true);
         try {
-            // Static Export Refactor: Write directly to Firestore
-            // Requires strict security rules enabled
-            const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
-            const { db, auth } = await import('@/lib/firebase');
+            const { error } = await supabase
+                .from('error_reports')
+                .insert([{
+                    screenshot,
+                    description,
+                    url: window.location.href,
+                    user_agent: navigator.userAgent,
+                    user_id: user?.id || null,
+                    user_name: user?.user_metadata?.full_name || user?.email || 'Anônimo',
+                    status: 'open'
+                }]);
 
-            await addDoc(collection(db, 'reports'), {
-                screenshot,
-                description,
-                url: window.location.href,
-                userAgent: navigator.userAgent,
-                userId: auth.currentUser?.uid || 'anonymous',
-                createdAt: serverTimestamp(),
-                status: 'new'
-            });
+            if (error) throw error;
 
             setSuccess(true);
             setTimeout(() => {

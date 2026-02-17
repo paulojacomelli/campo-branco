@@ -2,8 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp, getDocs, query, collection, where, setDoc } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -21,7 +20,7 @@ function InviteContent() {
         }
     }, [token]);
 
-    const { user, loading: authLoading } = useAuth();
+    const { user, loading: authLoading, profileName } = useAuth();
     const router = useRouter();
 
     const [loading, setLoading] = useState(true);
@@ -44,21 +43,20 @@ function InviteContent() {
 
             try {
                 // 1. Validate Token & Get Congregation
-                // Use list query because we don't know the ID
-                const q = query(collection(db, "congregations"), where("inviteToken", "==", token));
-                const snap = await getDocs(q);
+                const { data, error: congError } = await supabase
+                    .from("congregations")
+                    .select("*")
+                    .eq("invite_token", token)
+                    .single();
 
-                if (snap.empty) {
+                if (congError || !data) {
                     setError("Link de convite inválido ou expirado.");
                     setCongregationName("Convite Inválido");
                     setLoading(false);
                     return;
                 }
 
-                const congDoc = snap.docs[0];
-                const data = congDoc.data();
-
-                setCongregationId(congDoc.id);
+                setCongregationId(data.id);
                 setCongregationName(data.name || "Congregação sem nome");
                 setLoading(false);
 
@@ -95,12 +93,15 @@ function InviteContent() {
         setAccepting(true);
         try {
             // Check if user already has a congregation
-            const userRef = doc(db, "users", user.uid);
-            const userDoc = await getDoc(userRef);
+            const { data: userData, error: userError } = await supabase
+                .from("users")
+                .select("congregation_id")
+                .eq("id", user.id)
+                .single();
 
-            if (userDoc.exists() && userDoc.data().congregationId) {
+            if (userData && userData.congregation_id) {
                 // Already bound logic
-                if (userDoc.data().congregationId === congregationId) {
+                if (userData.congregation_id === congregationId) {
                     setSuccess(true);
                     // Force refresh to ensure AuthContext picks up the change
                     setTimeout(() => window.location.href = '/dashboard', 2000);
@@ -114,13 +115,18 @@ function InviteContent() {
             }
 
             // Update User
-            await setDoc(userRef, {
-                congregationId: congregationId,
-                role: 'PUBLICADOR',
-                updatedAt: serverTimestamp(),
-                email: user.email,
-                name: user.displayName
-            }, { merge: true });
+            const { error: updateError } = await supabase
+                .from("users")
+                .upsert({
+                    id: user.id,
+                    congregation_id: congregationId,
+                    role: 'PUBLICADOR',
+                    updated_at: new Date().toISOString(),
+                    email: user.email,
+                    name: profileName || user.email?.split('@')[0]
+                });
+
+            if (updateError) throw updateError;
 
             setSuccess(true);
             // Force refresh to ensure AuthContext picks up the change

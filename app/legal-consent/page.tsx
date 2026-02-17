@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Shield, Check, Loader2, FileText, Lock, UserCheck, AlertOctagon } from 'lucide-react';
 import Link from 'next/link';
@@ -35,10 +34,15 @@ export default function LegalConsentPage() {
 
         setSubmitting(true);
         try {
-            const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-                termsAcceptedAt: serverTimestamp()
-            });
+            const { error } = await supabase
+                .from('users')
+                .update({
+                    terms_accepted_at: new Date().toISOString()
+                })
+                .eq('id', user.id);
+
+            if (error) throw error;
+
             window.location.href = '/dashboard';
         } catch (error) {
             console.error("Error updating consent:", error);

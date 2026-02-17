@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as readline from 'readline';
 
 // --- Environment Loading ---
+import * as dotenv from 'dotenv';
 const loadEnv = () => {
     try {
         // Strategy 1: Try service-account.json (Most reliable for CLI)
@@ -19,20 +20,14 @@ const loadEnv = () => {
             return;
         }
 
-        // Strategy 2: Try .env.local (Fallback, fragile for multiline keys)
-        const envPath = path.resolve(process.cwd(), '.env.local');
-        if (fs.existsSync(envPath)) {
-            const envConfig = fs.readFileSync(envPath, 'utf8');
-            // Basic parsing that handles quotes but might fail on complex multiline
-            envConfig.split('\n').forEach(line => {
-                const match = line.match(/^([^=]+)=(.*)$/);
-                if (match) {
-                    const key = match[1].trim();
-                    const value = match[2].trim().replace(/^"(.*)"$/, '$1');
-                    process.env[key] = value;
-                }
-            });
-            console.log('⚠️ Loaded credentials from .env.local (Caution: Private Key formatting might need check)');
+        // Strategy 2: Use dotenv for .env.local and .env
+        dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+        dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+        if (process.env.FIREBASE_PRIVATE_KEY) {
+            console.log('✅ Loaded credentials from environment files (.env.local / .env)');
+        } else {
+            console.warn('⚠️ No Firebase credentials found in environment files.');
         }
     } catch (e) {
         console.error('❌ Error loading credentials:', e);

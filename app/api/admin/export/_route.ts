@@ -1,11 +1,10 @@
-
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
-// Strict whitelist of collections to export
 const COLLECTIONS = [
     'users',
     'congregations',
@@ -17,19 +16,15 @@ const COLLECTIONS = [
     'shared_lists'
 ];
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const user = await requireAuth(['ANCIAO', 'SUPER_ADMIN']);
-
-        if (!adminDb) {
-            return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
-        }
+        const supabase = createRouteHandlerClient({ cookies });
 
         const isSuperAdmin = user.role === 'SUPER_ADMIN';
         const timestamp = new Date().toISOString();
         const exportType = isSuperAdmin ? 'FULL_EXPORT' : 'CONGREGATION_EXPORT';
 
-        // Metadata Header
         const result: any = {
             meta: {
                 type: exportType,
@@ -42,74 +37,42 @@ export async function GET(request: Request) {
             data: {}
         };
 
-        for (const collectionName of COLLECTIONS) {
-            let query: FirebaseFirestore.Query = adminDb.collection(collectionName);
+        for (const tableName of COLLECTIONS) {
+            let query = supabase.from(tableName).select('*');
 
-            // SCOPING LOGIC
             if (!isSuperAdmin) {
-                // Determine if collection has congregationId
-                // 'congregations' collection: Elder sees ONLY their own doc
-                if (collectionName === 'congregations') {
-                    // Logic handled below special case
-                } else if (collectionName === 'users') {
-                    query = query.where('congregationId', '==', user.congregationId);
+                if (tableName === 'congregations') {
+                    query = query.eq('id', user.congregationId);
+                } else if (tableName === 'users') {
+                    query = query.eq('congregation_id', user.congregationId);
                 } else {
-                    // Generic collections (cities, territories, etc.) usually have congregationId
-                    // Except global configs or similar. 
-                    // Let's check safety. If a collection lacks congregationId, an empty query result is better than leaking.
-                    // However, we know our schema.
-                    // 'shared_lists' has congregationId.
-                    // 'reports' has congregationId (usually) or userId. 
-                    // Let's assume schema compliance.
-                    query = query.where('congregationId', '==', user.congregationId);
+                    query = query.eq('congregation_id', user.congregationId);
                 }
             }
 
-            // Special fetch logic
-            let docs: any[] = [];
-
-            if (collectionName === 'congregations' && !isSuperAdmin) {
-                // Fetch single doc
-                if (user.congregationId) {
-                    const doc = await adminDb.collection('congregations').doc(user.congregationId).get();
-                    if (doc.exists) {
-                        docs.push({ _id: doc.id, ...doc.data() });
-                    }
-                }
-            } else {
-                const snapshot = await query.get();
-                snapshot.forEach(doc => {
-                    docs.push({
-                        _id: doc.id,
-                        ...doc.data()
-                    });
-                });
+            const { data, error } = await query;
+            if (error) {
+                console.error(`Error exporting table ${tableName}:`, error);
+                result.data[tableName] = [];
+                continue;
             }
 
-            // DATA HYGIENE (Users)
-            if (collectionName === 'users') {
-                docs = docs.map(u => {
-                    // Always sanitizing users, even for Super Admin? 
-                    // No, Super Admin sees all. Elder sees sanitized.
-                    if (!isSuperAdmin) {
-                        return {
-                            _id: u._id,
-                            uid: u.uid || u._id,
-                            name: u.name || u.displayName,
-                            email: u.email, // keeping email for contact
-                            role: u.role,
-                            congregationId: u.congregationId,
-                            // Explicitly exclude sensitive auth fields
-                        };
-                    }
-                    return u;
-                });
+            let docs = data || [];
+
+            // DATA HYGIENE
+            if (tableName === 'users' && !isSuperAdmin) {
+                docs = docs.map(u => ({
+                    id: u.id,
+                    name: u.name,
+                    email: u.email,
+                    role: u.role,
+                    congregation_id: u.congregation_id,
+                }));
             }
 
-            result.data[collectionName] = docs;
+            result.data[tableName] = docs;
         }
 
-        // Return JSON file
         const filename = `backup-${isSuperAdmin ? 'FULL' : user.congregationId}-${timestamp.replace(/[:.]/g, '-')}.json`;
 
         return new NextResponse(JSON.stringify(result, null, 2), {
