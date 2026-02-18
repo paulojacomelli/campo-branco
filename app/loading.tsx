@@ -7,7 +7,7 @@ export default function Loading() {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center">
             <div className="relative">
                 <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full scale-150 animate-pulse" />
-                <div className="relative bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-2xl border border-primary-light/10 dark:border-primary-dark/10">
+                <div className="relative bg-white dark:bg-slate-900 p-6 rounded-lg shadow-2xl border border-primary-light/20 dark:border-transparent">
                     <Loader2 className="w-12 h-12 text-primary animate-spin" />
                 </div>
             </div>
