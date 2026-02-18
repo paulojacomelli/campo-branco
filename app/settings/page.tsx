@@ -383,27 +383,27 @@ export default function SettingsPage() {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => changeTheme('dark')}
-                                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${themeMode === 'dark' ? 'bg-surface text-main shadow-sm' : 'text-muted hover:text-main'}`}
+                                    disabled
+                                    className="px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 text-muted/40 cursor-not-allowed"
                                 >
                                     <Moon className="w-4 h-4" />
-                                    Escuro
+                                    <span>Escuro <span className="text-[8px] opacity-70">(Breve)</span></span>
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => changeTheme('auto')}
-                                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${themeMode === 'auto' ? 'bg-surface text-main shadow-sm' : 'text-muted hover:text-main'}`}
+                                    disabled
+                                    className="px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 text-muted/40 cursor-not-allowed"
                                 >
                                     <Clock className="w-4 h-4" />
-                                    Auto
+                                    <span>Auto <span className="text-[8px] opacity-70">(Breve)</span></span>
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => changeTheme('system')}
-                                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${themeMode === 'system' ? 'bg-surface text-main shadow-sm' : 'text-muted hover:text-main'}`}
+                                    disabled
+                                    className="px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 text-muted/40 cursor-not-allowed"
                                 >
                                     <Smartphone className="w-4 h-4" />
-                                    Sistema
+                                    <span>Sistema <span className="text-[8px] opacity-70">(Breve)</span></span>
                                 </button>
                             </div>
                         </div>

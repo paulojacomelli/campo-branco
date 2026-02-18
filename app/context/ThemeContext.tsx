@@ -15,7 +15,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType>({
     textSize: 16,
     displayScale: 1,
-    themeMode: 'auto',
+    themeMode: 'light',
     updatePreferences: async () => { }
 });
 
@@ -23,7 +23,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     const [textSize, setTextSize] = useState(16);
     const [displayScale, setDisplayScale] = useState(1);
-    const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
+    const [themeMode, setThemeMode] = useState<ThemeMode>('light');
     const [loaded, setLoaded] = useState(false);
 
     // Apply styles
