@@ -31,6 +31,14 @@ interface Congregation {
     created_at?: string;
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+    'SIGN_LANGUAGE': 'Língua de Sinais',
+    'FOREIGN_LANGUAGE': 'Língua Estrangeira',
+    'Tradicional': 'Tradicional',
+    'Língua de Sinais': 'Língua de Sinais',
+    'Língua Estrangeira': 'Língua Estrangeira'
+};
+
 export default function CongregationsPage() {
     const { user, isSuperAdmin, loading: authLoading } = useAuth();
     const router = useRouter();
@@ -256,7 +264,7 @@ export default function CongregationsPage() {
                                 onClick={() => setCategoryFilter(cat)}
                                 className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${categoryFilter === cat ? 'bg-primary text-white border-primary shadow-md shadow-primary-light/500/20' : 'bg-surface text-muted border-surface-border hover:border-primary-light/500'}`}
                             >
-                                {cat}
+                                {CATEGORY_LABELS[cat] || cat}
                             </button>
                         ))}
                     </div>
@@ -288,7 +296,7 @@ export default function CongregationsPage() {
                                             </p>
                                             {cong.category && (
                                                 <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-blue-900/20 text-primary dark:text-blue-400 rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light dark:border-blue-800/30">
-                                                    {cong.category}
+                                                    {CATEGORY_LABELS[cong.category] || cong.category}
                                                 </span>
                                             )}
                                         </div>
@@ -371,8 +379,8 @@ export default function CongregationsPage() {
                                 >
                                     <option value="" disabled>Selecione o tipo...</option>
                                     <option value="Tradicional">Tradicional</option>
-                                    <option value="Língua de sinais">Língua de sinais</option>
-                                    <option value="Idiomas estrangeiros">Idiomas estrangeiros</option>
+                                    <option value="Língua de Sinais">Língua de Sinais</option>
+                                    <option value="Língua Estrangeira">Língua Estrangeira</option>
                                 </select>
                             </div>
 

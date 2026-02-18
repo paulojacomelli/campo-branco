@@ -2,7 +2,7 @@ const pkg = require('./package.json');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    output: 'export', // Commented out to allow API Routes (Admin Export) to build. Enable only for APK generation.
+    // output: 'export', // Desabilitado para desenvolvimento. Habilitar apenas para geração de APK/build estático.
     // eslint config removed as it is not supported in next.config.js options
     typescript: {
         ignoreBuildErrors: true,

@@ -35,6 +35,7 @@ import LoginRequestModal from '@/app/components/LoginRequestModal';
 import AccessDeniedModal from '@/app/components/AccessDeniedModal';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
+import { toast } from 'sonner';
 
 interface PreviewItem {
     id: string;
@@ -314,7 +315,7 @@ function SharedPreviewContent() {
 
         } catch (error) {
             console.error("Error saving visit:", error);
-            alert("Erro ao salvar visita. Tente novamente.");
+            toast.error("Erro ao salvar visita. Tente novamente.");
         }
     };
     // The code uses `shareId || null`.

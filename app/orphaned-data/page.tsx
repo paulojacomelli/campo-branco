@@ -8,6 +8,7 @@ import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Database, Trash2, Link as LinkIcon, AlertTriangle, Check, Loader2, Pencil } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 interface OrphanedItem {
     id: string;
@@ -235,7 +236,7 @@ export default function OrphanedDataPage() {
 
             if (fixingItem.type === 'address') {
                 if (!selCong || !selCity || !selTerr) {
-                    alert("Para endereços, selecione Congregação, Cidade e Território.");
+                    toast.info("Para endereços, selecione Congregação, Cidade e Território.");
                     setSaving(false);
                     return;
                 }
@@ -245,7 +246,7 @@ export default function OrphanedDataPage() {
             }
             else if (fixingItem.type === 'territory') {
                 if (!selCity) {
-                    alert("Selecione a Cidade.");
+                    toast.info("Selecione a Cidade.");
                     setSaving(false);
                     return;
                 }
@@ -254,7 +255,7 @@ export default function OrphanedDataPage() {
             }
             else if (fixingItem.type === 'witnessing') {
                 if (!selCong || !selCity) {
-                    alert("Selecione Congregação e Cidade.");
+                    toast.info("Selecione Congregação e Cidade.");
                     setSaving(false);
                     return;
                 }
@@ -263,7 +264,7 @@ export default function OrphanedDataPage() {
             }
             else if (fixingItem.type === 'city') {
                 if (!selCong) {
-                    alert("Selecione a Congregação.");
+                    toast.info("Selecione a Congregação.");
                     setSaving(false);
                     return;
                 }
@@ -286,7 +287,7 @@ export default function OrphanedDataPage() {
             fetchOrphans(); // Refresh
         } catch (error) {
             console.error("Error fixing:", error);
-            alert("Erro ao salvar.");
+            toast.error("Erro ao salvar.");
         } finally {
             setSaving(false);
         }
@@ -310,7 +311,7 @@ export default function OrphanedDataPage() {
             setOrphans(prev => prev.filter(o => o.id !== id));
         } catch (error) {
             console.error("Error deleting:", error);
-            alert("Erro ao excluir.");
+            toast.error("Erro ao excluir.");
         }
     };
 

@@ -19,6 +19,8 @@ import {
 import BottomNav from '@/app/components/BottomNav';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { toast } from 'sonner';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 interface Congregation {
     id: string;
@@ -36,9 +38,13 @@ export default function CongregationListPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
 
+
+
     // Modals
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentCongregation, setCurrentCongregation] = useState<Congregation | null>(null);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; id: string | null; name: string }>({ isOpen: false, id: null, name: '' });
+    const [isDeleting, setIsDeleting] = useState(false); // Add Loading state for deletion
 
     // Form State
     const [congregationName, setCongregationName] = useState('');
@@ -122,23 +128,42 @@ export default function CongregationListPage() {
             setIsEditModalOpen(false);
         } catch (error) {
             console.error("Error updating congregation:", error);
-            alert("Erro ao atualizar congregação.");
+            toast.error("Erro ao atualizar congregação.");
         }
     };
 
-    const handleDeleteCongregation = async (id: string, name: string) => {
-        if (!confirm(`Tem certeza que deseja excluir a congregação "${name}"? Isso pode deixar cidades e territórios órfãos.`)) return;
+    const handleDeleteCongregation = (id: string, name: string) => {
+        setDeleteConfirmation({ isOpen: true, id, name });
+        setOpenMenuId(null);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirmation.id) return;
+        setIsDeleting(true);
 
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('congregations')
                 .delete()
-                .eq('id', id);
+                .eq('id', deleteConfirmation.id)
+                .select(); // Check returned data
 
             if (error) throw error;
-        } catch (error) {
+
+            if (!data || data.length === 0) {
+                throw new Error("Não foi possível excluir. Verifique se você tem permissão ou se o item já foi removido.");
+            }
+
+            // Update local state to remove the deleted congregation
+            setCongregations(prev => prev.filter(c => c.id !== deleteConfirmation.id));
+
+            toast.success("Congregação excluída com sucesso.");
+            setDeleteConfirmation({ isOpen: false, id: null, name: '' });
+        } catch (error: any) {
             console.error("Error deleting congregation:", error);
-            alert("Erro ao excluir congregação.");
+            toast.error(error.message || "Erro ao excluir congregação.");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -176,7 +201,7 @@ export default function CongregationListPage() {
     }
 
     return (
-        <div className="bg-background min-h-screen pb-24 font-sans text-main">
+        <div className="bg-background min-h-screen pb-32 font-sans text-main">
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                 <div className="flex items-center gap-3">
@@ -279,7 +304,7 @@ export default function CongregationListPage() {
                                 </button>
 
                                 {openMenuId === cong.id && (
-                                    <div className="absolute right-0 top-full mt-2 w-40 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                    <div className="absolute right-0 top-full mt-2 w-40 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-[100] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                         <Link
                                             href={`/my-maps/city?congregationId=${cong.id}`}
                                             prefetch={false}
@@ -358,6 +383,18 @@ export default function CongregationListPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmationModal
+                isOpen={deleteConfirmation.isOpen}
+                onClose={() => setDeleteConfirmation({ ...deleteConfirmation, isOpen: false })}
+                onConfirm={confirmDelete}
+                title="Excluir Congregação"
+                description={`Tem certeza que deseja excluir a congregação "${deleteConfirmation.name}"? Isso pode deixar cidades e territórios órfãos permanentemente.`}
+                confirmText="Sim, Excluir"
+                cancelText="Cancelar"
+                variant="danger"
+                isLoading={isDeleting}
+            />
         </div>
     );
 }

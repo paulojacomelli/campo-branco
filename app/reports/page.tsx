@@ -335,33 +335,33 @@ export default function ReportsPage() {
                 ) : (
                     <>
                         {/* KPI Cards Row */}
-                        <div className="flex gap-4 overflow-x-auto pb-2 snap-x hide-scrollbar">
+                        <div className="grid grid-cols-3 gap-4 mb-2">
                             {/* Card 1: Total Maps */}
-                            <div className="min-w-[140px] bg-surface p-5 rounded-lg shadow-sm border border-surface-border snap-center">
+                            <div className="bg-surface p-4 sm:p-5 rounded-lg shadow-sm border border-surface-border flex flex-col items-center">
                                 <div className="flex items-center gap-2 mb-3 text-primary dark:text-primary-light font-bold">
                                     <MapIcon className="w-5 h-5" />
                                 </div>
-                                <p className="text-3xl font-black text-main mb-1">{kpis.totalMaps}</p>
-                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Mapas Totais</p>
+                                <p className="text-xl sm:text-3xl font-black text-main mb-1">{kpis.totalMaps}</p>
+                                <p className="text-[8px] sm:text-[10px] font-bold text-muted uppercase tracking-widest text-center">Mapas Totais</p>
                             </div>
 
                             {/* Card 2: Coverage */}
-                            <div className="min-w-[140px] bg-surface p-5 rounded-lg shadow-sm border border-surface-border snap-center">
+                            <div className="bg-surface p-4 sm:p-5 rounded-lg shadow-sm border border-surface-border flex flex-col items-center">
                                 <div className="flex items-center gap-2 mb-3 text-primary dark:text-primary-light">
                                     <TrendingUp className="w-5 h-5" />
                                 </div>
-                                <p className="text-3xl font-black text-main mb-1">{kpis.coveredPercentage}%</p>
-                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Cobertura</p>
+                                <p className="text-xl sm:text-3xl font-black text-main mb-1">{kpis.coveredPercentage}%</p>
+                                <p className="text-[8px] sm:text-[10px] font-bold text-muted uppercase tracking-widest text-center">Cobertura</p>
                             </div>
 
                             {/* Card 3: Rotation (Alert if high) */}
-                            <div className={`min-w-[140px] p-5 rounded-lg shadow-sm border snap-center ${kpis.avgRotationDays > 120 ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' : 'bg-surface border-surface-border'}`}>
+                            <div className={`p-4 sm:p-5 rounded-lg shadow-sm border flex flex-col items-center ${kpis.avgRotationDays > 120 ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' : 'bg-surface border-surface-border'}`}>
                                 <div className={`flex items-center gap-2 mb-3 ${kpis.avgRotationDays > 120 ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                     <Clock className="w-5 h-5" />
                                     {kpis.avgRotationDays > 120 && <AlertTriangle className="w-4 h-4" />}
                                 </div>
-                                <p className={`text-3xl font-black mb-1 ${kpis.avgRotationDays > 120 ? 'text-red-900 dark:text-red-100' : 'text-main'}`}>{kpis.avgRotationDays}</p>
-                                <p className={`text-[10px] font-bold uppercase tracking-widest ${kpis.avgRotationDays > 120 ? 'text-red-400 dark:text-red-300' : 'text-muted'}`}>Giro Médio (Dias)</p>
+                                <p className={`text-xl sm:text-3xl font-black mb-1 ${kpis.avgRotationDays > 120 ? 'text-red-900 dark:text-red-100' : 'text-main'}`}>{kpis.avgRotationDays}</p>
+                                <p className={`text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-center ${kpis.avgRotationDays > 120 ? 'text-red-400 dark:text-red-300' : 'text-muted'}`}>Giro (Dias)</p>
                             </div>
                         </div>
 

@@ -15,6 +15,7 @@ import {
     AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/app/context/AuthContext';
+import { toast } from 'sonner';
 
 function ShareSetupContent() {
     const router = useRouter();
@@ -170,7 +171,7 @@ function ShareSetupContent() {
             return link;
         } catch (error) {
             console.error("Error generating link:", error);
-            alert("Erro ao gerar link.");
+            toast.error("Erro ao gerar link.");
             return null;
         } finally {
             setGenerating(false);
@@ -187,10 +188,10 @@ function ShareSetupContent() {
         if (link) {
             try {
                 await navigator.clipboard.writeText(link);
-                alert("Link copiado!");
+                toast.success("Link copiado!");
             } catch (err) {
                 console.error(err);
-                alert("Erro ao copiar link.");
+                toast.error("Erro ao copiar link.");
             }
         }
     };

@@ -289,7 +289,7 @@ function CityListContent() {
             setEditingCity(null);
         } catch (error: any) {
             console.error("Error updating city:", error);
-            alert(`Erro ao atualizar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}: ${error.message}`);
+            toast.error(`Erro ao atualizar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}: ${error.message}`);
         }
     };
 
@@ -306,7 +306,7 @@ function CityListContent() {
             setOpenMenuId(null);
         } catch (error) {
             console.error("Error deleting city:", error);
-            alert(`Erro ao excluir ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}.`);
+            toast.error(`Erro ao excluir ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}.`);
         }
     };
 

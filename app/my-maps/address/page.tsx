@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
+import { toast } from 'sonner';
 import {
     Link as LinkIcon,
     Link2,
@@ -344,7 +345,7 @@ function AddressListContent() {
             resetForm();
         } catch (error) {
             console.error("Error saving address:", error);
-            alert("Erro ao salvar endereço.");
+            toast.error("Erro ao salvar endereço.");
         }
     };
 
@@ -407,7 +408,7 @@ function AddressListContent() {
 
     const handleConfirmShare = async () => {
         if (selectedIds.size === 0) return;
-        alert("Compartilhamento em desenvolvimento (Supabase Migration).");
+        toast.info("Compartilhamento em desenvolvimento.");
         setIsShareModalOpen(false);
     };
 

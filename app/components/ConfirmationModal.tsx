@@ -7,10 +7,12 @@ interface ConfirmationModalProps {
     onClose: () => void;
     onConfirm: () => void;
     title: string;
-    message: string;
+    message?: string;
+    description?: string; // Support both
     confirmText?: string;
     cancelText?: string;
     variant?: 'danger' | 'info';
+    isLoading?: boolean;
 }
 
 export default function ConfirmationModal({
@@ -19,10 +21,13 @@ export default function ConfirmationModal({
     onConfirm,
     title,
     message,
+    description,
     confirmText = "Confirmar",
     cancelText = "Cancelar",
-    variant = 'danger'
+    variant = 'danger',
+    isLoading = false
 }: ConfirmationModalProps) {
+    const textContent = message || description || "";
     if (!isOpen) return null;
 
     return (
@@ -42,27 +47,36 @@ export default function ConfirmationModal({
 
                 <h2 className="text-xl font-bold text-gray-900 mb-2">{title}</h2>
                 <p className="text-gray-500 mb-6 text-sm leading-relaxed">
-                    {message}
+                    {textContent}
                 </p>
 
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3.5 rounded-lg font-bold text-sm transition-colors"
+                        disabled={isLoading}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3.5 rounded-lg font-bold text-sm transition-colors disabled:opacity-50"
                     >
                         {cancelText}
                     </button>
                     <button
                         onClick={() => {
+                            if (isLoading) return;
                             onConfirm();
-                            onClose();
+                            // onClose should be handled by parent after success, or we call it here if async is not awaited properly.
+                            // But usually we wait. For now let's keep it simple.
                         }}
-                        className={`flex-1 text-white py-3.5 rounded-lg font-bold text-sm transition-all shadow-lg active:scale-95 ${variant === 'danger'
+                        disabled={isLoading}
+                        className={`flex-1 text-white py-3.5 rounded-lg font-bold text-sm transition-all shadow-lg active:scale-95 disabled:scale-100 disabled:opacity-70 flex items-center justify-center gap-2 ${variant === 'danger'
                             ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
                             : 'bg-primary hover:bg-primary-dark shadow-primary-light/500/20'
                             }`}
                     >
-                        {confirmText}
+                        {isLoading ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                Processando...
+                            </>
+                        ) : confirmText}
                     </button>
                 </div>
             </div>

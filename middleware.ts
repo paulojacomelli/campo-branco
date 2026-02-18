@@ -1,19 +1,34 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+// Middleware para gerenciar a sessão do Supabase em todas as rotas
 export async function middleware(req: NextRequest) {
     const res = NextResponse.next();
-    const supabase = createMiddlewareClient({ req, res });
 
-    const {
-        data: { session },
-    } = await supabase.auth.getSession();
+    // Cria o cliente Supabase para o contexto do middleware (SSR)
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                // Lê os cookies da requisição
+                getAll() {
+                    return req.cookies.getAll();
+                },
+                // Escreve os cookies na resposta
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        req.cookies.set(name, value);
+                        res.cookies.set(name, value, options);
+                    });
+                },
+            },
+        }
+    );
 
-    // Opcional: Proteger rotas aqui se necessário
-    // if (!session && req.nextUrl.pathname.startsWith('/dashboard')) {
-    //   return NextResponse.redirect(new URL('/login', req.url));
-    // }
+    // Atualiza a sessão do usuário (necessário para manter a sessão ativa)
+    await supabase.auth.getSession();
 
     return res;
 }
@@ -21,11 +36,10 @@ export async function middleware(req: NextRequest) {
 export const config = {
     matcher: [
         /*
-         * Match all request paths except for the ones starting with:
-         * - _next/static (static files)
-         * - _next/image (image optimization files)
-         * - favicon.ico (favicon file)
-         * - public folder
+         * Aplica o middleware em todas as rotas exceto:
+         * - _next/static (arquivos estáticos)
+         * - _next/image (otimização de imagens)
+         * - favicon.ico
          */
         '/((?!_next/static|_next/image|favicon.ico).*)',
     ],

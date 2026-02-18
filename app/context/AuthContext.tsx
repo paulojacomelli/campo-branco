@@ -22,6 +22,8 @@ interface AuthContextType {
     actualRole: string | null;
     termType: 'city' | 'neighborhood';
     congregationType: 'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null;
+    notificationsEnabled: boolean;
+    setNotificationsEnabled: (enabled: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -40,7 +42,9 @@ const AuthContext = createContext<AuthContextType>({
     isSimulating: false,
     actualRole: null,
     termType: 'city',
-    congregationType: null
+    congregationType: null,
+    notificationsEnabled: true,
+    setNotificationsEnabled: async () => { }
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -53,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [profileName, setProfileName] = useState<string | null>(null);
     const [termType, setTermType] = useState<'city' | 'neighborhood'>('city');
     const [congregationType, setCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
+    const [notificationsEnabled, setNotificationsEnabledInternal] = useState(true);
 
     // Effective role is the simulated one (if active) or the actual one
     const role = simulatedRole || actualRole;
@@ -134,6 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 // END: Legal Consent Enforcement
 
+                setNotificationsEnabledInternal(data.notifications_enabled ?? true);
+
             } else {
                 setProfileName(currentUser.user_metadata?.full_name || currentUser.email);
                 setActualRole('PUBLICADOR');
@@ -148,6 +155,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = async () => {
         await supabase.auth.signOut();
+    };
+
+    const updateNotificationsEnabled = async (enabled: boolean) => {
+        if (!user) return;
+        try {
+            const { error } = await supabase
+                .from('users')
+                .update({ notifications_enabled: enabled })
+                .eq('id', user.id);
+
+            if (error) throw error;
+            setNotificationsEnabledInternal(enabled);
+        } catch (error) {
+            console.error("Error updating notifications preference:", error);
+            throw error;
+        }
     };
 
     const simulateRole = (newRole: string | null) => {
@@ -212,7 +235,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             isSimulating: !!simulatedRole,
             actualRole,
             termType,
-            congregationType
+            congregationType,
+            notificationsEnabled,
+            setNotificationsEnabled: updateNotificationsEnabled
         }}>
             {children}
         </AuthContext.Provider>

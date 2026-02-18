@@ -4,7 +4,7 @@ import './globals.css'
 import Script from 'next/script'
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
-import FCMManager from './components/FCMManager';
+// import FCMManager from './components/FCMManager'; // Removed
 import SimulationBanner from './components/SimulationBanner';
 import FloatingReportButton from './components/FloatingReportButton';
 import CookieBanner from './components/CookieBanner';
@@ -66,7 +66,7 @@ export default function RootLayout({
         <AuthProvider>
           <ThemeProvider>
             <PreviewIndicator />
-            <FCMManager />
+            {/* <FCMManager /> Removed */}
             <SimulationBanner />
             <FloatingReportButton />
             <CookieBanner />

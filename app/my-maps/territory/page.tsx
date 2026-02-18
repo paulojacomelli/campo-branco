@@ -303,7 +303,7 @@ function TerritoryListContent() {
             setIsCreateModalOpen(false);
         } catch (error) {
             console.error("Error creating territory:", error);
-            alert("Erro ao criar território.");
+            toast.error("Erro ao criar território.");
         }
     };
 
@@ -326,7 +326,7 @@ function TerritoryListContent() {
             setEditingTerritory(null);
         } catch (error) {
             console.error("Error updating territory:", error);
-            alert("Erro ao atualizar território.");
+            toast.error("Erro ao atualizar território.");
         }
     };
 
@@ -337,7 +337,7 @@ function TerritoryListContent() {
             if (error) throw error;
         } catch (error) {
             console.error("Error deleting territory:", error);
-            alert("Erro ao excluir território.");
+            toast.error("Erro ao excluir território.");
         }
     };
 

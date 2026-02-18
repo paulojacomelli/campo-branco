@@ -35,8 +35,8 @@ import Link from "next/link";
 import BottomNav from "@/app/components/BottomNav";
 import ActionCenter, { IdleTerritory } from "@/app/components/Dashboard/ActionCenter";
 import VisitsHistory from "@/app/components/Dashboard/VisitsHistory";
-import NotificationPromptBanner from "@/app/components/NotificationPromptBanner";
-import NotificationOnboardingModal from "@/app/components/NotificationOnboardingModal";
+// import NotificationPromptBanner from "@/app/components/NotificationPromptBanner"; // Removed
+// import NotificationOnboardingModal from "@/app/components/NotificationOnboardingModal"; // Removed
 
 
 export default function DashboardPage() {
@@ -817,7 +817,7 @@ export default function DashboardPage() {
 
             <main className="px-6 py-6 max-w-xl mx-auto space-y-10">
 
-                <NotificationPromptBanner />
+                {/* <NotificationPromptBanner /> Removed */}
 
                 {/* Greeting */}
                 <div>

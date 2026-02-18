@@ -40,15 +40,16 @@ import {
     Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
-import NotificationToggle from '@/app/components/NotificationToggle';
+// import NotificationToggle from '@/app/components/NotificationToggle'; // Removed
 import { useTheme, ThemeMode } from '@/app/context/ThemeContext';
+import { toast } from 'sonner';
 
 import BottomNav from '@/app/components/BottomNav';
 import { APP_VERSION } from '@/lib/version';
 
 
 export default function SettingsPage() {
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, logout: authLogout } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, notificationsEnabled, logout: authLogout } = useAuth();
     const router = useRouter();
     const { textSize, displayScale, themeMode, updatePreferences } = useTheme();
 
@@ -164,10 +165,10 @@ export default function SettingsPage() {
 
             setInviteToken(newToken);
             setInviteLink(`${window.location.origin}/invite?token=${newToken}`);
-            alert("Novo link gerado com sucesso!");
+            toast.success("Novo link gerado com sucesso!");
         } catch (e) {
             console.error(e);
-            alert("Erro ao gerar novo link.");
+            toast.error("Erro ao gerar novo link.");
         } finally {
             setGeneratingToken(false);
         }
@@ -181,7 +182,7 @@ export default function SettingsPage() {
             if (error) throw error;
             setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: newRole } : m));
         } catch (e) {
-            alert("Erro ao alterar função");
+            toast.error("Erro ao alterar função");
         }
     };
 
@@ -195,7 +196,7 @@ export default function SettingsPage() {
             if (error) throw error;
             setMembers(prev => prev.filter(m => m.id !== uid));
         } catch (e) {
-            alert("Erro ao remover usuário");
+            toast.error("Erro ao remover usuário");
         }
     };
 
@@ -222,7 +223,7 @@ export default function SettingsPage() {
             window.location.reload();
         } catch (error) {
             console.error("Error updating profile:", error);
-            alert("Erro ao atualizar perfil.");
+            toast.error("Erro ao atualizar perfil.");
         } finally {
             setSaving(false);
         }
@@ -255,7 +256,7 @@ export default function SettingsPage() {
             document.body.removeChild(a);
         } catch (e) {
             console.error(e);
-            alert("Erro ao exportar dados.");
+            toast.error("Erro ao exportar dados.");
         }
     };
 
@@ -452,40 +453,7 @@ export default function SettingsPage() {
 
                 {/* App Preferences */}
                 <section className="space-y-4">
-                    <h2 className="text-sm font-bold text-muted uppercase tracking-widest pl-1">Preferências</h2>
-                    <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border space-y-6">
-                        {/* Notifications */}
-                        <div className="flex flex-col gap-4">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-primary-light/50 text-primary dark:bg-primary-dark/30 dark:text-primary-light rounded-lg">
-                                        <Bell className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-main">Notificações Push</h3>
-                                        <p className="text-sm text-muted">Receba alertas sobre designações.</p>
-                                    </div>
-                                </div>
-                                <NotificationToggle />
-                            </div>
-                            <button
-                                onClick={() => {
-                                    if (Notification.permission === 'granted') {
-                                        // Local notification check
-                                        new Notification("Teste de Notificação", {
-                                            body: "Se você viu isso, as notificações estão funcionando!",
-                                            icon: "/app-icon.png"
-                                        });
-                                    } else {
-                                        alert("Habilite as notificações primeiro.");
-                                    }
-                                }}
-                                className="text-xs text-primary font-bold hover:underline self-end"
-                            >
-                                Testar Notificação
-                            </button>
-                        </div>
-                    </div>
+                    {/* Notifications Section Removed */}
                 </section>
 
                 {/* Edit Profile Modal */}
@@ -572,7 +540,7 @@ export default function SettingsPage() {
                                     <button
                                         onClick={() => {
                                             navigator.clipboard.writeText(inviteLink);
-                                            alert("Link copiado!");
+                                            toast.success("Link copiado!");
                                         }}
                                         className="bg-primary hover:bg-primary-dark text-white font-bold px-4 rounded-lg text-xs uppercase tracking-wider transition-colors shadow-lg shadow-primary-light/20"
                                     >
@@ -763,15 +731,17 @@ export default function SettingsPage() {
                                     <div className="flex flex-wrap gap-3">
                                         <Link
                                             href="/admin/congregations"
-                                            className="inline-block bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-primary-light/20"
+                                            className="inline-block bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-primary-light/20 flex items-center gap-2"
                                         >
+                                            <Building2 className="w-4 h-4" />
                                             Congregações
                                         </Link>
                                         <Link
                                             href="/admin/users"
-                                            className="inline-block bg-background hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 text-primary border border-primary-light dark:border-primary-dark/30 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm"
+                                            className="inline-block bg-background hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 text-primary border border-primary-light dark:border-primary-dark/30 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm flex items-center gap-2"
                                         >
-                                            Usuários
+                                            <Users className="w-4 h-4" />
+                                            Membros
                                         </Link>
                                         <Link
                                             href="/orphaned-data"
@@ -780,13 +750,8 @@ export default function SettingsPage() {
                                             <Database className="w-4 h-4" />
                                             Dados Órfãos
                                         </Link>
-                                        <Link
-                                            href="/admin/notifications"
-                                            className="inline-block bg-background hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 text-primary border border-primary-light dark:border-primary-dark/30 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm flex items-center gap-2"
-                                        >
-                                            <Bell className="w-4 h-4" />
-                                            Notificações
-                                        </Link>
+
+                                        {/* Notifications button removed */}
                                         <button
                                             onClick={handleExport}
                                             className="inline-block bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/10 dark:hover:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm flex items-center gap-2"
@@ -909,10 +874,10 @@ export default function SettingsPage() {
 
                                                     // 2. Logout
                                                     await authLogout();
-                                                    alert("Conta marcada para exclusão. Saída realizada.");
+                                                    toast.success("Conta marcada para exclusão. Saída realizada.");
                                                 } catch (error: any) {
                                                     console.error("Delete account error:", error);
-                                                    alert("Erro ao excluir conta. Tente novamente.");
+                                                    toast.error("Erro ao excluir conta. Tente novamente.");
                                                 }
                                             }
                                         }
@@ -957,6 +922,6 @@ export default function SettingsPage() {
 
             {/* Bottom Navigation */}
             <BottomNav />
-        </div>
+        </div >
     );
 }

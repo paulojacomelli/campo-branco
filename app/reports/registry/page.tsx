@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from '@/lib/serviceYearUtils';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface Territory {
     id: string;
@@ -183,7 +184,7 @@ export default function RegistryPage() {
 
         } catch (e) {
             console.error(e);
-            alert("Erro ao carregar registros.");
+            toast.error("Erro ao carregar registros.");
         } finally {
             setPageLoading(false);
         }
@@ -235,7 +236,7 @@ export default function RegistryPage() {
             fetchData();
         } catch (e) {
             console.error(e);
-            alert("Erro ao salvar registro.");
+            toast.error("Erro ao salvar registro.");
         }
     };
 
@@ -255,7 +256,7 @@ export default function RegistryPage() {
             fetchData();
         } catch (e) {
             console.error(e);
-            alert("Erro ao salvar data histórica.");
+            toast.error("Erro ao salvar data histórica.");
         }
     };
 
@@ -267,7 +268,7 @@ export default function RegistryPage() {
             fetchData();
         } catch (e) {
             console.error(e);
-            alert("Erro ao excluir registro.");
+            toast.error("Erro ao excluir registro.");
         }
     };
 
