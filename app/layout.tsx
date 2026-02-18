@@ -10,6 +10,7 @@ import FloatingReportButton from './components/FloatingReportButton';
 import CookieBanner from './components/CookieBanner';
 import PreviewIndicator from './components/PreviewIndicator';
 import { APP_VERSION } from '@/lib/version';
+import { Toaster } from 'sonner';
 
 
 const inter = Inter({ subsets: ['latin'] })
@@ -69,6 +70,7 @@ export default function RootLayout({
             <SimulationBanner />
             <FloatingReportButton />
             <CookieBanner />
+            <Toaster richColors position="top-center" />
             <main className="app-shell flex-1 pt-6">
               {children}
             </main>

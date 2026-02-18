@@ -16,10 +16,10 @@ export default function HelpModal({ isOpen, onClose, title, description, steps, 
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-surface rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+            <div className="bg-surface rounded-lg w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
                 <div className="flex justify-between items-start mb-6 shrink-0">
                     <div className="flex items-center gap-3">
-                        <div className="bg-primary-light/50 dark:bg-blue-900/30 p-2.5 rounded-2xl text-primary dark:text-blue-400">
+                        <div className="bg-primary-light/50 dark:bg-blue-900/30 p-2.5 rounded-lg text-primary dark:text-blue-400">
                             <HelpCircle className="w-6 h-6" />
                         </div>
                         <div>
@@ -33,7 +33,7 @@ export default function HelpModal({ isOpen, onClose, title, description, steps, 
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6">
-                    <div className="bg-background p-4 rounded-2xl border border-surface-border italic text-muted text-sm leading-relaxed">
+                    <div className="bg-background p-4 rounded-lg border border-surface-border italic text-muted text-sm leading-relaxed">
                         &quot;{description}&quot;
                     </div>
 
@@ -67,7 +67,7 @@ export default function HelpModal({ isOpen, onClose, title, description, steps, 
                             </h3>
                             <div className="space-y-2">
                                 {tips.map((tip, i) => (
-                                    <div key={i} className="flex gap-2 items-start bg-amber-50/50 dark:bg-amber-900/10 p-3 rounded-xl border border-amber-100/50 dark:border-amber-900/20">
+                                    <div key={i} className="flex gap-2 items-start bg-amber-50/50 dark:bg-amber-900/10 p-3 rounded-lg border border-amber-100/50 dark:border-amber-900/20">
                                         <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
                                         <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">{tip}</p>
                                     </div>
@@ -80,7 +80,7 @@ export default function HelpModal({ isOpen, onClose, title, description, steps, 
                 <div className="mt-8 shrink-0">
                     <button
                         onClick={onClose}
-                        className="w-full bg-gray-900 dark:bg-surface-highlight hover:bg-black dark:hover:bg-slate-800 text-white dark:text-main font-bold py-4 rounded-2xl shadow-lg transition-all active:scale-95 border border-transparent dark:border-surface-border"
+                        className="w-full bg-gray-100 dark:bg-surface-highlight hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-900 dark:text-main font-bold py-4 rounded-lg shadow-lg transition-all active:scale-95 border border-transparent dark:border-surface-border"
                     >
                         Entendi
                     </button>

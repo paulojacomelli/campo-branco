@@ -26,14 +26,12 @@ import {
     Clock,
     ExternalLink,
     MoreVertical,
-    HelpCircle,
     UserMinus,
     Bell
 } from "lucide-react";
 import { getServiceYear, getServiceYearRange } from "@/lib/serviceYearUtils";
 import { useRouter } from 'next/navigation'; // Added useRouter
 import Link from "next/link";
-import HelpModal from "@/app/components/HelpModal";
 import BottomNav from "@/app/components/BottomNav";
 import ActionCenter, { IdleTerritory } from "@/app/components/Dashboard/ActionCenter";
 import VisitsHistory from "@/app/components/Dashboard/VisitsHistory";
@@ -64,7 +62,6 @@ export default function DashboardPage() {
     const [cityCompletion, setCityCompletion] = useState<{ cityName: string; percentage: number } | undefined>();
     const [expiringMaps, setExpiringMaps] = useState<{ id: string, title: string, daysLeft: number }[]>([]);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     const totalNotifications = pendingMapsCount + expiringMaps.length + (isElder ? idleTerritories.length : 0) + (cityCompletion && cityCompletion.percentage === 100 ? 1 : 0);
 
@@ -592,7 +589,7 @@ export default function DashboardPage() {
         const hasMore = items.length > limit;
 
         return (
-            <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border">
+            <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
                         <Icon className="w-5 h-5 text-primary" />
@@ -617,7 +614,7 @@ export default function DashboardPage() {
                 ) : (
                     <div className="space-y-3">
                         {visibleItems.map((list) => (
-                            <div key={list.id} className="p-4 rounded-2xl bg-background border border-surface-border hover:border-primary/30 dark:hover:border-primary-dark/50 transition-colors group relative">
+                            <div key={list.id} className="p-4 rounded-lg bg-background border border-surface-border hover:border-primary/30 dark:hover:border-primary-dark/50 transition-colors group relative">
                                 <div className="flex items-start justify-between mb-2">
                                     <div className="min-w-0">
                                         <h4 className="font-bold text-main text-sm truncate">
@@ -675,7 +672,7 @@ export default function DashboardPage() {
                                         </button>
 
                                         {openMenuId === list.id && (
-                                            <div className="absolute right-0 top-8 w-48 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                            <div className="absolute right-0 top-8 w-48 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                                 <button
                                                     onClick={() => {
                                                         handleOpenLink(list.id);
@@ -781,7 +778,7 @@ export default function DashboardPage() {
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                    <div className="bg-transparent p-0 rounded-xl">
+                    <div className="bg-transparent p-0 rounded-lg">
                         <Image src="/app-icon.svg" alt="Logo" width={40} height={40} className="object-contain drop-shadow-md" />
                     </div>
                     <div>
@@ -814,31 +811,9 @@ export default function DashboardPage() {
                         )}
                     </Link>
 
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-primary hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title="Painel de Atividades"
-                description="Bem-vindo ao Campo Branco! Aqui você acompanha sua atividade no campo."
-                steps={[
-                    { title: "Meus Cartões", text: "Acesse rapidamente os territórios que você está trabalhando no momento." },
-                    { title: "Estatísticas", text: "Acompanhe o progresso da cobertura do território em tempo real." },
-                    { title: "Histórico", text: "Veja as últimas atividades registradas por você e pelos outros publicadores." }
-                ]}
-                tips={[
-                    "Use o ícone de três pontos nos cartões para gerenciar, copiar o link ou excluir o acesso.",
-                    "Mantenha seus registros atualizados para ajudar a congregação a cobrir todo o território."
-                ]}
-            />
 
             <main className="px-6 py-6 max-w-xl mx-auto space-y-10">
 
@@ -911,39 +886,39 @@ export default function DashboardPage() {
                         <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
                     </div>
 
-                    <div className={`grid grid-cols-2 ${role === 'SUPER_ADMIN' ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-4`}>
+                    <div className="grid grid-cols-2 gap-4">
                         {role === 'SUPER_ADMIN' && (
-                            <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
                                 <p className="text-2xl font-bold text-main">{stats.congregations}</p>
                             </div>
                         )}
-                        <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">CIDADES</p>
                             <p className="text-2xl font-bold text-main">{stats.cities}</p>
                         </div>
-                        <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">MAPAS</p>
                             <p className="text-2xl font-bold text-main">{stats.maps}</p>
                         </div>
-                        <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">ENDEREÇOS</p>
                             <p className="text-2xl font-bold text-main">{stats.addresses}</p>
                         </div>
                         {(isElder || isServant || role === 'SUPER_ADMIN') && (
-                            <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest">VISITAS</p>
                                 <p className="text-2xl font-bold text-main">{stats.visits}</p>
                             </div>
                         )}
-                        <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">T. PÚBLICO</p>
                             <p className="text-2xl font-bold text-main">{stats.publicWitnessing || 0}</p>
                         </div>
                         {(isElder || isServant || role === 'SUPER_ADMIN') && (
-                            <div className="bg-surface p-4 rounded-3xl shadow-sm border border-surface-border flex flex-col justify-center">
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest leading-tight mb-1">COBERTURA</p>
-                                <p className="text-xl font-bold text-main">{stats.coverage}%</p>
+                                <p className="text-2xl font-bold text-main">{stats.coverage}%</p>
                             </div>
                         )}
                     </div>

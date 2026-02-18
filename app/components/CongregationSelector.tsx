@@ -47,7 +47,9 @@ export default function CongregationSelector({ currentId, className = '' }: Cong
             .subscribe();
 
         return () => {
-            subscription.unsubscribe();
+            setTimeout(() => {
+                subscription.unsubscribe();
+            }, 100);
         };
     }, []);
 
@@ -66,7 +68,7 @@ export default function CongregationSelector({ currentId, className = '' }: Cong
             <select
                 value={currentId || ''}
                 onChange={(e) => handleChange(e.target.value)}
-                className="appearance-none bg-primary-light/50 hover:bg-primary-light dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border border-blue-100 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-xs font-bold py-2 pl-9 pr-8 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer transition-colors w-full min-w-[180px]"
+                className="appearance-none bg-primary-light/50 hover:bg-primary-light dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border border-blue-100 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-xs font-bold py-2 pl-9 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer transition-colors w-full min-w-[180px]"
             >
                 <option value="" disabled className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">Selecione a Congregação</option>
                 {congregations.map((cong) => (

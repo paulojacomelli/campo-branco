@@ -115,7 +115,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
     return (
         <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="flex min-h-full items-center justify-center p-4">
-                <div className="bg-surface rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Registrar Visita</h2>
                         <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
@@ -125,7 +125,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
                     <div className="space-y-6">
                         {/* Address Info */}
-                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-gray-200 dark:border-slate-700">
+                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
                             <h3 className="font-bold text-gray-900 dark:text-white text-lg">
                                 {address.street}
                                 {!address.street?.includes(address.number || '') && address.number !== 'S/N' ? `, ${address.number}` : ''}
@@ -137,7 +137,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                         {congregationType === 'TRADITIONAL' ? (
                             <button
                                 onClick={() => setStatus(status === 'contacted' ? '' : 'contacted')}
-                                className={`col-span-2 w-full p-6 rounded-2xl flex flex-col items-center gap-3 transition-all border-2
+                                className={`col-span-2 w-full p-6 rounded-lg flex flex-col items-center gap-3 transition-all border-2
                                     ${status === 'contacted'
                                         ? 'bg-green-600 border-green-600 text-white shadow-lg shadow-green-500/30'
                                         : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-400 hover:border-blue-300 dark:hover:border-blue-700'}`}
@@ -177,7 +177,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                                     <>
                                         <button
                                             onClick={() => setStatus('contacted')}
-                                            className={`p-4 rounded-xl flex flex-col items-center gap-2 transition-all border-2
+                                            className={`p-4 rounded-lg flex flex-col items-center gap-2 transition-all border-2
                                             ${status === 'contacted' ? 'bg-green-50 dark:bg-green-900/30 border-green-500 dark:border-green-600 text-green-700 dark:text-green-400' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 text-gray-500 dark:text-gray-400'}`}
                                         >
                                             <ThumbsUp className={`w-8 h-8 ${status === 'contacted' ? 'fill-green-500' : ''}`} />
@@ -186,7 +186,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
                                         <button
                                             onClick={() => setStatus('not_contacted')}
-                                            className={`p-4 rounded-xl flex flex-col items-center gap-2 transition-all border-2
+                                            className={`p-4 rounded-lg flex flex-col items-center gap-2 transition-all border-2
                                             ${status === 'not_contacted' ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-500 dark:border-orange-600 text-orange-700 dark:text-orange-400' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 text-gray-500 dark:text-gray-400'}`}
                                         >
                                             <ThumbsDown className={`w-8 h-8 ${status === 'not_contacted' ? 'fill-orange-500' : ''}`} />
@@ -195,7 +195,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
                                         <button
                                             onClick={() => setStatus('moved')}
-                                            className={`p-4 rounded-xl flex flex-col items-center gap-2 transition-all border-2
+                                            className={`p-4 rounded-lg flex flex-col items-center gap-2 transition-all border-2
                                             ${status === 'moved' ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 dark:border-blue-600 text-blue-700 dark:text-blue-400' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 text-gray-500 dark:text-gray-400'}`}
                                         >
                                             <Home className={`w-8 h-8 ${status === 'moved' ? 'fill-blue-500' : ''}`} />
@@ -204,7 +204,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
                                         <button
                                             onClick={() => setStatus('do_not_visit')}
-                                            className={`p-4 rounded-xl flex flex-col items-center gap-2 transition-all border-2
+                                            className={`p-4 rounded-lg flex flex-col items-center gap-2 transition-all border-2
                                             ${status === 'do_not_visit' ? 'bg-red-50 dark:bg-red-900/30 border-red-500 dark:border-red-600 text-red-700 dark:text-red-400' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 text-gray-500 dark:text-gray-400'}`}
                                         >
                                             <Hand className={`w-8 h-8 ${status === 'do_not_visit' ? 'fill-red-500' : ''}`} />
@@ -226,7 +226,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                                     <button
                                         key={opt.id}
                                         onClick={() => setGender(opt.id as any)}
-                                        className={`flex-1 py-3.5 rounded-xl text-xs font-bold uppercase transition-all border-2 flex flex-col items-center gap-1 ${gender === opt.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-gray-500 hover:border-gray-300 dark:hover:border-slate-600'}`}
+                                        className={`flex-1 py-3.5 rounded-lg text-xs font-bold uppercase transition-all border-2 flex flex-col items-center gap-1 ${gender === opt.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-gray-500 hover:border-gray-300 dark:hover:border-slate-600'}`}
                                     >
                                         {opt.id === 'HOMEM' && <User className="w-5 h-5 fill-current" />}
                                         {opt.id === 'MULHER' && <User className="w-5 h-5 fill-current" />}
@@ -291,7 +291,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                             <textarea
                                 value={observations}
                                 onChange={(e) => setObservations(e.target.value)}
-                                className={`w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-h-[80px] ${status === 'contested' && !observations.trim() ? 'ring-2 ring-orange-200 bg-orange-50 dark:bg-orange-900/20' : ''}`}
+                                className={`w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-white rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-h-[80px] ${status === 'contested' && !observations.trim() ? 'ring-2 ring-orange-200 bg-orange-50 dark:bg-orange-900/20' : ''}`}
                                 placeholder={status === 'contested' ? "Por que este endereço deve ser considerado ativo?" : isListening ? "Ouvindo..." : "Alguma observação importante?"}
                             />
                         </div>
@@ -300,7 +300,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                         <div className="flex gap-2 pt-2">
                             <button
                                 onClick={onViewHistory}
-                                className="bg-white hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white py-3.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200 dark:border-slate-700"
+                                className="bg-white hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white py-3.5 px-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200 dark:border-slate-700"
                                 title="Ver Histórico"
                             >
                                 <History className="w-5 h-5" />
@@ -311,7 +311,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                                     href={address.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${address.lat},${address.lng}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex-1 bg-white hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200 dark:border-slate-700"
+                                    className="flex-1 bg-white hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-white py-3.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200 dark:border-slate-700"
                                 >
                                     <Navigation className="w-4 h-4" />
                                     Mapa
@@ -320,7 +320,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                             <button
                                 onClick={handleSave}
                                 disabled={loading}
-                                className="flex-[2] bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20"
+                                className="flex-[2] bg-blue-600 hover:bg-blue-700 active:scale-95 text-white py-3.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20"
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Concluir"}
                             </button>
@@ -329,7 +329,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                         {status && (
                             <button
                                 onClick={() => setStatus('')}
-                                className="w-full py-3 text-red-500 text-xs font-bold uppercase tracking-wider hover:bg-red-50 rounded-xl transition-colors"
+                                className="w-full py-3 text-red-500 text-xs font-bold uppercase tracking-wider hover:bg-red-50 rounded-lg transition-colors"
                             >
                                 Remover Resposta
                             </button>
@@ -337,6 +337,6 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

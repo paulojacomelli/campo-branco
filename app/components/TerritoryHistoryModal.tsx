@@ -74,7 +74,7 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-surface rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
+            <div className="bg-surface rounded-lg w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
                 <div className="flex justify-between items-center mb-6 shrink-0">
                     <div>
                         <h2 className="text-xl font-bold text-main">Histórico do Território</h2>
@@ -92,15 +92,15 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
                             <p className="text-sm text-muted font-medium">Carregando histórico...</p>
                         </div>
                     ) : history.length === 0 ? (
-                        <div className="text-center py-12 opacity-50 bg-background rounded-2xl border-2 border-dashed border-surface-border">
+                        <div className="text-center py-12 opacity-50 bg-background rounded-lg border-2 border-dashed border-surface-border">
                             <History className="w-12 h-12 mx-auto mb-3 text-muted" />
                             <p className="text-muted font-medium">Nenhum registro de fechamento encontrado.</p>
                         </div>
                     ) : (
                         history.map((entry) => (
-                            <div key={entry.id} className="bg-background p-5 rounded-2xl border border-surface-border shadow-sm hover:border-primary-light/500/30 transition-all">
+                            <div key={entry.id} className="bg-background p-5 rounded-lg border border-surface-border shadow-sm hover:border-primary-light/500/30 transition-all">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 bg-primary-light/50 dark:bg-primary-light/500/10 rounded-xl flex items-center justify-center text-primary dark:text-blue-400 shadow-sm">
+                                    <div className="w-10 h-10 bg-primary-light/50 dark:bg-primary-light/500/10 rounded-lg flex items-center justify-center text-primary dark:text-blue-400 shadow-sm">
                                         <User className="w-5 h-5" />
                                     </div>
                                     <div className="min-w-0">
@@ -140,7 +140,7 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
                 <div className="mt-6 pt-4 border-t border-surface-border shrink-0">
                     <button
                         onClick={onClose}
-                        className="w-full bg-gray-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 shadow-lg shadow-gray-200 dark:shadow-none"
+                        className="w-full bg-gray-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-bold py-3.5 rounded-lg transition-all active:scale-95 shadow-lg shadow-gray-200 dark:shadow-none"
                     >
                         Fechar
                     </button>

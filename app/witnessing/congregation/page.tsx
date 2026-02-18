@@ -46,7 +46,7 @@ function WitnessingCityListContent() {
                 setCities(data);
             }
             if (error) {
-                console.error("Error fetching cities:", error);
+                console.error("Error fetching cities:", error.message, error.details, error.hint);
             }
             setLoading(false);
         };
@@ -66,7 +66,9 @@ function WitnessingCityListContent() {
             .subscribe();
 
         return () => {
-            subscription.unsubscribe();
+            setTimeout(() => {
+                subscription.unsubscribe();
+            }, 100);
         };
     }, [congregationId]);
 
@@ -95,7 +97,7 @@ function WitnessingCityListContent() {
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                 <div className="flex items-center gap-3">
-                    <div className="bg-amber-500 p-2 rounded-xl text-white shadow-md">
+                    <div className="bg-amber-500 p-2 rounded-lg text-white shadow-md">
                         <Store className="w-5 h-5 fill-current" />
                     </div>
                     <div>
@@ -114,7 +116,7 @@ function WitnessingCityListContent() {
                         placeholder="Buscar cidade..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all placeholder:text-muted"
+                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all placeholder:text-muted"
                     />
                 </div>
             </div>
@@ -135,9 +137,9 @@ function WitnessingCityListContent() {
                         <Link
                             key={city.id}
                             href={`/witnessing/city?congregationId=${congregationId}&cityId=${city.id}`}
-                            className="group bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center gap-4"
+                            className="group bg-surface rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center gap-4"
                         >
-                            <div className="w-10 h-10 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center shrink-0">
+                            <div className="w-10 h-10 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg flex items-center justify-center shrink-0">
                                 <Store className="w-5 h-5" />
                             </div>
                             <div className="flex-1 min-w-0">

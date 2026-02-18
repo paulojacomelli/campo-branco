@@ -23,7 +23,7 @@ export default function SimulationBanner() {
     };
 
     return (
-        <div className="fixed bottom-[88px] left-4 right-4 z-[100] bg-indigo-600 text-white shadow-xl rounded-2xl animate-in slide-in-from-bottom-5 border border-indigo-400/30">
+        <div className="fixed bottom-[88px] left-4 right-4 z-[100] bg-indigo-600 text-white shadow-xl rounded-lg animate-in slide-in-from-bottom-5 border border-indigo-400/30">
             <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-white/20 rounded-full animate-pulse">

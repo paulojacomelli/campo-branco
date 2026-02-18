@@ -22,7 +22,7 @@ export default function AccessDeniedModal({ resourceName, onClose }: AccessDenie
 
     return (
         <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-200 ${isVisible ? 'bg-black/60 backdrop-blur-sm' : 'bg-transparent pointer-events-none'}`}>
-            <div className={`bg-white dark:bg-surface rounded-3xl w-full max-w-sm p-6 shadow-2xl transition-all duration-200 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}>
+            <div className={`bg-white dark:bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl transition-all duration-200 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}>
                 <div className="flex flex-col items-center text-center gap-4">
                     <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center text-red-500">
                         <Lock className="w-8 h-8" />
@@ -37,7 +37,7 @@ export default function AccessDeniedModal({ resourceName, onClose }: AccessDenie
 
                     <button
                         onClick={handleClose}
-                        className="w-full py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-main font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="w-full py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-main font-bold rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                     >
                         Entendi
                     </button>

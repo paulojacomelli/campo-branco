@@ -119,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.warn("User record not found in public.users");
                 data = null;
             } else if (error) {
-                console.error("Error fetching user profile:", error);
+                console.error("Error fetching user profile:", JSON.stringify(error, null, 2));
             }
 
             if (data) {

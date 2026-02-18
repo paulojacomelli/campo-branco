@@ -20,11 +20,9 @@ import {
     Pencil,
     Users,
     CheckCircle2,
-    HelpCircle,
     Wand2,
     RefreshCw
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
 import Link from 'next/link';
 import BottomNav from '@/app/components/BottomNav';
 
@@ -65,7 +63,6 @@ export default function SuperAdminUsersPage() {
     const [editRoles, setEditRoles] = useState<string[]>([]);
     const [editCongId, setEditCongId] = useState<string>('');
     const [newUser, setNewUser] = useState({ name: '', email: '', congregationId: '' });
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
     const router = useRouter();
 
     const fetchInitialData = async () => {
@@ -113,7 +110,10 @@ export default function SuperAdminUsersPage() {
                     .subscribe();
 
                 return () => {
-                    supabase.removeChannel(channel);
+                    // Pequeno delay para evitar erro de WebSocket se o unmount for muito rápido
+                    setTimeout(() => {
+                        supabase.removeChannel(channel);
+                    }, 100);
                 };
             }
         }
@@ -313,32 +313,10 @@ export default function SuperAdminUsersPage() {
                             <Plus className="w-4 h-4" />
                             Novo Usuário
                         </button>
-                        <button
-                            onClick={() => setIsHelpOpen(true)}
-                            className="p-1.5 text-muted hover:text-primary hover:bg-primary-light/50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
-                            title="Ajuda"
-                        >
-                            <HelpCircle className="w-5 h-5" />
-                        </button>
                     </div>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title="Lista de Membros"
-                description="Gerencie os usuários da sua congregação e seus níveis de acesso."
-                steps={[
-                    { title: "Funções", text: "Ancião (gerencia usuários), Servo (cuida dos mapas) e Publicador (visualiza e relata)." },
-                    { title: "Vincular", text: "Certifique-se de que cada membro esteja na congregação correta para ver os dados certos." },
-                    { title: "Edição", text: "Use o menu de três pontos para mudar o nome ou o cargo de um irmão." }
-                ]}
-                tips={[
-                    "Novos usuários que entrarem via Google precisam ter o cargo definido por você para acessar o sistema.",
-                    "Somente Anciãos podem gerenciar os membros da própria congregação."
-                ]}
-            />
 
             <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
 

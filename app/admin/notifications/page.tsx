@@ -69,7 +69,9 @@ export default function NotificationManagementPage() {
                 .subscribe();
 
             return () => {
-                supabase.removeChannel(channel);
+                setTimeout(() => {
+                    supabase.removeChannel(channel);
+                }, 100);
             };
         }
     }, [isSuperAdmin, authLoading, router]);

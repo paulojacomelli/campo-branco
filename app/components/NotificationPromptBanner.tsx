@@ -46,9 +46,9 @@ export default function NotificationPromptBanner() {
     if (!isVisible) return null;
 
     return (
-        <div className="bg-primary dark:bg-primary-dark text-white p-4 rounded-xl shadow-lg shadow-primary-light/20 dark:shadow-primary-dark/20 mb-6 flex items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in duration-700">
+        <div className="bg-primary dark:bg-primary-dark text-white p-4 rounded-lg shadow-lg shadow-primary-light/20 dark:shadow-primary-dark/20 mb-6 flex items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in duration-700">
             <div className="flex items-center gap-4">
-                <div className="bg-white/20 p-2 rounded-lg shrink-0">
+                <div className="bg-white/20 p-2 rounded-md shrink-0">
                     <Bell className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -67,7 +67,7 @@ export default function NotificationPromptBanner() {
                 </button>
                 <button
                     onClick={handleEnable}
-                    className="bg-white text-primary hover:bg-primary-light text-xs font-black py-2 px-4 rounded-lg shadow-sm transition-all active:scale-95 uppercase tracking-wider"
+                    className="bg-white text-primary hover:bg-primary-light text-xs font-black py-2 px-4 rounded-md shadow-sm transition-all active:scale-95 uppercase tracking-wider"
                 >
                     Ativar
                 </button>

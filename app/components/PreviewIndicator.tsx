@@ -14,9 +14,5 @@ export default function PreviewIndicator() {
 
     if (!isDev) return null;
 
-    return (
-        <div className="fixed top-0 left-0 right-0 z-[100] bg-orange-600 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest shadow-md">
-            🔧 Ambiente de Preview (Localhost) - ⚠️ CUIDADO: DADOS SÃO REAIS (Conectado ao Banco de Produção)
-        </div>
-    );
+    return null;
 }

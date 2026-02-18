@@ -17,10 +17,8 @@ import {
     CheckCircle2,
     Pencil,
     MoreVertical,
-    HelpCircle,
     Navigation
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
 import NewPointModal from '@/app/components/Witnessing/NewPointModal';
@@ -32,6 +30,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 
 interface WitnessingPoint {
     id: string;
@@ -65,7 +64,6 @@ function WitnessingPointListContent() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingPoint, setEditingPoint] = useState<WitnessingPoint | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     // Check-In Logic State
     const [pendingCheckInPoint, setPendingCheckInPoint] = useState<WitnessingPoint | null>(null);
@@ -94,7 +92,9 @@ function WitnessingPointListContent() {
             .order('name');
 
         if (data) setPoints(data);
-        if (error) console.error("Error fetching points:", error);
+        if (error) {
+            console.error("Error fetching points:", error.message, error.details, error.hint);
+        }
         setLoading(false);
     }, [congregationId, cityId]);
 
@@ -119,7 +119,9 @@ function WitnessingPointListContent() {
             .subscribe();
 
         return () => {
-            subscription.unsubscribe();
+            setTimeout(() => {
+                subscription.unsubscribe();
+            }, 100);
         };
     }, [congregationId, cityId, fetchPoints]);
 
@@ -183,7 +185,7 @@ function WitnessingPointListContent() {
             if (error) throw error;
         } catch (error) {
             console.error("Error deleting point:", error);
-            alert("Erro ao excluir ponto.");
+            toast.error("Erro ao excluir ponto.");
         }
     };
 
@@ -281,7 +283,7 @@ function WitnessingPointListContent() {
             if (error) throw error;
         } catch (error) {
             console.error("Error updating status:", error);
-            alert("Erro ao atualizar status.");
+            toast.error("Erro ao atualizar status.");
         }
     };
 
@@ -308,7 +310,7 @@ function WitnessingPointListContent() {
             setIsConfirmModalOpen(false);
         } catch (err) {
             console.error("Error auto-checking out:", err);
-            alert("Erro ao sair do ponto anterior.");
+            toast.error("Erro ao sair do ponto anterior.");
         }
     };
 
@@ -328,7 +330,7 @@ function WitnessingPointListContent() {
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-sm">
                 <div className="flex items-center gap-3">
-                    <Link href={`/witnessing/congregation?congregationId=${congregationId}`} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-xl text-muted hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <Link href={`/witnessing/congregation?congregationId=${congregationId}`} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-lg text-muted hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                         <ArrowRight className="w-5 h-5 rotate-180" />
                     </Link>
                     <div>
@@ -340,36 +342,14 @@ function WitnessingPointListContent() {
                     {canEdit && (
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
-                            className="bg-primary hover:bg-primary-dark dark:bg-primary dark:hover:bg-primary-dark text-white p-2 rounded-xl shadow-lg transition-all active:scale-95"
+                            className="bg-primary hover:bg-primary-dark dark:bg-primary dark:hover:bg-primary-dark text-white p-2 rounded-lg shadow-lg transition-all active:scale-95"
                         >
                             <Plus className="w-5 h-5" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-primary hover:text-primary-dark hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title="Testemunho Público"
-                description="Central de gestão de pontos de testemunho com carrinhos."
-                steps={[
-                    { title: "Check-in", text: "Clique no ponto que você vai trabalhar para avisar aos outros que está ocupado." },
-                    { title: "Sair", text: "IMPORTANTE: Ao terminar seu turno, clique em 'Sair' para liberar o ponto para outros." },
-                    { title: "Mapa", text: "Visualize a localização exata de cada carrinho no mapa abaixo." }
-                ]}
-                tips={[
-                    "O sistema evita que você faça check-in em dois lugares ao mesmo tempo.",
-                    "Seja amoroso: libere o ponto assim que recolher o carrinho para não atrapalhar outros irmãos."
-                ]}
-            />
 
             {/* Scrollable Content */}
             <div className="pb-20">
@@ -382,7 +362,7 @@ function WitnessingPointListContent() {
                             placeholder="Buscar ponto..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-surface border-0 text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all placeholder:text-muted"
+                            className="w-full bg-surface border-0 text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all placeholder:text-muted"
                         />
                     </div>
 
@@ -406,11 +386,11 @@ function WitnessingPointListContent() {
                                 return (
                                     <div
                                         key={point.id}
-                                        className={`bg-surface rounded-2xl p-4 border border-surface-border shadow-sm transition-all`}
+                                        className={`bg-surface rounded-lg p-4 border border-surface-border shadow-sm transition-all`}
                                     >
                                         <div className="flex items-start justify-between mb-3">
                                             <div className="flex items-start gap-3 w-full pr-2">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-1 ${isOccupied ? 'bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400' : 'bg-green-50 dark:bg-green-900/30 text-green-500 dark:text-green-400'}`}>
+                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-1 ${isOccupied ? 'bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400' : 'bg-green-50 dark:bg-green-900/30 text-green-500 dark:text-green-400'}`}>
                                                     <Store className="w-5 h-5" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
@@ -427,7 +407,7 @@ function WitnessingPointListContent() {
                                                     e.stopPropagation();
                                                     handleOpenPointMap(point);
                                                 }}
-                                                className="p-2 text-primary hover:text-primary-dark hover:bg-primary-light/50 dark:hover:bg-primary-dark/20 rounded-xl transition-all mr-1"
+                                                className="p-2 text-primary hover:text-primary-dark hover:bg-primary-light/50 dark:hover:bg-primary-dark/20 rounded-lg transition-all mr-1"
                                                 title="Navegar"
                                             >
                                                 <Navigation className="w-5 h-5" />
@@ -440,13 +420,13 @@ function WitnessingPointListContent() {
                                                             e.stopPropagation();
                                                             setOpenMenuId(openMenuId === point.id ? null : point.id);
                                                         }}
-                                                        className="p-2 text-muted hover:text-main hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-all"
+                                                        className="p-2 text-muted hover:text-main hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all"
                                                     >
                                                         <MoreVertical className="w-5 h-5" />
                                                     </button>
 
                                                     {openMenuId === point.id && (
-                                                        <div className="absolute right-0 top-full mt-2 w-32 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                                        <div className="absolute right-0 top-full mt-2 w-32 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                                             <button
                                                                 onClick={() => {
                                                                     handleEditClick(point);
@@ -515,7 +495,7 @@ function WitnessingPointListContent() {
 
                                             <button
                                                 onClick={() => handleCheckInClick(point)}
-                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${userIsCheckedIn
+                                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${userIsCheckedIn
                                                     ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50'
                                                     : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'
                                                     }`}

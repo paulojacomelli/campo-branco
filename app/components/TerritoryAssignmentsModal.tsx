@@ -19,7 +19,7 @@ interface TerritoryAssignmentsModalProps {
 export default function TerritoryAssignmentsModal({ territoryName, assignments, onClose }: TerritoryAssignmentsModalProps) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-            <div className="bg-surface rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-surface-border animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl border border-surface-border animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-bold text-main">
                         Responsáveis
@@ -32,7 +32,7 @@ export default function TerritoryAssignmentsModal({ territoryName, assignments, 
 
                 <div className="space-y-3 max-h-[60vh] overflow-y-auto">
                     {assignments.map((assign) => (
-                        <div key={assign.id} className="flex items-center gap-3 p-3 bg-background rounded-xl border border-surface-border">
+                        <div key={assign.id} className="flex items-center gap-3 p-3 bg-background rounded-lg border border-surface-border">
                             <UserAvatar
                                 userId={assign.assignedTo}
                                 name={assign.assignedName}

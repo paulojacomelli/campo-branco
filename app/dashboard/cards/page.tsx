@@ -224,9 +224,9 @@ function CardsContent() {
 
             <main className="max-w-xl mx-auto px-6 py-8">
                 {/* Icon Banner */}
-                <div className="mb-6 bg-surface p-4 rounded-3xl border border-surface-border flex items-center gap-3 shadow-sm">
+                <div className="mb-6 bg-surface p-4 rounded-lg border border-surface-border flex items-center gap-3 shadow-sm">
                     <div className={`
-                        p-2 rounded-2xl
+                        p-2 rounded-lg
                         ${scope === 'mine' ? 'bg-primary-light dark:bg-blue-900/30 text-primary' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600'}
                     `}>
                         {scope === 'mine' ? <User className="w-5 h-5" /> : <MapIcon className="w-5 h-5" />}
@@ -242,13 +242,13 @@ function CardsContent() {
                 {loading ? (
                     <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                 ) : lists.length === 0 ? (
-                    <div className="text-center py-12 opacity-50 bg-surface rounded-3xl border border-dashed border-surface-border">
+                    <div className="text-center py-12 opacity-50 bg-surface rounded-lg border border-dashed border-surface-border">
                         <p className="text-sm text-muted">Nenhum cartão encontrado.</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
                         {lists.map((list) => (
-                            <div key={list.id} className="p-4 rounded-2xl bg-surface border border-surface-border hover:border-blue-200 dark:hover:border-blue-800 transition-colors group relative shadow-sm">
+                            <div key={list.id} className="p-4 rounded-lg bg-surface border border-surface-border hover:border-blue-200 dark:hover:border-blue-800 transition-colors group relative shadow-sm">
                                 <div className="flex items-start justify-between mb-2">
                                     <div className="min-w-0">
                                         <h4 className="font-bold text-main text-sm truncate">
@@ -299,7 +299,7 @@ function CardsContent() {
                                         </button>
 
                                         {openMenuId === list.id && (
-                                            <div className="absolute right-0 top-8 w-48 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                            <div className="absolute right-0 top-8 w-48 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                                 <button
                                                     onClick={() => {
                                                         handleOpenLink(list.id);

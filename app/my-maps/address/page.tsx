@@ -25,7 +25,6 @@ import {
     FileText,
     MoreVertical,
     History as HistoryIcon,
-    HelpCircle,
     ChevronDown,
     ChevronUp,
     ArrowLeft,
@@ -34,7 +33,6 @@ import {
     GripVertical,
     Truck
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
 import VisitHistoryModal from '@/app/components/VisitHistoryModal';
 import BottomNav from '@/app/components/BottomNav';
 import MapView, { MapItem } from '@/app/components/MapView';
@@ -103,7 +101,6 @@ function AddressListContent() {
     const [peopleCount, setPeopleCount] = useState('');
     // Gender Stats State: territoryId -> { men: number, women: number, couples: number }
     const [genderStats, setGenderStats] = useState<Record<string, { men: number, women: number, couples: number }>>({});
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [residentName, setResidentName] = useState('');
     const [gender, setGender] = useState<'HOMEM' | 'MULHER' | 'CASAL' | ''>('');
     const [isDeaf, setIsDeaf] = useState(false);
@@ -164,7 +161,7 @@ function AddressListContent() {
             try {
                 const [congRes, cityRes, terrRes] = await Promise.all([
                     supabase.from('congregations').select('name, term_type, category').eq('id', congregationId).single(),
-                    supabase.from('cities').select('name, parent_city').eq('id', cityId).single(),
+                    supabase.from('cities').select('name,parent_city').eq('id', cityId).single(),
                     supabase.from('territories').select('name').eq('id', territoryId).single()
                 ]);
 
@@ -243,7 +240,11 @@ function AddressListContent() {
             })
             .subscribe();
 
-        return () => { subscription.unsubscribe(); };
+        return () => {
+            setTimeout(() => {
+                subscription.unsubscribe();
+            }, 100);
+        };
     }, [congregationId, territoryId]);
 
     // Fetch Available Options for Edit Modal
@@ -483,7 +484,7 @@ function AddressListContent() {
             onDragStart={(e) => handleDragStart(e, addr.id)}
             onDragOver={(e) => handleDragOver(e, addr.id)}
             onDragEnd={handleDragEnd}
-            className={`group bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all ${draggedId === addr.id ? 'opacity-20 transition-none scale-95' : ''} ${openMenuId === addr.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}
+            className={`group bg-surface rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md transition-all ${draggedId === addr.id ? 'opacity-20 transition-none scale-95' : ''} ${openMenuId === addr.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}
         >
             <div className="flex items-center gap-3">
                 <div className={`flex items-center gap-3 flex-1 min-w-0 ${!addr.is_active ? 'opacity-60 grayscale' : ''}`}>
@@ -528,7 +529,7 @@ function AddressListContent() {
                             return (
                                 <div
                                     title={lastVisitFormatted}
-                                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border transition-colors ${badgeStyles}`}
+                                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border transition-colors ${badgeStyles}`}
                                 >
                                     {addr.gender === 'CASAL' ? (
                                         <div className="flex -space-x-1.5">
@@ -545,7 +546,7 @@ function AddressListContent() {
                         return (
                             <div
                                 title={lastVisitFormatted}
-                                className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-sm border bg-primary-50 dark:bg-primary-900/10 text-primary-700 dark:text-primary-400 border-primary-100 dark:border-primary-900/20 transition-colors"
+                                className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 shadow-sm border bg-primary-50 dark:bg-primary-900/10 text-primary-700 dark:text-primary-400 border-primary-100 dark:border-primary-900/20 transition-colors"
                             >
                                 <span className="text-sm font-bold">{index + 1}</span>
                             </div>
@@ -712,7 +713,7 @@ function AddressListContent() {
                 <div className="flex items-center gap-3">
                     <Link
                         href={`/my-maps/territory?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`}
-                        className="p-2 bg-gray-100 dark:bg-gray-800 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                         title="Voltar"
                     >
                         <ArrowLeft className="w-5 h-5" />
@@ -738,36 +739,14 @@ function AddressListContent() {
                                 resetForm();
                                 setIsCreateModalOpen(true);
                             }}
-                            className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-xl shadow-lg transition-all active:scale-95"
+                            className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-lg shadow-lg transition-all active:scale-95"
                         >
                             <Plus className="w-5 h-5" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title={`Mapa: ${contextNames.territory}`}
-                description={`Lista de endereços fixos do território selecionado no(a) ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'} ${contextNames.city}.`}
-                steps={[
-                    { title: "Registrar Visita", text: "Clique no botão 'Visitar' para relatar o que aconteceu em cada casa." },
-                    { title: "Navegação", text: "Use o ícone da bússola para abrir a rota no Google Maps." },
-                    { title: "Legendas", text: "Fique atento aos ícones de surdos, menores ou estudantes no cartão." }
-                ]}
-                tips={[
-                    "O mapa no pé da página ajuda você a visualizar onde cada endereço está.",
-                    "Se encontrar um erro no endereço, procure um dos irmãos que cuidam dos mapas."
-                ]}
-            />
 
             {/* Main Content */}
             <div className="flex flex-col">
@@ -782,7 +761,7 @@ function AddressListContent() {
                                 placeholder="Buscar rua ou número..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-surface border-0 text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all placeholder:text-muted"
+                                className="w-full bg-surface border-0 text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all placeholder:text-muted"
                             />
                         </div>
                     </div>

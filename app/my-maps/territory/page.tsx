@@ -17,10 +17,9 @@ import {
     List,
     History,
     MoreVertical,
-    User,
-    HelpCircle
+    User
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
+import { toast } from 'sonner';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
 import TerritoryHistoryModal from '@/app/components/TerritoryHistoryModal';
@@ -36,7 +35,7 @@ import { getServiceYearRange, getServiceYear } from '@/lib/serviceYearUtils';
 interface Territory {
     id: string;
     name: string;
-    description?: string;
+    notes?: string;
     city_id: string;
     congregation_id: string;
     created_at?: string;
@@ -93,7 +92,6 @@ function TerritoryListContent() {
 
     // UI
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [searchInItems, setSearchInItems] = useState(false);
 
 
@@ -160,7 +158,11 @@ function TerritoryListContent() {
                 })
                 .subscribe();
 
-            return () => { subscription.unsubscribe(); };
+            return () => {
+                setTimeout(() => {
+                    subscription.unsubscribe();
+                }, 100);
+            };
         }
     }, [congregationId, cityId]);
 
@@ -219,7 +221,11 @@ function TerritoryListContent() {
                     fetchAddresses();
                 })
                 .subscribe();
-            return () => { subscription.unsubscribe(); };
+            return () => {
+                setTimeout(() => {
+                    subscription.unsubscribe();
+                }, 100);
+            };
         }
     }, [congregationId, cityId]);
 
@@ -280,7 +286,7 @@ function TerritoryListContent() {
         try {
             const { error } = await supabase.from('territories').insert({
                 name: newTerritoryName.trim(),
-                description: newTerritoryDesc.trim(),
+                notes: newTerritoryDesc.trim(),
                 city_id: cityId,
                 congregation_id: congregationId,
                 lat: newTerritoryLat ? parseFloat(newTerritoryLat) : null,
@@ -310,7 +316,7 @@ function TerritoryListContent() {
                 .from('territories')
                 .update({
                     name: editName,
-                    description: editDescription
+                    notes: editDescription
                 })
                 .eq('id', editingTerritory.id);
 
@@ -349,14 +355,14 @@ function TerritoryListContent() {
     // simplified sharing for Supabase migration MVP
     const handleConfirmShare = async () => {
         if (selectedIds.size === 0) return;
-        alert("Funcionalidade de compartilhamento em migração. Aguarde a próxima atualização.");
+        toast.info("Funcionalidade de compartilhamento em migração. Aguarde a próxima atualização.");
         // TODO: Implement shared list creation with Supabase (requires new table structure or adapting existing)
         setIsShareModalOpen(false);
     };
 
     const filteredTerritories = territories.filter(t => {
         const matchesName = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.description?.toLowerCase().includes(searchTerm.toLowerCase());
+            t.notes?.toLowerCase().includes(searchTerm.toLowerCase());
 
         if (searchInItems && searchTerm) {
             const indexContent = territorySearchIndex[t.id] || '';
@@ -378,7 +384,7 @@ function TerritoryListContent() {
             {/* Header */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-sm dark:shadow-none transition-colors">
                 <div className="flex items-center gap-3">
-                    <Link href={`/my-maps/city?congregationId=${congregationId}`} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title={`Voltar para ${localTermType === 'neighborhood' ? 'Bairros' : 'Cidades'}`}>
+                    <Link href={`/my-maps/city?congregationId=${congregationId}`} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title={`Voltar para ${localTermType === 'neighborhood' ? 'Bairros' : 'Cidades'}`}>
                         <ArrowRight className="w-5 h-5 rotate-180" />
                     </Link>
                     <div className="flex flex-col">
@@ -390,36 +396,14 @@ function TerritoryListContent() {
                     {(isElder || isServant) && (
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
-                            className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-xl shadow-lg transition-all active:scale-95"
+                            className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-lg shadow-lg transition-all active:scale-95"
                         >
                             <Plus className="w-5 h-5" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title="Gestão de Territórios"
-                description={`Visualize e gerencie os territórios do ${localTermType === 'neighborhood' ? 'bairro selecionado' : 'cidade selecionada'}.`}
-                steps={[
-                    { title: "Status", text: "Veja quais territórios estão 'Livres', 'Ocupados' ou 'Compartilhados'." },
-                    { title: "Histórico", text: "Acesse o menu de três pontos para ver quem trabalhou no território anteriormente." },
-                    { title: "Endereços", text: "Clique no território para ver a lista de endereços e registrar visitas." }
-                ]}
-                tips={[
-                    "O selo azul mostra quantos endereços ativos existem em cada território.",
-                    "Se você é admin, pode compartilhar vários territórios de uma vez selecionando-os pela caixa de seleção."
-                ]}
-            />
 
             <div className="px-6 pt-6 space-y-4">
                 <div className="relative group">
@@ -429,7 +413,7 @@ function TerritoryListContent() {
                         placeholder="Buscar território..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-surface border border-transparent dark:border-surface-border text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-36 shadow-sm dark:shadow-none focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
+                        className="w-full bg-surface border border-transparent dark:border-surface-border text-main text-sm font-medium rounded-lg py-4 pl-12 pr-36 shadow-sm dark:shadow-none focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
                     />
                     <div className="absolute right-4 top-1/2 -translate-y-1/2">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -463,7 +447,7 @@ function TerritoryListContent() {
                             return (
                                 <div
                                     key={t.id}
-                                    className={`group bg-surface rounded-2xl p-3 border border-surface-border shadow-sm hover:shadow-md transition-all relative ${isSelected ? 'ring-2 ring-primary bg-primary-light/10' : ''}`}
+                                    className={`group bg-surface rounded-lg p-3 border border-surface-border shadow-sm hover:shadow-md transition-all relative ${isSelected ? 'ring-2 ring-primary bg-primary-light/10' : ''}`}
                                 >
                                     <div className="flex items-start gap-3">
                                         {(isAdmin || isServant) && (
@@ -482,12 +466,12 @@ function TerritoryListContent() {
                                             className="flex-1 min-w-0 flex flex-col gap-1.5 pb-1"
                                         >
                                             <div className="flex items-start gap-3">
-                                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${t.status === 'OCUPADO' ? 'bg-primary-light/50 dark:bg-primary-dark/20 text-primary dark:text-primary-light' : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
+                                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${t.status === 'OCUPADO' ? 'bg-primary-light/50 dark:bg-primary-dark/20 text-primary dark:text-primary-light' : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
                                                     <MapIcon className="w-4.5 h-4.5" />
                                                 </div>
                                                 <div className="min-w-0 flex-1 pt-0.5">
                                                     <h3 className="font-bold text-main text-base leading-tight truncate pr-1">{t.name}</h3>
-                                                    <p className="text-xs text-muted font-medium line-clamp-2 mt-0.5 leading-snug">{t.description || 'Sem descrição'}</p>
+                                                    <p className="text-xs text-muted font-medium line-clamp-2 mt-0.5 leading-snug">{t.notes || 'Sem descrição'}</p>
                                                 </div>
                                             </div>
 
@@ -514,7 +498,7 @@ function TerritoryListContent() {
                                                         <MoreVertical className="w-4.5 h-4.5" />
                                                     </button>
                                                     {activeMenu === t.id && (
-                                                        <div className="absolute right-0 mt-2 w-48 bg-surface rounded-2xl shadow-xl border border-surface-border z-50 py-2 animate-in fade-in zoom-in-95 duration-200">
+                                                        <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-xl border border-surface-border z-50 py-2 animate-in fade-in zoom-in-95 duration-200">
                                                             <Link href={`/my-maps/address?congregationId=${congregationId}&cityId=${cityId}&territoryId=${t.id}`} className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 dark:hover:text-primary-400 transition-colors w-full text-left">
                                                                 <ArrowRight className="w-4 h-4" /> Abrir
                                                             </Link>
@@ -525,7 +509,7 @@ function TerritoryListContent() {
                                                                 <button onClick={() => {
                                                                     setEditingTerritory(t);
                                                                     setEditName(t.name);
-                                                                    setEditDescription(t.description || '');
+                                                                    setEditDescription(t.notes || '');
                                                                     setIsEditModalOpen(true);
                                                                     setActiveMenu(null);
                                                                 }} className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 dark:hover:text-primary-400 transition-colors w-full text-left">
@@ -569,7 +553,7 @@ function TerritoryListContent() {
 
                 {/* Floating Action Bar (Admin/Leaders) - for sharing multiple maps selection */}
                 {(isAdmin || isServant) && selectedIds.size > 0 && (
-                    <div className="fixed bottom-24 left-6 right-6 z-40 bg-gray-900 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg">
+                    <div className="fixed bottom-24 left-6 right-6 z-40 bg-gray-900 text-white rounded-lg p-4 flex items-center justify-between shadow-lg">
                         <div className="flex items-center gap-3">
                             <span className="bg-primary px-3 py-1 rounded-lg text-xs font-bold">{selectedIds.size}</span>
                             <span className="text-sm">selecionados</span>
@@ -577,7 +561,7 @@ function TerritoryListContent() {
                         <div className="flex gap-2">
                             <button
                                 onClick={handleConfirmShare} // Call handler directly for now
-                                className="bg-white text-gray-900 px-4 py-2 rounded-xl text-xs font-bold flex gap-2 active:scale-95 transition-transform"
+                                className="bg-white text-gray-900 px-4 py-2 rounded-lg text-xs font-bold flex gap-2 active:scale-95 transition-transform"
                             >
                                 <LinkIcon className="w-4 h-4" /> LINK
                             </button>
@@ -592,19 +576,19 @@ function TerritoryListContent() {
             {
                 isCreateModalOpen && (
                     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
+                        <div className="bg-white dark:bg-slate-900 rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                                 <Plus className="w-6 h-6 text-primary" />
                                 Novo Território
                             </h2>
                             <form onSubmit={handleCreateTerritory} className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Número/Nome</label>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Número do Mapa</label>
                                     <input
                                         type="text"
                                         value={newTerritoryName}
                                         onChange={(e) => setNewTerritoryName(e.target.value)}
-                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 font-bold text-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
+                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-4 font-bold text-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
                                         placeholder="Ex: 01"
                                         autoFocus
                                     />
@@ -615,13 +599,13 @@ function TerritoryListContent() {
                                         rows={3}
                                         value={newTerritoryDesc}
                                         onChange={(e) => setNewTerritoryDesc(e.target.value)}
-                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none resize-none placeholder:text-gray-400"
+                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-4 font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none resize-none placeholder:text-gray-400"
                                         placeholder="Ex: Centro, perto da praça..."
                                     />
                                 </div>
                                 <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-xl font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
-                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Criar</button>
+                                    <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Criar</button>
                                 </div>
                             </form>
                         </div>
@@ -633,19 +617,19 @@ function TerritoryListContent() {
             {
                 isEditModalOpen && (
                     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
+                        <div className="bg-white dark:bg-slate-900 rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                                 <List className="w-6 h-6 text-primary" />
                                 Editar Território
                             </h2>
                             <form onSubmit={handleUpdateTerritory} className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Número/Nome</label>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Número do Mapa</label>
                                     <input
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 font-bold text-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
+                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-4 font-bold text-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
                                         placeholder="Ex: 01"
                                         autoFocus
                                     />
@@ -656,13 +640,13 @@ function TerritoryListContent() {
                                         rows={3}
                                         value={editDescription}
                                         onChange={(e) => setEditDescription(e.target.value)}
-                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none resize-none placeholder:text-gray-400"
+                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-4 font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none resize-none placeholder:text-gray-400"
                                         placeholder="Ex: Centro, perto da praça..."
                                     />
                                 </div>
                                 <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-xl font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
-                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Salvar</button>
+                                    <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Salvar</button>
                                 </div>
                             </form>
                         </div>

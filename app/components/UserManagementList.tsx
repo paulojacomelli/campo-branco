@@ -137,7 +137,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
     }
 
     return (
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
                 <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-100">
@@ -214,7 +214,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
                                             hasChanges && (
                                                 <button
                                                     onClick={() => handleSaveChanges(u.id)}
-                                                    className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-xl shadow-lg shadow-green-500/20 transition-all active:scale-95 mx-auto flex"
+                                                    className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg shadow-lg shadow-green-500/20 transition-all active:scale-95 mx-auto flex"
                                                     title="Salvar Alterações"
                                                 >
                                                     <Save className="w-4 h-4" />

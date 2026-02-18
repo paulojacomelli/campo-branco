@@ -73,14 +73,14 @@ export default function NotificationOnboardingModal() {
                     <div className="space-y-3">
                         <button
                             onClick={handleEnable}
-                            className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-2xl shadow-lg shadow-primary-light/500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-lg shadow-lg shadow-primary-light/500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             <CheckCircle2 className="w-5 h-5" />
                             Ativar Notificações
                         </button>
                         <button
                             onClick={handleDismiss}
-                            className="w-full bg-white hover:bg-gray-50 text-gray-400 font-bold py-3 rounded-2xl transition-colors text-sm"
+                            className="w-full bg-white hover:bg-gray-50 text-gray-400 font-bold py-3 rounded-lg transition-colors text-sm"
                         >
                             Talvez depois
                         </button>

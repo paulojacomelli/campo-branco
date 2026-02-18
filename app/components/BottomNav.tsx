@@ -54,7 +54,7 @@ export default function BottomNav() {
                             prefetch={false}
                             className={`flex flex-col items-center gap-1 transition-all duration-300 relative ${active ? 'text-primary dark:text-primary-light -translate-y-1' : 'text-muted hover:text-main'}`}
                         >
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${active ? 'bg-primary-light/50 dark:bg-primary-dark/30 shadow-sm' : ''}`}>
+                            <div className={`p-2 rounded-lg transition-all duration-300 ${active ? 'bg-primary-light/50 dark:bg-primary-dark/30 shadow-sm' : ''}`}>
                                 <Icon className={`w-6 h-6 ${active ? 'fill-current' : ''}`} strokeWidth={active ? 2.5 : 2} />
                             </div>
                             <span className={`text-[10px] font-bold tracking-wide transition-all ${active ? 'opacity-100 scale-100' : 'opacity-0 scale-50 hidden'}`}>

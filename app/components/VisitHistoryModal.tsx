@@ -105,7 +105,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-surface rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
+            <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
                 <div className="flex justify-between items-center mb-6 shrink-0">
                     <div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Histórico</h2>
@@ -126,7 +126,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                         </div>
                     ) : (
                         visits.map((visit) => (
-                            <div key={visit.id} className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            <div key={visit.id} className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="flex items-center gap-2">
                                         <div className={`p-1.5 rounded-lg bg-white dark:bg-slate-800 shadow-sm border border-gray-100 dark:border-slate-700`}>

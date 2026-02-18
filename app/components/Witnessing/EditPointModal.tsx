@@ -105,7 +105,7 @@ export default function EditPointModal({ isOpen, onClose, point, cityName }: Edi
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                         <Pencil className="w-6 h-6 text-primary" />
@@ -121,7 +121,7 @@ export default function EditPointModal({ isOpen, onClose, point, cityName }: Edi
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full bg-gray-50 border-none rounded-xl p-4 font-bold text-gray-900 focus:ring-2 focus:ring-primary-light/500/20 outline-none"
+                            className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-primary-light/500/20 outline-none"
                             placeholder="Ex: Praça Central"
                         />
                     </div>
@@ -132,13 +132,13 @@ export default function EditPointModal({ isOpen, onClose, point, cityName }: Edi
                                 type="text"
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
-                                className="w-full bg-gray-50 border-none rounded-xl p-4 font-medium text-gray-900 focus:ring-2 focus:ring-primary-light/500/20 outline-none"
+                                className="w-full bg-gray-50 border-none rounded-lg p-4 font-medium text-gray-900 focus:ring-2 focus:ring-primary-light/500/20 outline-none"
                                 placeholder="Rua..."
                             />
                             <button
                                 type="button"
                                 onClick={handleSearchLocation}
-                                className="bg-primary-light/50 text-primary p-3 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-primary-light transition-colors"
+                                className="bg-primary-light/50 text-primary p-3 rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-primary-light transition-colors"
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
                             </button>
@@ -155,7 +155,7 @@ export default function EditPointModal({ isOpen, onClose, point, cityName }: Edi
                         />
                     </div>
 
-                    <button type="submit" className="w-full py-3.5 bg-gray-900 text-white rounded-xl font-bold shadow-lg mt-2 flex items-center justify-center gap-2">
+                    <button type="submit" className="w-full py-3.5 bg-gray-900 text-white rounded-lg font-bold shadow-lg mt-2 flex items-center justify-center gap-2">
                         {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                     </button>
                 </form>

@@ -14,10 +14,8 @@ import {
     LogOut,
     Check,
     Map,
-    MoreVertical,
-    HelpCircle
+    MoreVertical
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
 import BottomNav from '@/app/components/BottomNav';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -41,7 +39,6 @@ export default function CongregationListPage() {
     // Modals
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentCongregation, setCurrentCongregation] = useState<Congregation | null>(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     // Form State
     const [congregationName, setCongregationName] = useState('');
@@ -91,7 +88,10 @@ export default function CongregationListPage() {
             .subscribe();
 
         return () => {
-            supabase.removeChannel(channel);
+            // Pequeno delay para evitar erro de WebSocket se o unmount for muito rápido
+            setTimeout(() => {
+                supabase.removeChannel(channel);
+            }, 100);
         };
     }, [isSuperAdmin]);
 
@@ -189,31 +189,8 @@ export default function CongregationListPage() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-primary dark:hover:text-primary-light hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
-                </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title="Lista de Congregações"
-                description="Escolha a congregação que deseja gerenciar ou cujos mapas deseja visualizar."
-                steps={[
-                    { title: "Visualizar Mapas", text: "Clique em uma congregação para ver as cidades e territórios vinculados a ela." },
-                    { title: "Gestão", text: "Se você tem permissão, pode editar ou excluir congregações através do menu de três pontos." }
-                ]}
-                tips={[
-                    "Use a barra de busca para encontrar rapidamente sua congregação pelo nome.",
-                    "Lembre-se que os dados de cada congregação são isolados por segurança."
-                ]}
-            />
 
             {/* Search */}
             <div className="px-6 pt-6 pb-2">

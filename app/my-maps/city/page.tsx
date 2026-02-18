@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
+import { toast } from 'sonner';
 import {
     Plus,
     Link as LinkIcon,
@@ -17,11 +18,9 @@ import {
     MoreVertical,
     Pencil,
     CheckCircle,
-    HelpCircle,
     Navigation,
     MousePointer2
 } from 'lucide-react';
-import HelpModal from '@/app/components/HelpModal';
 import MapView from '@/app/components/MapView';
 import CongregationSelector from '@/app/components/CongregationSelector';
 import BottomNav from '@/app/components/BottomNav';
@@ -73,7 +72,6 @@ function CityListContent() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingCity, setEditingCity] = useState<City | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false);
 
     const fetchCities = async () => {
         if (!congregationId) return;
@@ -105,14 +103,11 @@ function CityListContent() {
             .subscribe();
 
         return () => {
-            if (channel) {
-                supabase.removeChannel(channel).catch(err => {
-                    // Silently ignore websocket close errors during cleanup
-                    if (!err.message?.includes('WebSocket is closed')) {
-                        console.error('Error removing channel:', err);
-                    }
-                });
-            }
+            setTimeout(() => {
+                if (channel) {
+                    supabase.removeChannel(channel).catch(() => { });
+                }
+            }, 100);
         };
     }, [congregationId]);
 
@@ -263,14 +258,12 @@ function CityListContent() {
 
             if (error) throw error;
 
-            setNewCityName('');
-            setNewParentCity('');
-            setNewCityLat('');
             setNewCityLng('');
             setIsCreateModalOpen(false);
+            toast.success(`${localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'} criado(a) com sucesso!`);
         } catch (error) {
             console.error("Error creating city:", error);
-            alert(`Erro ao criar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}.`);
+            toast.error(`Erro ao criar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}.`);
         }
     };
 
@@ -387,30 +380,9 @@ function CityListContent() {
                             <Plus className="w-5 h-5" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsHelpOpen(true)}
-                        className="p-1.5 text-muted hover:text-primary hover:bg-primary-light/50 dark:hover:bg-primary-dark/20 rounded-full transition-colors"
-                        title="Ajuda"
-                    >
-                        <HelpCircle className="w-5 h-5" />
-                    </button>
                 </div>
             </header>
 
-            <HelpModal
-                isOpen={isHelpOpen}
-                onClose={() => setIsHelpOpen(false)}
-                title={localTermType === 'neighborhood' ? 'Bairros da Congregação' : 'Cidades da Congregação'}
-                description={localTermType === 'neighborhood' ? 'Gerencie os bairros atendidos pela sua congregação.' : 'Gerencie as cidades atendidas pela sua congregação.'}
-                steps={[
-                    { title: "Navegação", text: `Clique em um(a) ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'} para gerenciar seus territórios e endereços.` },
-                    { title: "Gestão", text: `Use o ícone '+' para adicionar novos(as) ${localTermType === 'neighborhood' ? 'bairros' : 'cidades'} ou o menu de três pontos para editar/excluir.` }
-                ]}
-                tips={[
-                    `Você pode ver a distribuição dos(as) ${localTermType === 'neighborhood' ? 'bairros' : 'cidades'} no mapa alternando a visualização no topo.`,
-                    `Lembre-se de definir as coordenadas (lat/lng) para visualizar o(a) ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'} corretamente no mapa global.`
-                ]}
-            />
 
             {/* Main Content */}
             <div className="flex flex-col">
@@ -425,7 +397,7 @@ function CityListContent() {
                                 placeholder={localTermType === 'neighborhood' ? 'Buscar bairro...' : 'Buscar cidade...'}
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full bg-surface border border-transparent dark:border-surface-border text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] dark:shadow-none dark:bg-background focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
+                                className="w-full bg-surface border border-transparent dark:border-surface-border text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] dark:shadow-none dark:bg-background focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
                             />
                         </div>
 
@@ -491,11 +463,11 @@ function CityListContent() {
                                 return (
                                     <div
                                         key={city.id}
-                                        className="group bg-background rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-primary-light/50 dark:hover:border-primary-light/20 transition-all flex items-center gap-4"
+                                        className="group bg-background rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-primary-light/50 dark:hover:border-primary-light/20 transition-all flex items-center gap-4"
                                     >
 
                                         <Link href={`/my-maps/territory?congregationId=${congregationId}&cityId=${city.id}`} prefetch={false} className="flex-1 flex items-center gap-4 min-w-0">
-                                            <div className="w-10 h-10 bg-surface dark:bg-surface-highlight rounded-xl flex items-center justify-center text-muted shrink-0 shadow-sm border border-surface-border">
+                                            <div className="w-10 h-10 bg-surface dark:bg-surface-highlight rounded-lg flex items-center justify-center text-muted shrink-0 shadow-sm border border-surface-border">
                                                 <MapIcon className="w-5 h-5" />
                                             </div>
                                             <div className="flex-1 min-w-0">
@@ -574,7 +546,7 @@ function CityListContent() {
                                                                 className="fixed inset-0 z-10"
                                                                 onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); }}
                                                             />
-                                                            <div className="absolute right-0 mt-2 w-32 bg-surface rounded-xl shadow-xl border border-surface-border z-20 py-1 animation-fade-in origin-top-right">
+                                                            <div className="absolute right-0 mt-2 w-32 bg-surface rounded-lg shadow-xl border border-surface-border z-20 py-1 animation-fade-in origin-top-right">
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
@@ -663,7 +635,7 @@ function CityListContent() {
                                         type="text"
                                         value={newCityName}
                                         onChange={(e) => setNewCityName(e.target.value)}
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-main placeholder-muted"
+                                        className="w-full bg-background border border-surface-border rounded-lg py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-main placeholder-muted"
                                         placeholder={localTermType === 'neighborhood' ? 'Ex: Jardim Paulista' : 'Ex: São Paulo'}
                                         autoFocus
                                     />
@@ -677,7 +649,7 @@ function CityListContent() {
                                             type="text"
                                             value={newParentCity}
                                             onChange={(e) => setNewParentCity(e.target.value)}
-                                            className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-main placeholder-muted"
+                                            className="w-full bg-background border border-surface-border rounded-lg py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-main placeholder-muted"
                                             placeholder="Ex: São Paulo"
                                         />
                                     </div>
@@ -700,7 +672,7 @@ function CityListContent() {
                                     <button
                                         type="button"
                                         onClick={() => setIsMapPickerOpen(true)}
-                                        className={`w-full flex items-center justify-between p-3 rounded-xl border font-bold transition-all ${newCityLat && newCityLng
+                                        className={`w-full flex items-center justify-between p-3 rounded-lg border font-bold transition-all ${newCityLat && newCityLng
                                             ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400'
                                             : 'bg-gray-50 border-gray-200 text-gray-500 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'
                                             }`}
@@ -769,7 +741,7 @@ function CityListContent() {
                                             type="text"
                                             value={editingCity.parent_city || ''}
                                             onChange={e => setEditingCity({ ...editingCity, parent_city: e.target.value })}
-                                            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
+                                            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-primary/20 outline-none placeholder:text-gray-400"
                                             placeholder="Cidade"
                                             required
                                         />
@@ -792,7 +764,7 @@ function CityListContent() {
                                     <button
                                         type="button"
                                         onClick={() => setIsMapPickerOpen(true)}
-                                        className={`w-full flex items-center justify-between p-3 rounded-xl border font-bold transition-all ${editingCity.lat && editingCity.lng
+                                        className={`w-full flex items-center justify-between p-3 rounded-lg border font-bold transition-all ${editingCity.lat && editingCity.lng
                                             ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400'
                                             : 'bg-gray-50 border-gray-200 text-gray-500 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'
                                             }`}

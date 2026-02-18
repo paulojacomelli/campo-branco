@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, MapPin, ThumbsUp, Home, Navigation, Ban, Truck, User, Maximize2, Minimize2, Map as MapIcon } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { geocodeAddress } from '@/app/actions/geocoding';
 
 // Interface defined by user requirements (adapted to match existing usage patterns)
 export interface MapItem {
@@ -223,17 +224,12 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                 }
 
                 try {
-                    // Respect Nominatim Usage Policy
+                    // Respect Nominatim Usage Policy (Throttle client-side calls)
                     await new Promise(r => setTimeout(r, 1100));
                     if (!isMounted) break;
 
-                    let response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(sanitizedQuery)}&limit=1`, {
-                        headers: { 'User-Agent': 'CampoBrancoApp/1.0' }
-                    });
-
-                    if (!response.ok) throw new Error("Network response was not ok");
-
-                    let data = await response.json();
+                    // Server Action Call instead of direct fetch
+                    let data = await geocodeAddress(sanitizedQuery);
 
                     // FALLBACK STRATEGY
                     if (!data || data.length === 0) {
@@ -242,31 +238,21 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                         // Tier 2: Try Street + City ("Street, City, Country")
                         if (parts.length >= 3) {
                             const fallbackQuery = `${parts[0]}, ${parts.slice(2).join(', ')}`;
-
                             await new Promise(r => setTimeout(r, 1100));
                             if (!isMounted) break;
 
                             console.log(`[MapView] Fallback 1 (Street): ${fallbackQuery}`);
-                            response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackQuery)}&limit=1`, {
-                                headers: { 'User-Agent': 'CampoBrancoApp/1.0' }
-                            });
-
-                            if (response.ok) data = await response.json();
+                            data = await geocodeAddress(fallbackQuery);
                         }
 
                         // Tier 3: Try City Only (Last Resort) if Street failed
                         if ((!data || data.length === 0) && parts.length >= 2) {
                             const cityQuery = parts.slice(-2).join(', ');
-
                             await new Promise(r => setTimeout(r, 1100));
                             if (!isMounted) break;
 
                             console.log(`[MapView] Fallback 2 (City): ${cityQuery}`);
-                            response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityQuery)}&limit=1`, {
-                                headers: { 'User-Agent': 'CampoBrancoApp/1.0' }
-                            });
-
-                            if (response.ok) data = await response.json();
+                            data = await geocodeAddress(cityQuery);
                         }
                     }
 
@@ -283,7 +269,6 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                             localStorage.setItem('field_maps_geocode_cache', JSON.stringify(cacheObj));
                         } catch (e) {
                             console.warn('[MapView] Cache storage failed (quota?):', e);
-                            // Clear old entries on quota error
                             geocodeCache.current.clear();
                         }
 
@@ -703,7 +688,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
 
     return (
         <div
-            className={`w-full h-full relative overflow-hidden rounded-3xl shadow-sm border border-gray-100 transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-[5000] rounded-none border-0 bg-white' : ''}`}
+            className={`w-full h-full relative overflow-hidden rounded-lg shadow-sm border border-gray-100 transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-[5000] rounded-none border-0 bg-white' : ''}`}
             style={isFullscreen ? { height: '100dvh', width: '100vw' } : {}}
         >
             {/* Map Container */}
@@ -725,7 +710,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
 
             {/* WARNING: Failed Items Alert */}
             {failedItems.length > 0 && (
-                <div className="absolute top-16 left-4 bg-red-50/95 backdrop-blur border border-red-100 p-4 rounded-xl shadow-lg z-10 max-w-[250px] animate-in slide-in-from-left-2 duration-300">
+                <div className="absolute top-16 left-4 bg-red-50/95 backdrop-blur border border-red-100 p-4 rounded-lg shadow-lg z-10 max-w-[250px] animate-in slide-in-from-left-2 duration-300">
                     <div className="flex items-center gap-2 text-red-700 font-bold text-xs mb-2">
                         <Ban className="w-4 h-4" />
                         <span>Endereços não encontrados ({failedItems.length})</span>
@@ -740,7 +725,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
 
             {/* Floating Legend (Bottom Center) - Enhanced Design */}
             {showLegend && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 flex items-center gap-6 z-10 scale-95 transition-transform group-hover:scale-100 origin-bottom">
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-3 rounded-lg shadow-xl shadow-gray-200/50 border border-gray-100 flex items-center gap-6 z-10 scale-95 transition-transform group-hover:scale-100 origin-bottom">
                     {Object.entries(STATUS_CONFIG)
                         .filter(([key]) => key !== 'LIVRE' && key !== 'PENDENTE')
                         .map(([key, config]) => (
@@ -764,7 +749,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                     }
                 }}
                 type="button"
-                className="absolute top-4 left-4 bg-white p-3 rounded-xl shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
+                className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
                 title="Minha Localização"
             >
                 <Navigation className="w-5 h-5" />
@@ -774,7 +759,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
             <button
                 onClick={toggleFullscreen}
                 type="button"
-                className="absolute top-4 left-16 bg-white p-3 rounded-xl shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
+                className="absolute top-4 left-16 bg-white p-3 rounded-lg shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
                 title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
             >
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}

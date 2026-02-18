@@ -283,7 +283,7 @@ export default function ReportsPage() {
         <div className="bg-background min-h-screen pb-24 font-sans text-main">
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className="bg-purple-600 p-2 rounded-xl text-white shadow-lg shadow-purple-500/20">
+                    <div className="bg-purple-600 p-2 rounded-lg text-white shadow-lg shadow-purple-500/20">
                         <BarChart3 className="w-5 h-5" />
                     </div>
                     <div>
@@ -313,7 +313,7 @@ export default function ReportsPage() {
 
             <main className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {error && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-2xl flex items-start gap-3 animate-in zoom-in-95">
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg flex items-start gap-3 animate-in zoom-in-95">
                         <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                         <div>
                             <h3 className="font-bold text-red-800 dark:text-red-400 text-sm">Erro de Dados</h3>
@@ -337,7 +337,7 @@ export default function ReportsPage() {
                         {/* KPI Cards Row */}
                         <div className="flex gap-4 overflow-x-auto pb-2 snap-x hide-scrollbar">
                             {/* Card 1: Total Maps */}
-                            <div className="min-w-[140px] bg-surface p-5 rounded-3xl shadow-sm border border-surface-border snap-center">
+                            <div className="min-w-[140px] bg-surface p-5 rounded-lg shadow-sm border border-surface-border snap-center">
                                 <div className="flex items-center gap-2 mb-3 text-primary dark:text-primary-light font-bold">
                                     <MapIcon className="w-5 h-5" />
                                 </div>
@@ -346,7 +346,7 @@ export default function ReportsPage() {
                             </div>
 
                             {/* Card 2: Coverage */}
-                            <div className="min-w-[140px] bg-surface p-5 rounded-3xl shadow-sm border border-surface-border snap-center">
+                            <div className="min-w-[140px] bg-surface p-5 rounded-lg shadow-sm border border-surface-border snap-center">
                                 <div className="flex items-center gap-2 mb-3 text-primary dark:text-primary-light">
                                     <TrendingUp className="w-5 h-5" />
                                 </div>
@@ -355,7 +355,7 @@ export default function ReportsPage() {
                             </div>
 
                             {/* Card 3: Rotation (Alert if high) */}
-                            <div className={`min-w-[140px] p-5 rounded-3xl shadow-sm border snap-center ${kpis.avgRotationDays > 120 ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' : 'bg-surface border-surface-border'}`}>
+                            <div className={`min-w-[140px] p-5 rounded-lg shadow-sm border snap-center ${kpis.avgRotationDays > 120 ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' : 'bg-surface border-surface-border'}`}>
                                 <div className={`flex items-center gap-2 mb-3 ${kpis.avgRotationDays > 120 ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                     <Clock className="w-5 h-5" />
                                     {kpis.avgRotationDays > 120 && <AlertTriangle className="w-4 h-4" />}
@@ -366,13 +366,13 @@ export default function ReportsPage() {
                         </div>
 
                         {/* Visits by Period */}
-                        <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border mb-6">
+                        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border mb-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="font-bold text-main">Visitas por Período</h2>
                                 <Clock className="w-5 h-5 text-muted" />
                             </div>
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-orange-500/5 dark:bg-orange-500/10 p-4 rounded-2xl border border-surface-border flex flex-col items-center">
+                                <div className="bg-orange-500/5 dark:bg-orange-500/10 p-4 rounded-lg border border-surface-border flex flex-col items-center">
                                     <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">Manhã</span>
                                     <span className="text-2xl font-black text-orange-500">{visitPeriods.morning.total}</span>
                                     <div className="flex items-center gap-1 mt-1">
@@ -384,7 +384,7 @@ export default function ReportsPage() {
                                         <span className="text-[10px] text-orange-300 dark:text-orange-500/70">Aprov.</span>
                                     </div>
                                 </div>
-                                <div className="bg-primary-light/10 dark:bg-primary-dark/10 p-4 rounded-2xl border border-surface-border flex flex-col items-center">
+                                <div className="bg-primary-light/10 dark:bg-primary-dark/10 p-4 rounded-lg border border-surface-border flex flex-col items-center">
                                     <span className="text-[10px] font-bold text-primary dark:text-primary-light uppercase tracking-widest mb-1">Tarde</span>
                                     <span className="text-2xl font-black text-primary dark:text-primary-light">{visitPeriods.afternoon.total}</span>
                                     <div className="flex items-center gap-1 mt-1">
@@ -396,7 +396,7 @@ export default function ReportsPage() {
                                         <span className="text-[10px] text-primary-light/70">Aprov.</span>
                                     </div>
                                 </div>
-                                <div className="bg-blue-500/5 dark:bg-blue-500/10 p-4 rounded-2xl border border-surface-border flex flex-col items-center">
+                                <div className="bg-blue-500/5 dark:bg-blue-500/10 p-4 rounded-lg border border-surface-border flex flex-col items-center">
                                     <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">Noite</span>
                                     <span className="text-2xl font-black text-blue-600 dark:text-blue-400">{visitPeriods.night.total}</span>
                                     <div className="flex items-center gap-1 mt-1">
@@ -412,7 +412,7 @@ export default function ReportsPage() {
                         </div>
 
                         {/* Chart Section */}
-                        <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border">
+                        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border">
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="font-bold text-main">Histórico de Trabalho</h2>
                                 <span className="text-xs font-bold text-muted bg-surface-border text-primary dark:text-primary-light px-2 py-1 rounded-full">Ano de Serviço {getServiceYearLabel(selectedServiceYear)}</span>
@@ -445,11 +445,11 @@ export default function ReportsPage() {
                             <h2 className="font-bold text-main text-lg mb-4 px-1">Insights Inteligentes</h2>
                             <div className="space-y-4">
                                 {insights.map((insight, idx) => (
-                                    <div key={idx} className={`p-5 rounded-3xl border flex gap-4 ${insight.type === 'warning' ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' :
+                                    <div key={idx} className={`p-5 rounded-lg border flex gap-4 ${insight.type === 'warning' ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30' :
                                         insight.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' :
                                             'bg-primary-light/50 dark:bg-primary-dark/20 border-primary-light dark:border-primary-dark/30'
                                         }`}>
-                                        <div className={`p-2 rounded-xl h-fit shrink-0 ${insight.type === 'warning' ? 'bg-surface text-red-500 shadow-sm' :
+                                        <div className={`p-2 rounded-lg h-fit shrink-0 ${insight.type === 'warning' ? 'bg-surface text-red-500 shadow-sm' :
                                             insight.type === 'success' ? 'bg-surface text-green-500 shadow-sm' :
                                                 'bg-surface text-primary shadow-sm'
                                             }`}>
@@ -472,7 +472,7 @@ export default function ReportsPage() {
 
                                 {/* Stuck Maps List Detail */}
                                 {stuckMapsList.length > 0 && (
-                                    <div className="bg-surface rounded-3xl border border-surface-border overflow-hidden shadow-sm">
+                                    <div className="bg-surface rounded-lg border border-surface-border overflow-hidden shadow-sm">
                                         <div className="bg-red-50 dark:bg-red-900/20 px-5 py-3 border-b border-red-100 dark:border-red-900/30 flex justify-between items-center">
                                             <span className="text-xs font-bold text-red-700 dark:text-red-300 uppercase tracking-widest">Mapas Parados</span>
                                             <span className="text-xs font-bold bg-surface text-red-600 px-2 py-0.5 rounded-full">{stuckMapsList.length}</span>
@@ -506,7 +506,7 @@ export default function ReportsPage() {
                         {/* Registry Section */}
                         <div>
                             <h2 className="font-bold text-main text-lg mb-4 px-1">Registros</h2>
-                            <a href="/reports/registry" className="block bg-surface p-6 rounded-3xl shadow-sm border border-surface-border hover:border-primary-light dark:hover:border-primary-dark transition-all group">
+                            <a href="/reports/registry" className="block bg-surface p-6 rounded-lg shadow-sm border border-surface-border hover:border-primary-light dark:hover:border-primary-dark transition-all group">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className="p-2 bg-primary-light/50 rounded-lg text-primary dark:bg-primary-dark/30 dark:text-primary-light group-hover:scale-110 transition-transform">

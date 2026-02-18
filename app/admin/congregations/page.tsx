@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 interface Congregation {
     id: string;
@@ -82,7 +83,9 @@ export default function CongregationsPage() {
             .subscribe();
 
         return () => {
-            supabase.removeChannel(channel);
+            setTimeout(() => {
+                supabase.removeChannel(channel);
+            }, 100);
         };
     }, [authLoading, isSuperAdmin, router]);
 
@@ -131,7 +134,7 @@ export default function CongregationsPage() {
                     setLoading(false);
 
                     if (!response.ok) throw new Error(result.error || 'Falha na migração');
-                    alert(`Migração concluída!`);
+                    toast.success(`Migração concluída!`);
                 } else {
                     const { error } = await supabase
                         .from('congregations')
@@ -156,9 +159,10 @@ export default function CongregationsPage() {
             setCustomId('');
             setIsCreateModalOpen(false);
             setEditingCongregation(null);
+            toast.success('Congregação salva com sucesso!');
         } catch (error: any) {
             console.error("Error saving congregation:", error);
-            alert(`Erro: ${error.message || "Erro ao salvar."}`);
+            toast.error(`Erro: ${error.message || "Erro ao salvar."}`);
         }
     };
 

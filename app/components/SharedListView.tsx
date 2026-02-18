@@ -526,7 +526,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                 {/* Instruction Card */}
                 {/* Global Progress Bar & Return Action */}
                 {listData?.type === 'territory' && (
-                    <div className="bg-surface rounded-3xl p-6 shadow-xl shadow-primary-light/5 space-y-6 border border-surface-border relative overflow-hidden">
+                    <div className="bg-surface rounded-lg p-6 shadow-xl shadow-primary-light/5 space-y-6 border border-surface-border relative overflow-hidden">
 
                         {/* Title & Status */}
                         <div className="flex flex-col gap-1">
@@ -540,7 +540,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
                         {/* Expiration Notice if Completed */}
                         {listData?.status === 'completed' && (
-                            <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/20 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+                            <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/20 p-4 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
                                 <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400 shrink-0">
                                     <HistoryIcon className="w-5 h-5" />
                                 </div>
@@ -587,7 +587,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                 <button
                                     onClick={handleReturnMap}
                                     disabled={returning || listData?.status === 'completed'}
-                                    className={`flex-1 px-6 py-3.5 rounded-xl text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg
+                                    className={`flex-1 px-6 py-3.5 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg
                                         ${listData?.status === 'completed'
                                             ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 shadow-none cursor-not-allowed'
                                             : 'bg-green-600 hover:bg-green-700 text-white shadow-green-500/20'
@@ -603,7 +603,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                     navigator.clipboard.writeText(window.location.href);
                                     alert("Link copiado!");
                                 }}
-                                className="flex-1 bg-surface hover:bg-background text-primary dark:text-primary-light active:scale-95 transition-all px-6 py-3.5 rounded-xl text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 border border-surface-border shadow-sm"
+                                className="flex-1 bg-surface hover:bg-background text-primary dark:text-primary-light active:scale-95 transition-all px-6 py-3.5 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 border border-surface-border shadow-sm"
                             >
                                 <Share2 className="w-4 h-4" />
                                 <span className="uppercase text-xs font-bold tracking-wider">Copiar Link</span>
@@ -613,7 +613,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                 )}
 
                 {listData?.type !== 'territory' && (
-                    <div className="bg-primary rounded-3xl p-6 shadow-xl shadow-primary-light/20 text-white space-y-6">
+                    <div className="bg-primary rounded-lg p-6 shadow-xl shadow-primary-light/20 text-white space-y-6">
                         <div>
                             <h2 className="text-2xl font-bold mb-2">Relatório de Campo</h2>
                             <p className="text-primary-light/80 text-sm leading-relaxed">
@@ -627,7 +627,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                 navigator.clipboard.writeText(window.location.href);
                                 alert("Link copiado!");
                             }}
-                            className="bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-white/10 w-full justify-center sm:w-auto"
+                            className="bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-white/10 w-full justify-center sm:w-auto"
                         >
                             <Share2 className="w-4 h-4" />
                             Copiar Link do Cartão
@@ -665,7 +665,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
                         return (
                             <div key={item.id} className="block group">
-                                <div className="bg-surface p-4 rounded-2xl border border-surface-border flex items-center gap-4 shadow-sm group-hover:border-primary-light dark:group-hover:border-primary-dark group-hover:shadow-md transition-all relative overflow-hidden">
+                                <div className="bg-surface p-4 rounded-lg border border-surface-border flex items-center gap-4 shadow-sm group-hover:border-primary-light dark:group-hover:border-primary-dark group-hover:shadow-md transition-all relative overflow-hidden">
 
                                     {/* Hover Highlight */}
                                     <div
@@ -686,7 +686,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                     />
 
                                     {/* Icon based on type */}
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors shadow-sm
+                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 transition-colors shadow-sm
                                                         ${listData?.type === 'address'
                                             ? (item.visitStatus === 'contacted' ? 'bg-[#21832B] text-white' :
                                                 item.visitStatus === 'not_contacted' ? 'bg-orange-500 text-white' :
@@ -801,7 +801,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                 </button>
 
                                                 {openMenuId === item.id && (
-                                                    <div className="absolute right-0 top-10 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-primary-light/20 dark:border-slate-800 p-1 z-[30] min-w-[170px] animate-in fade-in zoom-in-95 duration-200">
+                                                    <div className="absolute right-0 top-10 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-primary-light/20 dark:border-slate-800 p-1 z-[30] min-w-[170px] animate-in fade-in zoom-in-95 duration-200">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -897,7 +897,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                         <h2 className="text-xl font-black text-center">Aceitar Responsabilidade?</h2>
                         <p className="text-center text-muted">Ao aceitar, você se compromete a trabalhar este território.</p>
                         <div className="space-y-3">
-                            <button onClick={handleAcceptResponsibility} disabled={accepting} className="w-full bg-primary text-white py-4 rounded-xl font-bold">
+                            <button onClick={handleAcceptResponsibility} disabled={accepting} className="w-full bg-primary text-white py-4 rounded-lg font-bold">
                                 {accepting ? "Aceitando..." : "Sim, Aceitar"}
                             </button>
                             <button onClick={() => setIsResponsibilityModalOpen(false)} className="w-full text-muted py-3 font-bold">

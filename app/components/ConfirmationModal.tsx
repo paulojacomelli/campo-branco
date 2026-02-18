@@ -27,7 +27,7 @@ export default function ConfirmationModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+            <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
                 <div className="flex justify-end">
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                         <X className="w-5 h-5 text-gray-500" />
@@ -48,7 +48,7 @@ export default function ConfirmationModal({
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3.5 rounded-xl font-bold text-sm transition-colors"
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3.5 rounded-lg font-bold text-sm transition-colors"
                     >
                         {cancelText}
                     </button>
@@ -57,7 +57,7 @@ export default function ConfirmationModal({
                             onConfirm();
                             onClose();
                         }}
-                        className={`flex-1 text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg active:scale-95 ${variant === 'danger'
+                        className={`flex-1 text-white py-3.5 rounded-lg font-bold text-sm transition-all shadow-lg active:scale-95 ${variant === 'danger'
                             ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
                             : 'bg-primary hover:bg-primary-dark shadow-primary-light/500/20'
                             }`}

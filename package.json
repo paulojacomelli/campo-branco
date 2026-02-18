@@ -1,16 +1,12 @@
 {
   "name": "campobranco",
-  "version": "0.4.66-beta",
+  "version": "0.4.79-beta",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "db:export": "npx tsx scripts/db-tools-cli.ts export",
-    "db:import": "npx tsx scripts/db-tools-cli.ts import",
-    "db:migrate": "npx tsx scripts/migrate-to-supabase.ts",
-    "preview": "node scripts/preview.js",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "jest --testPathIgnorePatterns=__tests__/integration",
     "test:int": "jest __tests__/integration",
@@ -31,7 +27,8 @@
     "lucide-react": "^0.562.0",
     "query-string": "^9.3.1",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
@@ -40,7 +37,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.23",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "15.1.0",
     "firebase-tools": "^15.6.0",

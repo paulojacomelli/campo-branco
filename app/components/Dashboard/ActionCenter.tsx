@@ -49,7 +49,7 @@ export default function ActionCenter({
     // 1. Pending Annotation (Mock)
     if (hasPendingAnnotation) {
         items.push(
-            <div key="pending-annotation" className="bg-primary-light dark:bg-primary-light/10 rounded-2xl md:rounded-3xl p-2.5 md:p-5 border border-amber-100 dark:border-amber-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
+            <div key="pending-annotation" className="bg-primary-light dark:bg-primary-light/10 rounded-lg p-2.5 md:p-5 border border-amber-100 dark:border-amber-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start md:items-center gap-2.5 w-full md:w-auto">
                     <div className="bg-white dark:bg-primary-dark/30 p-1.5 md:p-3 rounded-full shrink-0 shadow-sm border border-amber-100 dark:border-amber-900/20">
                         <AlertCircle className="w-5 h-5 md:w-6 md:h-6 text-primary dark:text-primary-light" />
@@ -73,7 +73,7 @@ export default function ActionCenter({
                 </div>
 
                 <div className="pl-9 md:pl-0 w-full md:w-auto mt-1 md:mt-0">
-                    <button className="w-full md:w-auto bg-white dark:bg-surface text-main border border-amber-200 dark:border-amber-800 font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-lg md:rounded-full flex items-center justify-center gap-2 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors shadow-sm whitespace-nowrap">
+                    <button className="w-full md:w-auto bg-white dark:bg-surface text-main border border-amber-200 dark:border-amber-800 font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-md flex items-center justify-center gap-2 hover:bg-primary-light dark:hover:bg-primary-dark/40 transition-colors shadow-sm whitespace-nowrap">
                         ANOTAR <ArrowRight className="w-3 h-3 md:w-3.5 md:h-3.5" />
                     </button>
                 </div>
@@ -84,7 +84,7 @@ export default function ActionCenter({
     // 2. Pending Maps
     if (pendingMapsCount > 0) {
         items.push(
-            <div key="pending-maps" className="bg-green-50 dark:bg-green-900/10 rounded-2xl md:rounded-3xl p-2.5 md:p-5 border border-green-100 dark:border-green-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
+            <div key="pending-maps" className="bg-green-50 dark:bg-green-900/10 rounded-lg p-2.5 md:p-5 border border-green-100 dark:border-green-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start md:items-center gap-2.5 w-full md:w-auto">
                     <div className="bg-white dark:bg-green-900/30 p-1.5 md:p-3 rounded-full shrink-0 shadow-sm border border-green-100 dark:border-green-900/20">
                         <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6 text-green-500 dark:text-green-400" />
@@ -114,7 +114,7 @@ export default function ActionCenter({
     // 3. Expiring Maps Notification
     expiringMaps.forEach(map => {
         items.push(
-            <div key={`expire-${map.id}`} className="bg-orange-50 dark:bg-orange-900/10 rounded-2xl md:rounded-3xl p-2.5 md:p-5 border border-orange-100 dark:border-orange-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
+            <div key={`expire-${map.id}`} className="bg-orange-50 dark:bg-orange-900/10 rounded-lg p-2.5 md:p-5 border border-orange-100 dark:border-orange-900/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start md:items-center gap-2.5 w-full md:w-auto">
                     <div className="bg-white dark:bg-orange-900/30 p-1.5 md:p-3 rounded-full shrink-0 shadow-sm border border-orange-100 dark:border-orange-900/20">
                         <AlertCircle className="w-5 h-5 md:w-6 md:h-6 text-orange-500 dark:text-orange-400" />
@@ -142,7 +142,7 @@ export default function ActionCenter({
     // 4. City Completion (Celebration)
     if (cityCompletion && cityCompletion.percentage === 100) {
         items.push(
-            <div key="city-completion" className="bg-primary-light dark:bg-primary-light/20 rounded-2xl md:rounded-3xl p-2.5 md:p-5 border border-primary-light/50 dark:border-primary-dark/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
+            <div key="city-completion" className="bg-primary-light dark:bg-primary-light/20 rounded-lg p-2.5 md:p-5 border border-primary-light/50 dark:border-primary-dark/20 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start md:items-center gap-2.5 w-full md:w-auto">
                     <div className="bg-white dark:bg-primary-dark/30 p-1.5 md:p-3 rounded-full shrink-0 shadow-sm border border-primary-light/50 dark:border-primary-dark/20">
                         <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-light0 dark:text-blue-400" />
@@ -164,7 +164,7 @@ export default function ActionCenter({
                     </p>
                 </div>
                 <div className="pl-9 md:pl-0 w-full md:w-auto mt-1 md:mt-0">
-                    <button className="w-full md:w-auto bg-white dark:bg-surface text-main border border-primary-light dark:border-primary-dark/50 font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-lg md:rounded-full flex items-center justify-center gap-2 hover:bg-primary-light/50 dark:hover:bg-primary-dark/40 transition-colors shadow-sm whitespace-nowrap">
+                    <button className="w-full md:w-auto bg-white dark:bg-surface text-main border border-primary-light dark:border-primary-dark/50 font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-md flex items-center justify-center gap-2 hover:bg-primary-light/50 dark:hover:bg-primary-dark/40 transition-colors shadow-sm whitespace-nowrap">
                         VER RELATÓRIO <ArrowRight className="w-3 h-3 md:w-3.5 md:h-3.5" />
                     </button>
                 </div>
@@ -189,7 +189,7 @@ export default function ActionCenter({
             const buttonHover = isWarning ? "hover:bg-orange-100 dark:hover:bg-orange-900/40" : "hover:bg-red-100 dark:hover:bg-red-900/40";
 
             items.push(
-                <div key={`idle-${territory.id}`} className={`${bgColor} rounded-2xl md:rounded-3xl p-2.5 md:p-5 border ${borderColor} flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow`}>
+                <div key={`idle-${territory.id}`} className={`${bgColor} rounded-lg p-2.5 md:p-5 border ${borderColor} flex flex-col md:flex-row md:items-center gap-2 md:gap-4 hover:shadow-sm transition-shadow`}>
                     <div className="flex items-start md:items-center gap-2.5 w-full md:w-auto">
                         <div className={`${iconBg} p-1.5 md:p-3 rounded-full shrink-0 shadow-sm border ${iconBorder}`}>
                             <AlertTriangle className={`w-5 h-5 md:w-6 md:h-6 ${iconColor}`} />
@@ -223,7 +223,7 @@ export default function ActionCenter({
                     <div className="pl-9 md:pl-0 w-full md:w-auto mt-1 md:mt-0">
                         <button
                             onClick={() => onAssignTerritory && onAssignTerritory(territory)}
-                            className={`w-full md:w-auto bg-white dark:bg-surface text-main border ${buttonBorder} font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-lg md:rounded-full flex items-center justify-center gap-2 ${buttonHover} transition-colors shadow-sm whitespace-nowrap`}
+                            className={`w-full md:w-auto bg-white dark:bg-surface text-main border ${buttonBorder} font-bold text-[10px] md:text-xs py-1.5 md:py-3 px-4 md:px-6 rounded-md flex items-center justify-center gap-2 ${buttonHover} transition-colors shadow-sm whitespace-nowrap`}
                         >
                             DESIGNAR <ArrowRight className="w-3 h-3 md:w-3.5 md:h-3.5" />
                         </button>

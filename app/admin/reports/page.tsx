@@ -52,7 +52,9 @@ export default function AdminReportsPage() {
                 .subscribe();
 
             return () => {
-                supabase.removeChannel(channel);
+                setTimeout(() => {
+                    supabase.removeChannel(channel);
+                }, 100);
             };
         }
     }, [isSuperAdmin]);

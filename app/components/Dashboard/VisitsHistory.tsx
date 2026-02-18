@@ -204,7 +204,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
     };
 
     if (loading) return (
-        <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border h-40 flex items-center justify-center">
+        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border h-40 flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-primary-light/500" />
         </div>
     );
@@ -212,7 +212,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
     // if (visits.length === 0) return null; // MOVED: Render empty state inside return
 
     return (
-        <div className="bg-surface p-6 rounded-3xl shadow-sm border border-surface-border">
+        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border">
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <History className="w-5 h-5 text-purple-600 dark:text-purple-400" />
@@ -245,7 +245,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
             ) : (
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {visits.map((visit) => (
-                        <div key={visit.id} className="p-4 rounded-2xl bg-background border border-surface-border hover:border-purple-200 dark:hover:border-purple-800 transition-colors group">
+                        <div key={visit.id} className="p-4 rounded-lg bg-background border border-surface-border hover:border-purple-200 dark:hover:border-purple-800 transition-colors group">
 
                             {editingId === visit.id ? (
                                 // EDIT MODE
@@ -260,7 +260,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                                     <div>
                                         <label className="text-[10px] font-bold text-muted uppercase">Resultado</label>
                                         <select
-                                            className="w-full mt-1 p-2 rounded-xl border border-surface-border text-sm bg-surface text-main"
+                                            className="w-full mt-1 p-2 rounded-lg border border-surface-border text-sm bg-surface text-main"
                                             value={editForm.status}
                                             onChange={e => setEditForm({ ...editForm, status: e.target.value })}
                                         >
@@ -275,7 +275,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                                         <label className="text-[10px] font-bold text-muted uppercase">Observações</label>
                                         <input
                                             type="text"
-                                            className="w-full mt-1 p-2 rounded-xl border border-surface-border text-sm bg-surface text-main"
+                                            className="w-full mt-1 p-2 rounded-lg border border-surface-border text-sm bg-surface text-main"
                                             value={editForm.observations}
                                             onChange={e => setEditForm({ ...editForm, observations: e.target.value })}
                                         />
@@ -283,7 +283,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
 
                                     <button
                                         onClick={() => saveEdit(visit)}
-                                        className="w-full bg-purple-600 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-2"
+                                        className="w-full bg-purple-600 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-2"
                                     >
                                         <Check className="w-3 h-3" />
                                         Salvar Alterações
@@ -317,7 +317,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                                             </button>
 
                                             {openMenuId === visit.id && (
-                                                <div className="absolute right-0 top-full mt-2 w-32 bg-surface rounded-2xl shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                                <div className="absolute right-0 top-full mt-2 w-32 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                                     <button
                                                         onClick={() => {
                                                             startEdit(visit);
