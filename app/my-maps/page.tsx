@@ -201,7 +201,7 @@ export default function CongregationListPage() {
                         placeholder="Buscar congregação..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
+                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-[0_4px_30px_rgba(0,0,0,0.03)] focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-muted"
                     />
                 </div>
             </div>
@@ -212,7 +212,7 @@ export default function CongregationListPage() {
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
                         <button
                             onClick={() => setSelectedCategory('Todas')}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === 'Todas' ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === 'Todas' ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
                         >
                             Todas
                         </button>
@@ -220,7 +220,7 @@ export default function CongregationListPage() {
                             <button
                                 key={cat}
                                 onClick={() => setSelectedCategory(cat)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === cat ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === cat ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
                             >
                                 {cat}
                             </button>
@@ -248,10 +248,10 @@ export default function CongregationListPage() {
                     filteredCongregations.map(cong => (
                         <div
                             key={cong.id}
-                            className="group bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center gap-4 relative"
+                            className="group bg-surface rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center gap-4 relative"
                         >
                             <Link href={`/my-maps/city?congregationId=${cong.id}`} prefetch={false} className="flex-1 flex items-center gap-4 min-w-0">
-                                <div className="w-10 h-10 bg-primary-light/50 dark:bg-primary-dark/30 text-primary dark:text-primary-light rounded-xl flex items-center justify-center shrink-0">
+                                <div className="w-10 h-10 bg-primary-light/50 dark:bg-primary-dark/30 text-primary dark:text-primary-light rounded-lg flex items-center justify-center shrink-0">
                                     <Building2 className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">

@@ -1,4 +1,4 @@
-'use server';
+// Função de Geocoding (Executada no Cliente para suporte a Static Export/APK)
 
 /**
  * Server Action para Geocoding via Nominatim (OpenStreetMap)

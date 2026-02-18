@@ -83,7 +83,7 @@ export default function WitnessingPage() {
             {/* Header */}
             <div className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border/50 backdrop-blur-md bg-surface/80 supports-[backdrop-filter]:bg-surface/60">
                 <div className="flex items-center gap-3">
-                    <div className="bg-amber-500/10 dark:bg-amber-500/20 p-2 rounded-xl text-amber-600 dark:text-amber-500 border border-amber-500/10">
+                    <div className="bg-amber-500/10 dark:bg-amber-500/20 p-2 rounded-lg text-amber-600 dark:text-amber-500 border border-amber-500/10">
                         <Store className="w-5 h-5" />
                     </div>
                     <div>
@@ -102,7 +102,7 @@ export default function WitnessingPage() {
                         placeholder="Buscar congregação..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-surface border border-surface-border text-sm font-medium rounded-2xl py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50 focus:outline-none transition-all placeholder:text-muted-foreground/50"
+                        className="w-full bg-surface border border-surface-border text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50 focus:outline-none transition-all placeholder:text-muted-foreground/50"
                     />
                 </div>
             </div>
@@ -117,11 +117,11 @@ export default function WitnessingPage() {
                         <Link
                             key={cong.id}
                             href={`/witnessing/congregation?congregationId=${cong.id}`}
-                            className="block bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-amber-500/20 transition-all active:scale-[0.98] group"
+                            className="block bg-surface rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-amber-500/20 transition-all active:scale-[0.98] group"
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
-                                    <div className="bg-primary/5 dark:bg-primary/10 text-primary p-3 rounded-xl group-hover:bg-amber-500/10 group-hover:text-amber-600 dark:group-hover:text-amber-500 transition-colors">
+                                    <div className="bg-primary/5 dark:bg-primary/10 text-primary p-3 rounded-lg group-hover:bg-amber-500/10 group-hover:text-amber-600 dark:group-hover:text-amber-500 transition-colors">
                                         <Building2 className="w-5 h-5" />
                                     </div>
                                     <h3 className="font-semibold text-base">{cong.name}</h3>
