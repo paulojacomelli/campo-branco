@@ -35,20 +35,25 @@ function WitnessingCityListContent() {
             return;
         }
 
+        let isMounted = true;
         const fetchCities = async () => {
-            const { data, error } = await supabase
-                .from('cities')
-                .select('*')
-                .eq('congregation_id', congregationId)
-                .order('name');
+            try {
+                const { data, error } = await supabase
+                    .from('cities')
+                    .select('*')
+                    .eq('congregation_id', congregationId)
+                    .order('name');
 
-            if (data) {
-                setCities(data);
+                if (error) throw error;
+
+                if (data && isMounted) {
+                    setCities(data);
+                }
+            } catch (error: any) {
+                console.error("Error fetching cities:", error.message || error);
+            } finally {
+                if (isMounted) setLoading(false);
             }
-            if (error) {
-                console.error("Error fetching cities:", error.message, error.details, error.hint);
-            }
-            setLoading(false);
         };
 
         fetchCities();
@@ -122,7 +127,7 @@ function WitnessingCityListContent() {
             </div>
 
             {/* List */}
-            <main className="px-6 py-4 space-y-3">
+            <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {loading ? (
                     <div className="flex justify-center p-8">
                         <Loader2 className="w-8 h-8 animate-spin text-amber-500" />

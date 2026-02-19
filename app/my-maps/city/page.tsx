@@ -103,11 +103,7 @@ function CityListContent() {
             .subscribe();
 
         return () => {
-            setTimeout(() => {
-                if (channel) {
-                    supabase.removeChannel(channel).catch(() => { });
-                }
-            }, 100);
+            supabase.removeChannel(channel);
         };
     }, [congregationId]);
 
@@ -404,7 +400,7 @@ function CityListContent() {
                         {/* Legend removed by simplified view */}
                     </div>
 
-                    <main className="px-6 py-4 space-y-3">
+                    <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                         {loading ? (
                             <div className="flex justify-center p-8">
                                 <Loader2 className="w-8 h-8 animate-spin text-primary" />

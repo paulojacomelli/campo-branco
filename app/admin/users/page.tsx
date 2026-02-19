@@ -9,7 +9,6 @@ import {
     User,
     Loader2,
     Search,
-    Settings2,
     Building2,
     Mail,
     MoreVertical,
@@ -20,8 +19,9 @@ import {
     Pencil,
     Users,
     CheckCircle2,
-    Wand2,
-    RefreshCw
+    Globe,
+    ExternalLink,
+    UserPlus2
 } from 'lucide-react';
 import Link from 'next/link';
 import BottomNav from '@/app/components/BottomNav';
@@ -42,10 +42,9 @@ interface Congregation {
 }
 
 const ROLE_DEFINITIONS = [
-    { label: 'Publicador', value: 'PUBLICADOR', color: 'bg-green-100 text-green-700' },
-    { label: 'Servo (Servo de territórios)', value: 'SERVO', color: 'bg-primary-light text-primary-dark' },
-    { label: 'Ancião (Superintendente de Serviço)', value: 'ANCIAO', color: 'bg-purple-100 text-purple-700' },
-    { label: 'Superadmin', value: 'SUPER_ADMIN', color: 'bg-red-100 text-red-700' },
+    { label: 'Publicador', value: 'PUBLICADOR', color: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800/30' },
+    { label: 'Servo (Servo de territórios)', value: 'SERVO', color: 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800/30' },
+    { label: 'Ancião (Superintendente de Serviço)', value: 'ANCIAO', color: 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-800/30' },
 ];
 
 export default function SuperAdminUsersPage() {
@@ -68,7 +67,6 @@ export default function SuperAdminUsersPage() {
     const fetchInitialData = async () => {
         setLoadingData(true);
         try {
-            // Fetch Congregations
             const { data: congData, error: congError } = await supabase
                 .from('congregations')
                 .select('id, name')
@@ -76,7 +74,6 @@ export default function SuperAdminUsersPage() {
             if (congError) throw congError;
             setCongregations(congData || []);
 
-            // Fetch Users
             let queryBuilder = supabase.from('users').select('*').order('name');
             if (!isSuperAdmin && congregationId) {
                 queryBuilder = queryBuilder.eq('congregation_id', congregationId);
@@ -86,7 +83,7 @@ export default function SuperAdminUsersPage() {
             if (usersError) throw usersError;
             setUsers(usersData || []);
         } catch (error) {
-            console.error("Error fetching admin users data:", error);
+            console.error("Erro ao buscar dados dos usuários:", error);
         } finally {
             setLoadingData(false);
         }
@@ -100,8 +97,6 @@ export default function SuperAdminUsersPage() {
                 router.push('/dashboard');
             } else {
                 fetchInitialData();
-
-                // Listen for changes
                 const channel = supabase
                     .channel('public:users_admin')
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
@@ -110,7 +105,6 @@ export default function SuperAdminUsersPage() {
                     .subscribe();
 
                 return () => {
-                    // Pequeno delay para evitar erro de WebSocket se o unmount for muito rápido
                     setTimeout(() => {
                         supabase.removeChannel(channel);
                     }, 100);
@@ -119,7 +113,6 @@ export default function SuperAdminUsersPage() {
         }
     }, [user, isSuperAdmin, isElder, congregationId, loading, router]);
 
-    // Close menu on click outside
     useEffect(() => {
         const handleClickOutside = () => setOpenMenuId(null);
         if (openMenuId) {
@@ -128,17 +121,13 @@ export default function SuperAdminUsersPage() {
         return () => window.removeEventListener('click', handleClickOutside);
     }, [openMenuId]);
 
-
     const handleSaveUser = async () => {
         if ((!isSuperAdmin && !isElder) || !editingUser) return;
-
-        // Security Check: Elders can only edit users in their own congregation
         if (!isSuperAdmin && editingUser.congregation_id !== congregationId) {
             alert("Você só pode editar usuários da sua própria congregação.");
             return;
         }
 
-        // Security Check: Elders cannot edit Super Admins or promote to Super Admin
         if (!isSuperAdmin) {
             if (editingUser.role === 'SUPER_ADMIN' || (editingUser.roles && editingUser.roles.includes('SUPER_ADMIN'))) {
                 alert("Você não pode editar um Super Admin.");
@@ -159,8 +148,7 @@ export default function SuperAdminUsersPage() {
             const { error } = await supabase
                 .from('users')
                 .update({
-                    name: editName,
-                    // roles: editRoles, // roles field might not exist in simple Supabase table, using 'role'
+                    name: editName.trim(),
                     role: legacyRole,
                     congregation_id: editCongId || null
                 })
@@ -169,50 +157,8 @@ export default function SuperAdminUsersPage() {
             if (error) throw error;
             setShowEditModal(false);
         } catch (error) {
-            console.error("Error saving user: ", error);
+            console.error("Erro ao salvar usuário:", error);
             alert("Erro ao salvar alterações.");
-        } finally {
-            setUpdatingId(null);
-        }
-    };
-
-    const selectRoleLocal = (targetRole: string) => {
-        setEditRoles([targetRole]);
-    };
-
-    const handleDeleteUser = async (userId: string) => {
-        if (!isSuperAdmin && !isElder) {
-            alert("Você não tem permissão para excluir usuários.");
-            return;
-        }
-
-        const targetUser = users.find(u => u.id === userId);
-        if (!targetUser) return;
-
-        // Security Check: Elders can only delete users in their own congregation
-        if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
-            alert("Você só pode excluir usuários da sua própria congregação.");
-            return;
-        }
-
-        // Security Check: Elders Cannot delete Super Admins
-        if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
-            alert("Apenas Super Admins podem excluir outros Super Admins.");
-            return;
-        }
-
-        if (!confirm('Tem certeza que deseja excluir este usuário definitivamente? Esta ação não pode ser desfeita.')) return;
-
-        setUpdatingId(userId);
-        try {
-            const { error } = await supabase
-                .from('users')
-                .delete()
-                .eq('id', userId);
-            if (error) throw error;
-        } catch (error) {
-            console.error("Error deleting user: ", error);
-            alert("Erro ao excluir usuário.");
         } finally {
             setUpdatingId(null);
         }
@@ -224,17 +170,12 @@ export default function SuperAdminUsersPage() {
 
         setLoadingData(true);
         try {
-            // Note: Supabase requires users to be in Auth before appearing in public.users (usually via trigger)
-            // Manual creation via public.users without auth record won't allow login.
-            // For now, let's just insert to show in list, but warn the developer.
-            console.warn("Manual user creation in Supabase requires Auth registration first.");
-
             const { error } = await supabase
                 .from('users')
                 .insert({
-                    id: crypto.randomUUID(), // This is just a placeholder, login won't work without auth entry
-                    name: newUser.name,
-                    email: newUser.email,
+                    id: crypto.randomUUID(),
+                    name: newUser.name.trim(),
+                    email: newUser.email.trim().toLowerCase(),
                     congregation_id: isSuperAdmin ? (newUser.congregationId || null) : congregationId,
                     role: 'PUBLICADOR'
                 });
@@ -242,41 +183,47 @@ export default function SuperAdminUsersPage() {
             if (error) throw error;
             setShowCreateModal(false);
             setNewUser({ name: '', email: '', congregationId: '' });
-            alert("Usuário criado (Lembre-se: ele precisa logar com este e-mail para ativar a conta).");
+            alert("Usuário criado com sucesso!");
         } catch (error) {
-            console.error("Error creating user: ", error);
-            alert("Erro ao criar usuário. Verifique se o e-mail é válido.");
+            console.error("Erro ao criar usuário:", error);
+            alert("Erro ao criar usuário.");
         } finally {
             setLoadingData(false);
         }
     };
 
-    const handlePopulateData = async () => {
-        if (!isSuperAdmin) return;
-        if (!confirm("Isso vai atribuir nomes e congregações fictícios para usuários com dados faltando. Continuar?")) return;
+    const handleDeleteUser = async (userId: string) => {
+        if (!isSuperAdmin && !isElder) return;
+        const targetUser = users.find(u => u.id === userId);
+        if (!targetUser) return;
 
-        setLoadingData(true);
+        if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
+            alert("Você só pode excluir usuários da sua própria congregação.");
+            return;
+        }
+
+        if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
+            alert("Apenas Super Admins podem excluir outros Super Admins.");
+            return;
+        }
+
+        if (!confirm('Excluir este usuário definitivamente?')) return;
+
+        setUpdatingId(userId);
         try {
-            const dummyNames = ["João Silva", "Maria Oliveira", "Carlos Santos", "Ana Souza"];
-            for (let i = 0; i < users.length; i++) {
-                const u = users[i];
-                if (!u.name || u.name === 'Sem nome') {
-                    await supabase.from('users').update({
-                        name: dummyNames[i % dummyNames.length],
-                        congregation_id: congregations[i % congregations.length]?.id || null
-                    }).eq('id', u.id);
-                }
-            }
-            fetchInitialData();
+            const { error } = await supabase
+                .from('users')
+                .delete()
+                .eq('id', userId);
+            if (error) throw error;
         } catch (error) {
-            console.error("Error populating data:", error);
-            alert("Erro ao popular dados.");
+            console.error("Erro ao excluir usuário:", error);
+            alert("Erro ao excluir usuário.");
         } finally {
-            setLoadingData(false);
+            setUpdatingId(null);
         }
     };
 
-    // Filter logic
     const filteredUsers = users.filter(u =>
     (u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.email?.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -292,149 +239,138 @@ export default function SuperAdminUsersPage() {
 
     return (
         <div className="min-h-screen bg-background pb-32 font-sans text-main">
-            {/* Header */}
-            <header className="bg-surface border-b border-surface-border sticky top-0 z-40 px-6 py-4">
-                <div className="max-w-5xl mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/settings" className="p-2 hover:bg-background rounded-xl transition-colors text-muted hover:text-main">
-                            <ChevronLeft className="w-6 h-6" />
-                        </Link>
-                        <div>
-                            <h1 className="text-xl font-bold text-main tracking-tight">Gerenciar Usuários</h1>
-                            <p className="text-xs text-muted font-medium">{isSuperAdmin ? 'Controle de acesso global' : 'Membros da Congregação'}</p>
-                        </div>
+            {/* Header seguindo o padrão padrão do app (ex: ReportsPage) */}
+            <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
+                    <div className="bg-emerald-600 p-2 rounded-lg text-white shadow-lg shadow-emerald-500/20">
+                        <Users className="w-5 h-5" />
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowCreateModal(true)}
-                            className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 shadow-lg shadow-primary-light/500/30 transition-all active:scale-95"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Novo Usuário
-                        </button>
+                    <div>
+                        <h1 className="font-bold text-lg text-main tracking-tight leading-tight">Membros</h1>
+                        <p className="text-[10px] text-muted font-bold uppercase tracking-widest">
+                            {isSuperAdmin ? 'Administração Global' : 'Gestão da Congregação'}
+                        </p>
                     </div>
                 </div>
+
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 text-sm"
+                >
+                    <UserPlus2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Adicionar</span>
+                </button>
             </header>
 
-
-            <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-
-                {/* Search & Summary */}
-                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                    <div className="relative w-full md:max-w-md">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                        <input
-                            type="text"
-                            placeholder="Buscar por nome ou email..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-surface border border-surface-border rounded-2xl py-3.5 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all text-sm font-medium text-main placeholder-muted"
-                        />
-                    </div>
-                    <div className="flex items-center gap-3 bg-primary-light/50 dark:bg-blue-900/20 px-4 py-2 rounded-xl border border-primary-light dark:border-blue-800">
-                        <Users className="w-5 h-5 text-primary dark:text-blue-400" />
-                        <span className="text-sm font-bold text-primary-dark dark:text-blue-300">{users.length} usuários</span>
-                    </div>
+            <main className="max-w-4xl mx-auto px-6 py-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {/* Barra de Busca padrão */}
+                <div className="relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted w-5 h-5 group-focus-within:text-emerald-500 transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Buscar membros..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full bg-surface border-0 text-main text-sm font-medium rounded-lg py-4 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition-all placeholder:text-muted"
+                    />
                 </div>
 
                 {loadingData ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-4">
-                        <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                        <p className="text-muted font-bold animate-pulse uppercase tracking-widest text-[10px]">Carregando Usuários</p>
+                        <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-muted font-bold text-sm uppercase tracking-widest">Sincronizando...</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {filteredUsers.length === 0 ? (
-                            <div className="bg-surface rounded-3xl p-12 text-center border border-dashed border-surface-border">
-                                <Search className="w-12 h-12 text-muted mx-auto mb-4" />
-                                <p className="text-muted font-bold">Nenhum usuário encontrado</p>
-                                <p className="text-xs text-muted mt-1">Tente outro termo de busca</p>
+                            <div className="col-span-full py-20 text-center opacity-50">
+                                <Users className="w-12 h-12 mx-auto mb-3 text-muted" />
+                                <p className="text-muted font-medium">Nenhum membro encontrado</p>
                             </div>
                         ) : (
                             filteredUsers.map((u) => (
-                                <div key={u.id} className="bg-surface rounded-2xl p-5 border border-surface-border shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-14 h-14 rounded-2xl bg-primary-light/50 dark:bg-blue-900/20 flex items-center justify-center text-primary dark:text-blue-400 shadow-inner group-hover:scale-110 transition-transform">
-                                            <User className="w-8 h-8" />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="font-bold text-main">{u.name || 'Sem nome'}</h3>
-                                                {u.provider === 'google.com' && <span className="text-[10px] bg-primary-light/50 dark:bg-blue-900/30 text-primary dark:text-blue-300 px-1.5 py-0.5 rounded font-bold uppercase">Google</span>}
+                                <div key={u.id} className="bg-surface rounded-lg p-5 border border-surface-border shadow-sm hover:border-emerald-500/30 transition-all relative group">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-lg bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-emerald-600 shrink-0">
+                                                <User className="w-6 h-6" />
                                             </div>
-                                            <div className="flex flex-col gap-0.5 mt-1">
-                                                <div className="flex items-center gap-1.5 text-muted text-[11px]">
-                                                    <Mail className="w-3 h-3" />
-                                                    <span>{u.email}</span>
+                                            <div className="min-w-0">
+                                                <h3 className="font-bold text-main text-base truncate">{u.name || 'Sem nome'}</h3>
+                                                <div className="flex flex-col gap-0.5 mt-1">
+                                                    <span className="text-xs text-muted flex items-center gap-1.5 truncate">
+                                                        <Mail className="w-3 h-3 shrink-0" />
+                                                        {u.email}
+                                                    </span>
+                                                    {u.congregation_id && (
+                                                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1.5 uppercase tracking-tight">
+                                                            <Building2 className="w-3 h-3 shrink-0" />
+                                                            {congregations.find(c => c.id === u.congregation_id)?.name}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                {u.congregation_id && (
-                                                    <div className="flex items-center gap-1.5 text-primary-light/500/70 dark:text-blue-400/70 text-[11px] font-bold uppercase tracking-wider">
-                                                        <Building2 className="w-3 h-3" />
-                                                        <span>{congregations.find(c => c.id === u.congregation_id)?.name || 'Congregação não encontrada'}</span>
-                                                    </div>
-                                                )}
                                             </div>
+                                        </div>
+
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setOpenMenuId(openMenuId === u.id ? null : u.id);
+                                            }}
+                                            className="p-2 text-muted hover:text-main hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all"
+                                        >
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-surface-border flex items-center justify-between">
+                                        <div className="flex gap-2">
+                                            {(u.roles || [u.role]).map(role => {
+                                                const def = ROLE_DEFINITIONS.find(r => r.value === role);
+                                                return (
+                                                    <span key={role} className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${def?.color || 'bg-background text-muted border-surface-border'}`}>
+                                                        {def?.label || role}
+                                                    </span>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-                                        {/* Simplified Status Label */}
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {(u.roles || [u.role]).map(role => (
-                                                <span key={role} className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${ROLE_DEFINITIONS.find(r => r.value === role)?.color || 'bg-gray-100 dark:bg-gray-800 text-muted'}`}>
-                                                    {ROLE_DEFINITIONS.find(r => r.value === role)?.label || role}
-                                                </span>
-                                            ))}
-                                        </div>
-
-                                        <div className="relative">
+                                    {/* Action Dropdown seguindo o padrão do app */}
+                                    {openMenuId === u.id && (
+                                        <div className="absolute right-4 top-14 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-20 min-w-[140px] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                                             <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setOpenMenuId(openMenuId === u.id ? null : u.id);
+                                                onClick={() => {
+                                                    setEditingUser(u);
+                                                    setEditName(u.name || '');
+                                                    setEditRoles(u.roles || [u.role] || ['PUBLICADOR']);
+                                                    setEditCongId(u.congregation_id || '');
+                                                    setShowEditModal(true);
+                                                    setOpenMenuId(null);
                                                 }}
-                                                className="p-2 text-muted hover:text-main hover:bg-background rounded-full transition-all"
+                                                className="w-full px-4 py-2 text-left text-xs font-bold text-main hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 flex items-center gap-2 transition-colors border-b border-surface-border"
                                             >
-                                                <MoreVertical className="w-5 h-5" />
+                                                <Pencil className="w-3.5 h-3.5" />
+                                                Editar
                                             </button>
-
-                                            {openMenuId === u.id && (
-                                                <div className="absolute right-0 top-10 bg-surface rounded-xl shadow-xl border border-surface-border p-1 z-20 min-w-[140px] animate-in fade-in zoom-in-95 duration-200">
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditingUser(u);
-                                                            setEditName(u.name || '');
-                                                            setEditRoles(u.roles || [u.role] || ['PUBLICADOR']);
-                                                            setEditCongId(u.congregation_id || '');
-                                                            setShowEditModal(true);
-                                                            setOpenMenuId(null);
-                                                        }}
-                                                        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-muted hover:bg-primary-light/50 dark:hover:bg-blue-900/20 hover:text-primary dark:hover:text-blue-400 rounded-lg transition-colors w-full text-left"
-                                                    >
-                                                        <Pencil className="w-4 h-4" />
-                                                        Editar
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            handleDeleteUser(u.id);
-                                                            setOpenMenuId(null);
-                                                        }}
-                                                        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors w-full text-left"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                        Excluir
-                                                    </button>
-                                                </div>
-                                            )}
+                                            <button
+                                                onClick={() => {
+                                                    handleDeleteUser(u.id);
+                                                    setOpenMenuId(null);
+                                                }}
+                                                className="w-full px-4 py-2 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                Excluir
+                                            </button>
                                         </div>
+                                    )}
 
-                                        {updatingId === u.id && (
-                                            <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-[2px] rounded-2xl flex items-center justify-center z-10">
-                                                <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                                            </div>
-                                        )}
-                                    </div>
+                                    {updatingId === u.id && (
+                                        <div className="absolute inset-0 bg-surface/60 backdrop-blur-[1px] rounded-lg flex items-center justify-center z-10 transition-all">
+                                            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         )}
@@ -442,171 +378,147 @@ export default function SuperAdminUsersPage() {
                 )}
             </main>
 
-            {/* Create User Modal */}
-            {
-                showCreateModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-surface w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-main tracking-tight">Novo Usuário</h2>
-                                    <p className="text-sm text-muted font-medium tracking-tight">Adicione manualmente um novo membro.</p>
-                                </div>
-                                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
-                                    <X className="w-6 h-6 text-muted" />
-                                </button>
+            {/* CREATE MODAL - Padrão clássico do app (ex: NewPointModal) */}
+            {showCreateModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                <UserPlus2 className="w-6 h-6 text-emerald-600" />
+                                Novo Membro
+                            </h2>
+                            <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+
+                        <form onSubmit={handleCreateUser} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nome Completo</label>
+                                <input
+                                    required
+                                    type="text"
+                                    value={newUser.name}
+                                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                                    className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                                    placeholder="Digite o nome..."
+                                />
                             </div>
 
-                            <form onSubmit={handleCreateUser} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Nome</label>
-                                    <input
-                                        required
-                                        type="text"
-                                        value={newUser.name}
-                                        onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all text-main placeholder-muted"
-                                        placeholder="Nome do publicador"
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">E-mail de Acesso</label>
+                                <input
+                                    required
+                                    type="email"
+                                    value={newUser.email}
+                                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                                    className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                                    placeholder="exemplo@gmail.com"
+                                />
+                            </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">E-mail de Acesso</label>
-                                    <input
-                                        required
-                                        type="email"
-                                        value={newUser.email}
-                                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all text-main placeholder-muted"
-                                        placeholder="exemplo@gmail.com"
-                                    />
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Congregação Inicial</label>
+                            {isSuperAdmin && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Congregação</label>
                                     <select
                                         value={newUser.congregationId}
                                         onChange={(e) => setNewUser({ ...newUser, congregationId: e.target.value })}
-                                        disabled={!isSuperAdmin} // Lock for Elders
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all disabled:opacity-50 text-main"
+                                        className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500/20 outline-none appearance-none cursor-pointer"
                                     >
-                                        <option value="">{isSuperAdmin ? "Sem vínculo inicial" : "Minha Congregação"}</option>
-                                        {congregations
-                                            .filter(c => isSuperAdmin || c.id === congregationId) // Show only relevant
-                                            .map(c => (
-                                                <option key={c.id} value={c.id}>{c.name}</option>
-                                            ))}
+                                        <option value="">Sem vínculo inicial</option>
+                                        {congregations.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
                                     </select>
                                 </div>
+                            )}
 
-                                <div className="pt-4 flex gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowCreateModal(false)}
-                                        className="flex-1 bg-background hover:bg-surface-highlight text-muted hover:text-main border border-surface-border font-bold py-3.5 rounded-2xl transition-all active:scale-95"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={loadingData}
-                                        className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-primary-light/500/30 transition-all active:scale-95 disabled:opacity-50"
-                                    >
-                                        {loadingData ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Criar Usuário'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
+                            <button
+                                type="submit"
+                                disabled={loadingData}
+                                className="w-full py-4 bg-gray-900 text-white rounded-lg font-bold shadow-lg mt-2 flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                            >
+                                {loadingData ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Criar Membro'}
+                            </button>
+                        </form>
                     </div>
-                )
-            }
+                </div>
+            )}
 
-            {/* Edit User Modal */}
-            {
-                showEditModal && editingUser && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-surface w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-main tracking-tight">Editar Usuário</h2>
-                                    <p className="text-sm text-muted font-medium tracking-tight">Gerencie as permissões e dados de {editingUser.name || 'usuário'}.</p>
-                                </div>
-                                <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
-                                    <X className="w-6 h-6 text-muted" />
-                                </button>
+            {/* EDIT MODAL - Padrão clássico do app */}
+            {showEditModal && editingUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                <Pencil className="w-6 h-6 text-emerald-600" />
+                                Editar Membro
+                            </h2>
+                            <button onClick={() => setShowEditModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+
+                        <div className="space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nome</label>
+                                <input
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                                />
                             </div>
 
-                            <div className="space-y-6">
-                                {/* Name Section */}
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Nome</label>
-                                    <input
-                                        type="text"
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all text-main"
-                                        placeholder="Nome do membro"
-                                    />
-                                </div>
-
-                                {/* Congregation Section */}
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1 flex items-center gap-1">
-                                        <Building2 className="w-3.5 h-3.5" /> Congregação
-                                    </label>
+                            {isSuperAdmin && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Congregação</label>
                                     <select
                                         value={editCongId}
                                         onChange={(e) => setEditCongId(e.target.value)}
-                                        disabled={!isSuperAdmin} // Lock for Elders
-                                        className="w-full bg-background border border-surface-border rounded-2xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary-light/500/20 focus:border-primary-light/500 transition-all disabled:opacity-50 text-main"
+                                        className="w-full bg-gray-50 border-none rounded-lg p-4 font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500/20 outline-none appearance-none cursor-pointer"
                                     >
-                                        <option value="">{isSuperAdmin ? "Sem vínculo" : "Minha Congregação"}</option>
-                                        {congregations
-                                            .filter(c => isSuperAdmin || c.id === congregationId)
-                                            .map(c => (
-                                                <option key={c.id} value={c.id}>{c.name}</option>
-                                            ))}
+                                        <option value="">Sem vínculo</option>
+                                        {congregations.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
                                     </select>
                                 </div>
+                            )}
 
-                                {/* Roles Section */}
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1 flex items-center gap-1">
-                                        <Shield className="w-3.5 h-3.5" /> Função (Nível de Acesso)
-                                    </label>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {ROLE_DEFINITIONS.map(role => {
-                                            const isActive = editRoles.includes(role.value);
-                                            return (
-                                                <button
-                                                    key={role.value}
-                                                    onClick={() => selectRoleLocal(role.value)}
-                                                    className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all active:scale-95
-                                                    ${isActive ? 'border-primary-light/500 bg-primary-light/50 dark:bg-blue-900/20 text-primary-dark dark:text-blue-300' : 'border-surface-border bg-background text-muted hover:border-gray-300 dark:hover:border-gray-600'}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nível de Acesso (Função)</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {ROLE_DEFINITIONS.map(role => {
+                                        const isActive = editRoles.includes(role.value);
+                                        return (
+                                            <button
+                                                key={role.value}
+                                                onClick={() => setEditRoles([role.value])}
+                                                className={`p-3 rounded-lg border text-xs font-bold transition-all
+                                                    ${isActive
+                                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-md scale-105'
+                                                        : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100'
+                                                    }
                                                 `}
-                                                >
-                                                    <span className="text-sm font-bold">{role.label}</span>
-                                                    {isActive && <CheckCircle2 className="w-5 h-5 animate-in zoom-in duration-200" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                            >
+                                                {role.label.split(' ')[0]}
+                                                {isActive && <CheckCircle2 className="w-3 h-3 inline-block ml-1" />}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-
-                                <button
-                                    onClick={handleSaveUser}
-                                    disabled={updatingId === editingUser.id}
-                                    className="w-full bg-main text-surface-highlight font-bold py-4 rounded-2xl shadow-xl hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {updatingId === editingUser.id ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Concluir Edição'}
-                                </button>
                             </div>
+
+                            <button
+                                onClick={handleSaveUser}
+                                disabled={updatingId === editingUser.id}
+                                className="w-full py-4 bg-gray-900 text-white rounded-lg font-bold shadow-lg mt-2 flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                            >
+                                {updatingId === editingUser.id ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar Alterações'}
+                            </button>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             <BottomNav />
-        </div >
+        </div>
     );
 }

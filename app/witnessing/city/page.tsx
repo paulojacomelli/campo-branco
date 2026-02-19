@@ -82,20 +82,26 @@ function WitnessingPointListContent() {
 
     // Fetch Points & Subscription
     const fetchPoints = useCallback(async () => {
-        if (!congregationId || !cityId) return;
-
-        const { data, error } = await supabase
-            .from('witnessing_points')
-            .select('*')
-            .eq('congregation_id', congregationId)
-            .eq('city_id', cityId)
-            .order('name');
-
-        if (data) setPoints(data);
-        if (error) {
-            console.error("Error fetching points:", error.message, error.details, error.hint);
+        if (!congregationId || !cityId) {
+            setLoading(false);
+            return;
         }
-        setLoading(false);
+
+        try {
+            const { data, error } = await supabase
+                .from('witnessing_points')
+                .select('*')
+                .eq('congregation_id', congregationId)
+                .eq('city_id', cityId)
+                .order('name');
+
+            if (error) throw error;
+            if (data) setPoints(data);
+        } catch (error) {
+            console.error("Error fetching points:", error);
+        } finally {
+            setLoading(false);
+        }
     }, [congregationId, cityId]);
 
     useEffect(() => {
@@ -374,7 +380,7 @@ function WitnessingPointListContent() {
                             <p className="text-muted font-medium">Nenhum ponto encontrado</p>
                         </div>
                     ) : (
-                        <div className="space-y-3 pb-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 pb-6">
                             {filteredPoints.map(point => {
                                 const isOccupied = point.status === 'OCCUPIED';
 
@@ -520,6 +526,7 @@ function WitnessingPointListContent() {
                 {/* Map View */}
                 <div className="h-96 w-full relative border-t border-surface-border">
                     <MapView
+                        disableGeocoding={true}
                         items={filteredPoints.map(p => ({
                             id: p.id,
                             lat: p.lat || 0,

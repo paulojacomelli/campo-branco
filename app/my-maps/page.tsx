@@ -102,10 +102,7 @@ export default function CongregationListPage() {
             .subscribe();
 
         return () => {
-            // Pequeno delay para evitar erro de WebSocket se o unmount for muito rápido
-            setTimeout(() => {
-                supabase.removeChannel(channel);
-            }, 100);
+            supabase.removeChannel(channel);
         };
     }, [isSuperAdmin]);
 
@@ -263,7 +260,7 @@ export default function CongregationListPage() {
             )}
 
             {/* List */}
-            <main className="px-6 py-4 space-y-3">
+            <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {loading && isSuperAdmin ? ( // Only show loading here if super admin, as others are redirecting
                     <div className="flex justify-center p-8">
                         <Loader2 className="w-8 h-8 animate-spin text-primary" />

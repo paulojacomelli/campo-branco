@@ -177,12 +177,29 @@ export default function SettingsPage() {
     const handlePromote = async (uid: string, currentRole: string) => {
         if (!confirm("Confirmar alteração de função?")) return;
         try {
-            const newRole = currentRole === 'SERVO' ? 'PUBLICADOR' : 'SERVO';
+            let newRole = '';
+            if (currentRole === 'ANCIAO') newRole = 'SERVO';
+            else if (currentRole === 'SERVO') newRole = 'PUBLICADOR';
+            else newRole = 'SERVO';
+
             const { error } = await supabase.from("users").update({ role: newRole }).eq("id", uid);
             if (error) throw error;
             setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: newRole } : m));
+            toast.success("Função atualizada com sucesso");
         } catch (e) {
             toast.error("Erro ao alterar função");
+        }
+    };
+
+    const handleSetAnciao = async (uid: string) => {
+        if (!confirm("Promover este membro a Superintendente de Serviço (Ancião)?")) return;
+        try {
+            const { error } = await supabase.from("users").update({ role: 'ANCIAO' }).eq("id", uid);
+            if (error) throw error;
+            setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: 'ANCIAO' } : m));
+            toast.success("Membro promovido a Ancião");
+        } catch (e) {
+            toast.error("Erro ao promover membro");
         }
     };
 
@@ -207,7 +224,6 @@ export default function SettingsPage() {
             // Update Supabase 'users' table
             const { error } = await supabase.from('users').update({
                 name: editName,
-                email: editEmail
             }).eq('id', user.id);
 
             if (error) throw error;
@@ -229,36 +245,7 @@ export default function SettingsPage() {
         }
     };
 
-    const handleExport = async () => {
-        if (!confirm("O download do backup será iniciado. Isso pode levar alguns segundos dependendo da quantidade de dados. Continuar?")) return;
 
-        try {
-            const response = await fetch('/api/admin/export');
-            if (!response.ok) throw new Error('Falha no export');
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const disposition = response.headers.get('content-disposition');
-            let filename = `backup-${new Date().toISOString()}.json`;
-            if (disposition && disposition.indexOf('attachment') !== -1) {
-                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-                const matches = filenameRegex.exec(disposition);
-                if (matches != null && matches[1]) {
-                    filename = matches[1].replace(/['"]/g, '');
-                }
-            }
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (e) {
-            console.error(e);
-            toast.error("Erro ao exportar dados.");
-        }
-    };
 
 
     const handleSignOut = async () => {
@@ -335,7 +322,6 @@ export default function SettingsPage() {
                             <button
                                 onClick={() => {
                                     setEditName(profileName || user.user_metadata?.full_name || '');
-                                    setEditEmail(user.email || '');
                                     setShowEditModal(true);
                                 }}
                                 className="bg-surface hover:bg-background text-main border border-surface-border font-bold py-3 px-6 rounded-lg flex items-center gap-2 transition-colors justify-center"
@@ -458,51 +444,39 @@ export default function SettingsPage() {
 
                 {/* Edit Profile Modal */}
                 {showEditModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-surface w-full max-w-md rounded-lg p-8 shadow-2xl animate-in zoom-in-95 duration-300">
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-main tracking-tight">Editar Perfil</h2>
-                                    <p className="text-sm text-muted font-medium tracking-tight">Atualize suas informações pessoais.</p>
-                                </div>
-                                <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
-                                    <X className="w-6 h-6 text-muted" />
-                                </button>
-                            </div>
-
-                            <div className="space-y-6">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Nome de Exibição</label>
-                                    <input
-                                        type="text"
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full bg-background border border-surface-border rounded-lg py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary text-main transition-all"
-                                        placeholder="Seu nome"
-                                    />
+                    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+                            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center my-8">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-main tracking-tight">Editar Perfil</h2>
+                                        <p className="text-sm text-muted font-medium tracking-tight">Atualize suas informações pessoais.</p>
+                                    </div>
+                                    <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
+                                        <X className="w-6 h-6 text-muted" />
+                                    </button>
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">E-mail de Contato</label>
-                                    <input
-                                        type="email"
-                                        value={editEmail}
-                                        onChange={(e) => setEditEmail(e.target.value)}
-                                        className="w-full bg-background border border-surface-border rounded-lg py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary text-main transition-all"
-                                        placeholder="seu@email.com"
-                                    />
-                                    <p className="text-[10px] text-orange-500 font-medium ml-1">
-                                        Nota: Isso altera apenas o cadastro, não o login.
-                                    </p>
-                                </div>
+                                <div className="space-y-6">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Nome de Exibição</label>
+                                        <input
+                                            type="text"
+                                            value={editName}
+                                            onChange={(e) => setEditName(e.target.value)}
+                                            className="w-full bg-background border border-surface-border rounded-lg py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary text-main transition-all"
+                                            placeholder="Seu nome"
+                                        />
+                                    </div>
 
-                                <button
-                                    onClick={handleSaveProfile}
-                                    disabled={saving}
-                                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-lg shadow-xl shadow-primary-light/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
-                                </button>
+                                    <button
+                                        onClick={handleSaveProfile}
+                                        disabled={saving}
+                                        className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-lg shadow-xl shadow-primary-light/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -559,18 +533,6 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* Export Button (Elder only) */}
-                            {isElder && !isSuperAdmin && (
-                                <div className="mt-4 flex justify-end">
-                                    <button
-                                        onClick={handleExport}
-                                        className="flex items-center gap-2 text-xs font-bold text-muted hover:text-primary transition-colors uppercase tracking-wider"
-                                    >
-                                        <Database className="w-4 h-4" />
-                                        Exportar Dados da Congregação
-                                    </button>
-                                </div>
-                            )}
                         </section>
                     </>
                 )}
@@ -627,8 +589,8 @@ export default function SettingsPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Actions - Only Elders can manage */}
-                                            {isElder && member.role !== 'SUPER_ADMIN' && member.role !== 'ANCIAO' && (
+                                            {/* Actions - Only Elders can manage, Super Admin manages everyone */}
+                                            {(isSuperAdmin || (isElder && member.role !== 'SUPER_ADMIN' && member.role !== 'ANCIAO')) && member.id !== user?.id && (
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => {
@@ -647,8 +609,22 @@ export default function SettingsPage() {
                                                                 className={`flex items-center gap-2 px-3 py-2.5 text-sm font-bold rounded-lg transition-colors w-full text-left ${member.role === 'SERVO' ? 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20' : 'text-primary hover:bg-primary-light/50 dark:hover:bg-primary-dark/30'}`}
                                                             >
                                                                 <Shield className="w-4 h-4" />
-                                                                {member.role === 'SERVO' ? "Rebaixar a Publicador" : "Promover a Servo"}
+                                                                {member.role === 'ANCIAO' ? "Rebaixar a Servo" :
+                                                                    member.role === 'SERVO' ? "Rebaixar a Publicador" :
+                                                                        "Promover a Servo"}
                                                             </button>
+                                                            {isSuperAdmin && member.role === 'SERVO' && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleSetAnciao(member.id);
+                                                                        setOpenMenuId(null);
+                                                                    }}
+                                                                    className="flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors w-full text-left border-t border-surface-border"
+                                                                >
+                                                                    <Shield className="w-4 h-4" />
+                                                                    Promover a Ancião
+                                                                </button>
+                                                            )}
                                                             <button
                                                                 onClick={() => handleRemove(member.id)}
                                                                 className="flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors w-full text-left"
@@ -750,15 +726,6 @@ export default function SettingsPage() {
                                             <Database className="w-4 h-4" />
                                             Dados Órfãos
                                         </Link>
-
-                                        {/* Notifications button removed */}
-                                        <button
-                                            onClick={handleExport}
-                                            className="inline-block bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/10 dark:hover:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm flex items-center gap-2"
-                                        >
-                                            <Database className="w-4 h-4" />
-                                            Exportar Backup Completo
-                                        </button>
                                     </div>
 
                                 </div>

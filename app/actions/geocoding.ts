@@ -17,14 +17,7 @@ export async function geocodeAddress(query: string) {
         // No server side, o delay é menos crítico para UX se for único, mas bom para evitar ban.
         // O cliente já tem um delay, mas aqui garantimos o header correto.
 
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(sanitizedQuery)}&limit=1`, {
-            headers: {
-                'User-Agent': 'CampoBrancoApp/1.0 (contato@campobranco.com.br)', // User-Agent mais descritivo
-                'Referer': 'https://campobranco.com.br'
-            },
-            cache: 'force-cache', // Cachear resultados comuns
-            next: { revalidate: 86400 } // Revalidar a cada 24h
-        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(sanitizedQuery)}&limit=1`);
 
         if (!response.ok) {
             console.error(`[Geocode] Error fetching: ${response.statusText}`);

@@ -36,19 +36,28 @@ export default function WitnessingPage() {
 
         // If Super Admin (or no congregation assigned), load list
         if (isSuperAdmin) {
+            let isMounted = true;
             const fetchCongregations = async () => {
-                const { data, error } = await supabase
-                    .from('congregations')
-                    .select('*')
-                    .order('name');
+                try {
+                    const { data, error } = await supabase
+                        .from('congregations')
+                        .select('*')
+                        .order('name');
 
-                if (data) {
-                    setCongregations(data);
+                    if (error) throw error;
+
+                    if (data && isMounted) {
+                        setCongregations(data);
+                    }
+                } catch (err) {
+                    console.error("Error fetching congregations:", err);
+                } finally {
+                    if (isMounted) setLoading(false);
                 }
-                setLoading(false);
             };
 
             fetchCongregations();
+            return () => { isMounted = false; };
         } else {
             setLoading(false);
         }
@@ -107,7 +116,7 @@ export default function WitnessingPage() {
                 </div>
             </div>
 
-            <main className="px-6 py-4 max-w-xl mx-auto space-y-3">
+            <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                 {filteredCongregations.length === 0 ? (
                     <div className="text-center py-12 opacity-50">
                         <p className="text-muted-foreground font-medium">Nenhuma congregação encontrada.</p>

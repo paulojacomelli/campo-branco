@@ -66,39 +66,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let isMounted = true;
 
         const initializeAuth = async () => {
-            // 1. Get Session
-            const { data: { session: currentSession } } = await supabase.auth.getSession();
-
-            if (currentSession?.user) {
-                setUser(currentSession.user);
-                setSession(currentSession);
-                await fetchUserProfile(currentSession.user);
-            } else {
-                setLoading(false);
-            }
-
-            // 2. Listen for Auth Changes
-            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-                if (!isMounted) return;
-
-                if (newSession?.user) {
-                    setUser(newSession.user);
-                    setSession(newSession);
-                    await fetchUserProfile(newSession.user);
-                } else {
-                    setUser(null);
-                    setSession(null);
-                    setActualRole(null);
-                    setSimulatedRole(null);
-                    setCongregationId(null);
-                    setProfileName(null);
+            // Safety timeout: if auth takes more than 10 seconds, stop loading
+            const timeout = setTimeout(() => {
+                if (isMounted && loading) {
+                    console.warn("Auth initialization timed out safety trigger");
                     setLoading(false);
                 }
-            });
+            }, 10000);
 
-            return () => {
-                subscription.unsubscribe();
-            };
+            try {
+                // 1. Get Session
+                const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+                if (currentSession?.user) {
+                    setUser(currentSession.user);
+                    setSession(currentSession);
+                    await fetchUserProfile(currentSession.user);
+                } else {
+                    setLoading(false);
+                }
+
+                // 2. Listen for Auth Changes
+                const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+                    if (!isMounted) return;
+
+                    if (newSession?.user) {
+                        setUser(newSession.user);
+                        setSession(newSession);
+                        await fetchUserProfile(newSession.user);
+                    } else {
+                        setUser(null);
+                        setSession(null);
+                        setActualRole(null);
+                        setSimulatedRole(null);
+                        setCongregationId(null);
+                        setProfileName(null);
+                        setLoading(false);
+                    }
+                });
+
+                clearTimeout(timeout);
+                return () => {
+                    subscription.unsubscribe();
+                };
+            } catch (err) {
+                console.error("Critical Auth Init Error:", err);
+                if (isMounted) setLoading(false);
+                clearTimeout(timeout);
+            }
         };
 
         initializeAuth();
