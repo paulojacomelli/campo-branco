@@ -1,6 +1,6 @@
 {
   "name": "campobranco",
-  "version": "0.4.89-beta",
+  "version": "0.4.90-beta",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
