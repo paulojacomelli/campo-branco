@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { toast } from 'sonner';
+import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 import {
     Plus,
     Link as LinkIcon,
@@ -22,6 +23,7 @@ import {
     MousePointer2
 } from 'lucide-react';
 import MapView from '@/app/components/MapView';
+import { geocodeAddress } from '@/app/actions/geocoding';
 import CongregationSelector from '@/app/components/CongregationSelector';
 import BottomNav from '@/app/components/BottomNav';
 import { supabase } from '@/lib/supabase';
@@ -44,6 +46,7 @@ interface City {
 function CityListContent() {
     const searchParams = useSearchParams();
     const congregationId = searchParams.get('congregationId');
+    const currentView = searchParams.get('view') || 'grid';
     const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, logout } = useAuth();
     const router = useRouter();
     const [cities, setCities] = useState<City[]>([]);
@@ -59,6 +62,8 @@ function CityListContent() {
     const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [tempCoords, setTempCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
 
     // Stats State - Hybrid: Unique for base coverage, Volume for efficiency > 100%
     const [coverageStats, setCoverageStats] = useState<Record<string, {
@@ -72,6 +77,29 @@ function CityListContent() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingCity, setEditingCity] = useState<City | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+    const handleSearchAddress = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!searchQuery || searchQuery.length < 3) return;
+
+        setIsSearching(true);
+        try {
+            const data = await geocodeAddress(searchQuery);
+            if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lng = parseFloat(data[0].lon);
+                setTempCoords({ lat, lng });
+                toast.success("Localização encontrada!");
+            } else {
+                toast.error("Endereço não encontrado.");
+            }
+        } catch (error) {
+            console.error("Error searching address:", error);
+            toast.error("Erro ao buscar endereço.");
+        } finally {
+            setIsSearching(false);
+        }
+    };
 
     const fetchCities = async () => {
         if (!congregationId) return;
@@ -254,8 +282,13 @@ function CityListContent() {
 
             if (error) throw error;
 
+            setNewCityName('');
+            setNewCityUF('SP');
+            setNewCityLat('');
             setNewCityLng('');
+            setNewParentCity('');
             setIsCreateModalOpen(false);
+            fetchCities(); // Adicionado para atualizar a lista
             toast.success(`${localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'} criado(a) com sucesso!`);
         } catch (error) {
             console.error("Error creating city:", error);
@@ -274,13 +307,15 @@ function CityListContent() {
                     name: editingCity.name,
                     uf: editingCity.uf,
                     parent_city: editingCity.parent_city,
-                    lat: editingCity.lat,
-                    lng: editingCity.lng
+                    lat: editingCity.lat ? parseFloat(editingCity.lat.toString()) : null,
+                    lng: editingCity.lng ? parseFloat(editingCity.lng.toString()) : null
                 })
                 .eq('id', editingCity.id);
 
             if (error) throw error;
 
+            toast.success(`${localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'} atualizado(a) com sucesso!`);
+            fetchCities();
             setIsEditModalOpen(false);
             setEditingCity(null);
         } catch (error: any) {
@@ -388,6 +423,9 @@ function CityListContent() {
                     <div className="px-6 pt-6 pb-2 sticky top-0 bg-surface z-10 transition-colors">
                         <div className="relative group">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted w-5 h-5 group-focus-within:text-primary transition-colors" />
+
+
+
                             <input
                                 type="text"
                                 placeholder={localTermType === 'neighborhood' ? 'Buscar bairro...' : 'Buscar cidade...'}
@@ -400,7 +438,7 @@ function CityListContent() {
                         {/* Legend removed by simplified view */}
                     </div>
 
-                    <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+                    <main className="px-6 py-4">
                         {loading ? (
                             <div className="flex justify-center p-8">
                                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -411,173 +449,173 @@ function CityListContent() {
                                 <p className="text-muted font-medium">Nenhum(a) {localTermType === 'neighborhood' ? 'bairro' : 'cidade'} encontrado(a).</p>
                             </div>
                         ) : (
-                            filteredCities.map(city => {
-                                const stats = coverageStats[city.id];
-                                let coverageLabel = "0%";
-                                let coveragePercent = 0; // For bar width (visual modulus)
-                                let displayPercent = 0;  // For text label
-                                let isGreen = false;
+                            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+                                {filteredCities.map((city) => {
+                                    const stats = coverageStats[city.id];
+                                    let coverageLabel = "0%";
+                                    let coveragePercent = 0; // For bar width (visual modulus)
+                                    let displayPercent = 0;  // For text label
+                                    let isGreen = false;
 
 
 
-                                if (stats && stats.total > 0) {
-                                    // Hybrid Logic:
-                                    // 1. Calculate Unique Coverage Ratio
-                                    const uniqueRatio = stats.completedUnique / stats.total;
+                                    if (stats && stats.total > 0) {
+                                        // Hybrid Logic:
+                                        // 1. Calculate Unique Coverage Ratio
+                                        const uniqueRatio = stats.completedUnique / stats.total;
 
-                                    // 2. Base Calculation
-                                    let finalRatio = 0;
+                                        // 2. Base Calculation
+                                        let finalRatio = 0;
 
-                                    if (uniqueRatio < 1) {
-                                        // Case A: Not all maps touched yet (< 100% Unique)
-                                        // Use Unique Ratio strictly.
-                                        finalRatio = uniqueRatio;
-                                    } else {
-                                        // Case B: All maps touched at least once (>= 100% Unique)
-                                        // Use Volume Ratio to show > 100% efficiency.
-                                        const volumeRatio = stats.completedVolume / stats.total;
-                                        finalRatio = volumeRatio;
+                                        if (uniqueRatio < 1) {
+                                            // Case A: Not all maps touched yet (< 100% Unique)
+                                            // Use Unique Ratio strictly.
+                                            finalRatio = uniqueRatio;
+                                        } else {
+                                            // Case B: All maps touched at least once (>= 100% Unique)
+                                            // Use Volume Ratio to show > 100% efficiency.
+                                            const volumeRatio = stats.completedVolume / stats.total;
+                                            finalRatio = volumeRatio;
+                                        }
+
+                                        // 3. Formatting
+                                        // Round down to simple integer (1%)
+                                        const rawPercent = finalRatio * 100;
+                                        displayPercent = Math.floor(rawPercent);
+                                        coverageLabel = `${displayPercent}%`;
+
+
+
+                                        // Bar Total Width Logic
+                                        if (displayPercent >= 100) {
+                                            isGreen = true;
+                                            coveragePercent = 100; // Full bar
+                                        } else {
+                                            coveragePercent = displayPercent;
+                                        }
                                     }
 
-                                    // 3. Formatting
-                                    // Round down to simple integer (1%)
-                                    const rawPercent = finalRatio * 100;
-                                    displayPercent = Math.floor(rawPercent);
-                                    coverageLabel = `${displayPercent}%`;
+                                    return (
+                                        <div
+                                            key={city.id}
+                                            className="group bg-background rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-primary-light/50 dark:hover:border-primary-light/20 transition-all flex items-center gap-4"
+                                        >
 
-
-
-                                    // Bar Total Width Logic
-                                    if (displayPercent >= 100) {
-                                        isGreen = true;
-                                        coveragePercent = 100; // Full bar
-                                    } else {
-                                        coveragePercent = displayPercent;
-                                    }
-                                }
-
-                                return (
-                                    <div
-                                        key={city.id}
-                                        className="group bg-background rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md hover:border-primary-light/50 dark:hover:border-primary-light/20 transition-all flex items-center gap-4"
-                                    >
-
-                                        <Link href={`/my-maps/territory?congregationId=${congregationId}&cityId=${city.id}`} prefetch={false} className="flex-1 flex items-center gap-4 min-w-0">
-                                            <div className="w-10 h-10 bg-surface dark:bg-surface-highlight rounded-lg flex items-center justify-center text-muted shrink-0 shadow-sm border border-surface-border">
-                                                <MapIcon className="w-5 h-5" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <div>
-                                                        <h3 className="font-bold text-main text-base truncate leading-tight">{city.name}</h3>
-                                                        {city.parent_city && (
-                                                            <p className="text-[10px] text-muted font-black uppercase tracking-wider">{city.parent_city}</p>
-                                                        )}
-                                                    </div>
-                                                    {(stats && stats.total > 0) && (
-                                                        <span className={`md:hidden text-[10px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap ${isGreen ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-primary-light/50 text-primary dark:bg-primary-dark/30 dark:text-primary-light'}`}>
-                                                            {coverageLabel}
-                                                        </span>
-                                                    )}
+                                            <Link href={`/my-maps/territory?congregationId=${congregationId}&cityId=${city.id}`} prefetch={false} className="flex-1 flex items-center gap-4 min-w-0">
+                                                <div className="w-10 h-10 bg-surface dark:bg-surface-highlight rounded-lg flex items-center justify-center text-muted shrink-0 shadow-sm border border-surface-border">
+                                                    <MapIcon className="w-5 h-5" />
                                                 </div>
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">VER MAPAS</p>
-                                                </div>
-
-                                                {/* Mobile-only Progress Bar */}
-                                                <div className="md:hidden space-y-2">
-                                                    <div className="w-full bg-primary-light/20 dark:bg-primary-dark/40 rounded-full h-1.5 overflow-hidden flex relative" title="Verde: Concluído | Azul: Falta Concluir">
-                                                        <div className="h-full bg-green-500 transition-all duration-500 rounded-full" style={{ width: `${coveragePercent}%` }} />
-                                                    </div>
-                                                    <div className="flex justify-between items-center px-0.5">
-                                                        <span className="text-[9px] text-muted">
-                                                            {stats?.completedUnique || 0}/{stats?.total || 0} mapas
-                                                        </span>
-                                                        {stats?.completedVolume > stats?.completedUnique && (
-                                                            <span className="text-[9px] text-green-600 font-bold">
-                                                                +{stats.completedVolume - stats.completedUnique}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div>
+                                                            <h3 className="font-bold text-main text-base truncate leading-tight">{city.name}</h3>
+                                                            {city.parent_city && (
+                                                                <p className="text-[10px] text-muted font-black uppercase tracking-wider">{city.parent_city}</p>
+                                                            )}
+                                                        </div>
+                                                        {(stats && stats.total > 0) && (
+                                                            <span className={`md:hidden text-[10px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap ${isGreen ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-primary-light/50 text-primary dark:bg-primary-dark/30 dark:text-primary-light'}`}>
+                                                                {coverageLabel}
                                                             </span>
                                                         )}
                                                     </div>
-                                                </div>
-                                            </div>
-                                        </Link>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <p className="text-[10px] font-bold text-muted uppercase tracking-wider">VER MAPAS</p>
+                                                    </div>
 
-                                        {/* Desktop-only Coverage Stats */}
-                                        <div className="flex-1 flex flex-col justify-center gap-1.5 ml-4 mr-4 max-w-[200px] hidden md:flex">
-                                            <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Cobertura</span>
-                                                <span className="text-[10px] font-bold text-main">
-                                                    {coverageLabel}
+                                                    {/* Mobile-only Progress Bar */}
+                                                    <div className="md:hidden space-y-2">
+                                                        <div className={`w-full ${displayPercent === 0 ? 'bg-gray-200 dark:bg-gray-700' : 'bg-emerald-50 dark:bg-emerald-900/10'} rounded-full h-1.5 overflow-hidden flex relative border border-transparent ${displayPercent === 0 ? 'dark:border-gray-600' : ''}`} title="Verde: Concluído | Cinza: Pendente">
+                                                            <div className="h-full bg-emerald-500 transition-all duration-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.3)]" style={{ width: `${coveragePercent}%` }} />
+                                                        </div>
+                                                        <div className="flex justify-between items-center px-0.5">
+                                                            <span className="text-[9px] text-muted">
+                                                                {stats?.completedUnique || 0}/{stats?.total || 0} mapas
+                                                            </span>
+                                                            {stats?.completedVolume > stats?.completedUnique && (
+                                                                <span className="text-[9px] text-green-600 font-bold">
+                                                                    +{stats.completedVolume - stats.completedUnique}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </Link>
+
+                                            {/* Desktop-only Coverage Stats */}
+                                            <div className="flex-1 flex flex-col justify-center gap-1.5 ml-4 mr-4 max-w-[200px] hidden md:flex">
+                                                <div className="flex justify-between items-end">
+                                                    <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Cobertura</span>
+                                                    <span className={`text-[10px] font-bold ${displayPercent === 0 ? 'text-gray-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                        {coverageLabel}
+                                                    </span>
+                                                </div>
+                                                <div className={`w-full ${displayPercent === 0 ? 'bg-gray-200 dark:bg-gray-700' : 'bg-emerald-50 dark:bg-emerald-900/10'} rounded-full h-1.5 overflow-hidden flex relative border border-transparent ${displayPercent === 0 ? 'dark:border-gray-600' : ''}`}>
+                                                    <div className="h-full bg-emerald-500 transition-all duration-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.3)]" style={{ width: `${coveragePercent}%` }} />
+                                                </div>
+                                                <span className="text-[9px] text-muted text-right">
+                                                    {stats?.completedUnique || 0}/{stats?.total || 0} mapas
+                                                    {stats?.completedVolume > stats?.completedUnique && ` (+${stats.completedVolume - stats.completedUnique} repetições)`}
                                                 </span>
                                             </div>
-                                            <div className="w-full bg-primary-light/20 dark:bg-primary-dark/40 rounded-full h-1.5 overflow-hidden flex relative">
-                                                <div className="h-full bg-green-500 transition-all duration-500 rounded-full" style={{ width: `${coveragePercent}%` }} />
+
+
+
+                                            <div className="flex items-center gap-2">
+                                                {(isElder || isServant) && (
+                                                    <div className="relative">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setOpenMenuId(openMenuId === city.id ? null : city.id);
+                                                            }}
+                                                            className="p-2 text-gray-400 hover:text-primary hover:bg-primary-light/50 rounded-lg transition-colors"
+                                                        >
+                                                            <MoreVertical className="w-5 h-5" />
+                                                        </button>
+
+                                                        {openMenuId === city.id && (
+                                                            <>
+                                                                <div
+                                                                    className="fixed inset-0 z-10"
+                                                                    onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); }}
+                                                                />
+                                                                <div className="absolute right-0 mt-2 w-32 bg-surface rounded-lg shadow-xl border border-surface-border z-20 py-1 animation-fade-in origin-top-right">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingCity(city);
+                                                                            setIsEditModalOpen(true);
+                                                                            setOpenMenuId(null);
+                                                                        }}
+                                                                        className="w-full text-left px-4 py-2 text-sm font-medium text-main hover:bg-background flex items-center gap-2"
+                                                                    >
+                                                                        <Pencil className="w-3.5 h-3.5" /> Editar
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDeleteCity(city.id, city.name);
+                                                                        }}
+                                                                        className="w-full text-left px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" /> Excluir
+                                                                    </button>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <Link href={`/my-maps/territory?congregationId=${congregationId}&cityId=${city.id}`} prefetch={false} className="p-2">
+                                                    <ArrowRight className="w-4 h-4 text-gray-300" />
+                                                </Link>
                                             </div>
-                                            <span className="text-[9px] text-muted text-right">
-                                                {stats?.completedUnique || 0}/{stats?.total || 0} mapas
-                                                {stats?.completedVolume > stats?.completedUnique && ` (+${stats.completedVolume - stats.completedUnique} repetições)`}
-                                            </span>
                                         </div>
-
-
-
-                                        <div className="flex items-center gap-2">
-                                            {(isElder || isServant) && (
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            setOpenMenuId(openMenuId === city.id ? null : city.id);
-                                                        }}
-                                                        className="p-2 text-gray-400 hover:text-primary hover:bg-primary-light/50 rounded-lg transition-colors"
-                                                    >
-                                                        <MoreVertical className="w-5 h-5" />
-                                                    </button>
-
-                                                    {openMenuId === city.id && (
-                                                        <>
-                                                            <div
-                                                                className="fixed inset-0 z-10"
-                                                                onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); }}
-                                                            />
-                                                            <div className="absolute right-0 mt-2 w-32 bg-surface rounded-lg shadow-xl border border-surface-border z-20 py-1 animation-fade-in origin-top-right">
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setEditingCity(city);
-                                                                        setIsEditModalOpen(true);
-                                                                        setOpenMenuId(null);
-                                                                    }}
-                                                                    className="w-full text-left px-4 py-2 text-sm font-medium text-main hover:bg-background flex items-center gap-2"
-                                                                >
-                                                                    <Pencil className="w-3.5 h-3.5" /> Editar
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDeleteCity(city.id, city.name);
-                                                                    }}
-                                                                    className="w-full text-left px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                                                                >
-                                                                    <Trash2 className="w-3.5 h-3.5" /> Excluir
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
-                                            <Link href={`/my-maps/territory?congregationId=${congregationId}&cityId=${city.id}`} prefetch={false} className="p-2">
-                                                <ArrowRight className="w-4 h-4 text-gray-300" />
-                                            </Link>
-                                        </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                            </div>
                         )}
-
-
                     </main>
                 </div>
 
@@ -683,7 +721,7 @@ function CityListContent() {
 
                                 <button
                                     type="submit"
-                                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/30 transition-colors mt-2"
+                                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-colors mt-2"
                                 >
                                     <Plus className="w-4 h-4" />
                                     {localTermType === 'neighborhood' ? 'Novo Bairro' : 'Nova Cidade'}
@@ -775,7 +813,7 @@ function CityListContent() {
 
                                 <button
                                     type="submit"
-                                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/30 transition-colors mt-2"
+                                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-colors mt-2"
                                 >
                                     <CheckCircle className="w-4 h-4" />
                                     Salvar Alterações
@@ -789,61 +827,103 @@ function CityListContent() {
             {/* Map Picker Modal */}
             {isMapPickerOpen && (
                 <div className="fixed inset-0 z-[1100] bg-black/80 flex flex-col animate-in fade-in duration-200">
-                    <div className="bg-surface p-4 flex justify-between items-center shadow-lg relative z-10 shrink-0">
-                        <div>
-                            <h2 className="text-lg font-bold text-main">Selecionar Localização</h2>
-                            <p className="text-xs text-muted font-medium">Clique no mapa para marcar</p>
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => {
-                                    if (tempCoords) {
-                                        if (editingCity) {
-                                            setEditingCity({ ...editingCity, lat: tempCoords.lat, lng: tempCoords.lng });
-                                        } else {
-                                            setNewCityLat(tempCoords.lat.toString());
-                                            setNewCityLng(tempCoords.lng.toString());
+                    <div className="bg-surface p-4 flex flex-col gap-4 shadow-lg relative z-10 shrink-0">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h2 className="text-lg font-bold text-main">Selecionar Localização</h2>
+                                <p className="text-xs text-muted font-medium">Busque o endereço ou clique no mapa para marcar</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (tempCoords) {
+                                            if (editingCity) {
+                                                setEditingCity({ ...editingCity, lat: tempCoords.lat, lng: tempCoords.lng });
+                                            } else {
+                                                setNewCityLat(tempCoords.lat.toString());
+                                                setNewCityLng(tempCoords.lng.toString());
+                                            }
+                                            setIsMapPickerOpen(false);
+                                            setTempCoords(null);
+                                            setSearchQuery('');
                                         }
+                                    }}
+                                    className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={!tempCoords}
+                                >
+                                    Confirmar
+                                </button>
+                                <button
+                                    onClick={() => {
                                         setIsMapPickerOpen(false);
-                                        setTempCoords(null);
-                                    }
-                                }}
-                                className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={!tempCoords}
-                            >
-                                Confirmar
-                            </button>
-                            <button
-                                onClick={() => setIsMapPickerOpen(false)}
-                                className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
-                            >
-                                Cancelar
-                            </button>
+                                        setSearchQuery('');
+                                    }}
+                                    className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
                         </div>
+
+                        {/* Search Bar */}
+                        <form onSubmit={handleSearchAddress} className="flex gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Digite o endereço para buscar..."
+                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={isSearching || searchQuery.length < 3}
+                                className="bg-slate-800 dark:bg-slate-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-900 transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapIcon className="w-4 h-4" />}
+                                Buscar
+                            </button>
+                        </form>
                     </div>
+
                     <div className="flex-1 relative cursor-crosshair h-full">
                         <MapView
                             items={tempCoords ? [{
                                 id: 'temp-marker',
                                 lat: tempCoords.lat,
                                 lng: tempCoords.lng,
-                                title: 'Localização Selecionada',
+                                title: 'Nova Localização',
                                 status: 'PENDENTE'
+                            }] : (editingCity?.lat && editingCity?.lng) ? [{
+                                id: 'existing-marker',
+                                lat: parseFloat(editingCity.lat.toString()),
+                                lng: parseFloat(editingCity.lng.toString()),
+                                title: 'Localização Atual',
+                                status: 'LIVRE'
                             }] : []}
                             onMapClick={(lat, lng) => {
                                 setTempCoords({ lat, lng });
                             }}
+                            onMarkerDragEnd={(id, lat, lng) => {
+                                setTempCoords({ lat, lng });
+                            }}
                             center={
-                                (editingCity?.lat && editingCity?.lng)
-                                    ? { lat: parseFloat(editingCity.lat.toString()), lng: parseFloat(editingCity.lng.toString()) }
-                                    : (newCityLat && newCityLng)
-                                        ? { lat: parseFloat(newCityLat), lng: parseFloat(newCityLng) }
-                                        : undefined
+                                tempCoords
+                                    ? { lat: tempCoords.lat, lng: tempCoords.lng }
+                                    : (editingCity?.lat && editingCity?.lng)
+                                        ? { lat: parseFloat(editingCity.lat.toString()), lng: parseFloat(editingCity.lng.toString()) }
+                                        : (newCityLat && newCityLng)
+                                            ? { lat: parseFloat(newCityLat), lng: parseFloat(newCityLng) }
+                                            : undefined
                             }
+                            zoom={tempCoords ? 18 : 15}
+                            disableInteractionLock={true}
                         />
                         {/* Center Marker Help */}
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold pointer-events-none shadow-xl border border-white/10 z-10 whitespace-nowrap">
-                            {tempCoords ? 'Localização marcada! Clique em Confirmar.' : 'Clique no mapa para definir a localização exata'}
+                            {tempCoords ? 'Arraste o marcador ou clique em Confirmar.' : 'Busque um endereço ou clique no mapa'}
                         </div>
                     </div>
                 </div>

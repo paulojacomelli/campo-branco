@@ -23,6 +23,7 @@ import {
     User
 } from 'lucide-react';
 import { useAuth } from '@/app/context/AuthContext';
+import { toast } from 'sonner';
 
 
 interface VisitReportModalProps {
@@ -40,7 +41,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
     const congregationType = propType || forcedCongregationType || authType || 'TRADITIONAL';
 
     const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState<'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'contested' | ''>(address.visitStatus || '');
+    const [status, setStatus] = useState<'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'contested' | ''>('');
     const [isDeaf, setIsDeaf] = useState(address.isDeaf || false);
     const [isMinor, setIsMinor] = useState(address.isMinor || false);
     const [isStudent, setIsStudent] = useState(address.isStudent || false);
@@ -69,7 +70,12 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
         recognition.onstart = () => setIsListening(true);
         recognition.onend = () => setIsListening(false);
         recognition.onerror = (event: any) => {
-            console.error("Erro no reconhecimento de voz:", event.error);
+            if (event.error === 'no-speech') {
+                toast.error("Nenhuma voz detectada. Tente falar novamente.");
+            } else {
+                console.error("Erro no reconhecimento de voz:", event.error);
+                toast.error("Erro ao acessar microfone.");
+            }
             setIsListening(false);
         };
 
@@ -82,7 +88,10 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
     };
 
     const handleSave = async () => {
-        if (!status && !address.visitStatus) {
+        // If status is not selected, but we are editing other fields (tags/notes), we preserve the original status
+        const finalStatus = status || address.visitStatus;
+
+        if (!finalStatus) {
             alert("Selecione um resultado para a visita.");
             return;
         }
@@ -95,7 +104,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
         setLoading(true);
         try {
             await onSave({
-                status,
+                status: finalStatus,
                 isDeaf,
                 isMinor,
                 isStudent,

@@ -22,6 +22,7 @@ import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import BottomNav from '@/app/components/BottomNav';
+import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 
 interface Congregation {
     id: string;
@@ -57,6 +58,10 @@ export default function CongregationsPage() {
     const [newTermType, setNewTermType] = useState<'city' | 'neighborhood'>('city');
     const [customId, setCustomId] = useState(''); // Optional custom ID
     const [categoryFilter, setCategoryFilter] = useState('Todas');
+
+    // View state
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const currentView = searchParams.get('view') || 'grid';
 
     const fetchCongregations = useCallback(async () => {
         setLoading(true);
@@ -225,7 +230,11 @@ export default function CongregationsPage() {
                         </div>
                     </div>
 
+
+
+
                     <div className="flex items-center gap-2">
+                        <RoleBasedSwitcher />
                         <button
                             onClick={() => {
                                 setEditingCongregation(null);
@@ -279,6 +288,9 @@ export default function CongregationsPage() {
                     </div>
                 )}
 
+
+
+
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-4">
                         <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -288,6 +300,70 @@ export default function CongregationsPage() {
                     <div className="text-center py-12 opacity-50">
                         <Building2 className="w-16 h-16 mx-auto mb-4 text-muted" />
                         <p className="text-muted font-medium">Nenhuma congregação encontrada.</p>
+                    </div>
+                ) : currentView === 'table' ? (
+                    <div className="bg-surface rounded-2xl border border-surface-border overflow-hidden shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-surface-highlight border-b border-surface-border text-muted uppercase tracking-wider text-[10px] font-bold">
+                                    <tr>
+                                        <th className="px-6 py-4">Nome</th>
+                                        <th className="px-6 py-4">Cidade</th>
+                                        <th className="px-6 py-4">Tipo</th>
+                                        <th className="px-6 py-4 text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-surface-border">
+                                    {filtered.map((cong) => (
+                                        <tr key={cong.id} className="hover:bg-surface-highlight/50 transition-colors group">
+                                            <td className="px-6 py-4 font-bold text-main">
+                                                <Link href={`/my-maps/${cong.id}`} className="hover:text-primary transition-colors block">
+                                                    {cong.name}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 text-muted">{cong.city || '-'} ({cong.term_type === 'neighborhood' ? 'Bairros' : 'Cidades'})</td>
+                                            <td className="px-6 py-4">
+                                                {cong.category && (
+                                                    <span className="px-2 py-1 bg-primary-light/50 dark:bg-blue-900/20 text-primary dark:text-blue-400 rounded-md text-[10px] font-black uppercase tracking-tighter border border-primary-light dark:border-blue-800/30">
+                                                        {CATEGORY_LABELS[cong.category] || cong.category}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingCongregation(cong);
+                                                            setNewName(cong.name);
+                                                            setNewCity(cong.city || '');
+                                                            let cat = cong.category || '';
+                                                            const lowerCat = cat.toLowerCase();
+                                                            if (lowerCat.includes('sinais') || lowerCat.includes('sign')) cat = 'SIGN_LANGUAGE';
+                                                            else if (lowerCat.includes('estrangeira') || lowerCat.includes('foreign')) cat = 'FOREIGN_LANGUAGE';
+                                                            setNewCategory(cat);
+                                                            setNewTermType(cong.term_type || 'city');
+                                                            setCustomId(cong.id);
+                                                            setIsCreateModalOpen(true);
+                                                        }}
+                                                        className="p-2 text-muted hover:text-main hover:bg-background rounded-lg transition-colors"
+                                                        title="Editar"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(cong.id, cong.name)}
+                                                        className="p-2 text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                        title="Excluir"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">

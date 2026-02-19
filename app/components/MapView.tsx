@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, MapPin, ThumbsUp, Home, Navigation, Ban, Truck, User, Maximize2, Minimize2, Map as MapIcon } from 'lucide-react';
+import { Loader2, MapPin, ThumbsUp, Home, Navigation, Ban, Truck, User, Maximize2, Minimize2, Map as MapIcon, Lock, Unlock } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { geocodeAddress } from '@/app/actions/geocoding';
 
@@ -48,6 +48,7 @@ interface MapViewProps {
     onMarkerClick?: (item: MapItem) => void;
     showLegend?: boolean;
     disableGeocoding?: boolean;
+    disableInteractionLock?: boolean;
 }
 
 const defaultCenter = {
@@ -77,7 +78,7 @@ const extractCoordsFromUrl = (url?: string): { lat: number, lng: number } | null
     return null;
 };
 
-export default function MapView({ items, center = defaultCenter, zoom = 15, onGeocodeSuccess, onMapClick, onMarkerDragEnd, onMarkerClick, showLegend = true, disableGeocoding = false }: MapViewProps) {
+export default function MapView({ items, center = defaultCenter, zoom = 15, onGeocodeSuccess, onMapClick, onMarkerDragEnd, onMarkerClick, showLegend = true, disableGeocoding = false, disableInteractionLock = false }: MapViewProps) {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const markersRef = useRef<any[]>([]); // Keep track of Leaflet markers
@@ -87,14 +88,28 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
     const onMarkerDragEndRef = useRef(onMarkerDragEnd);
     const onMarkerClickRef = useRef(onMarkerClick);
 
-    // Fullscreen State
-    const [isFullscreen, setIsFullscreen] = useState(false);
-
-    // We maintain a local state of items that have *resolved* coordinates
-    const [displayItems, setDisplayItems] = useState<MapItem[]>([]);
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [failedItems, setFailedItems] = useState<MapItem[]>([]);
+    // Interaction State
+    const [isInteractionEnabled, setIsInteractionEnabled] = useState(disableInteractionLock);
+    const [showLockHint, setShowLockHint] = useState(false);
     const [isMapReady, setIsMapReady] = useState(false);
+
+    // Sync Leaflet Handlers with Interaction State
+    useEffect(() => {
+        if (!mapInstanceRef.current) return;
+        const map = mapInstanceRef.current;
+
+        if (isInteractionEnabled) {
+            map.dragging.enable();
+            map.scrollWheelZoom.enable();
+            map.doubleClickZoom.enable();
+            if (map.touchZoom) map.touchZoom.enable();
+        } else {
+            map.dragging.disable();
+            map.scrollWheelZoom.disable();
+            map.doubleClickZoom.disable();
+            if (map.touchZoom) map.touchZoom.disable();
+        }
+    }, [isInteractionEnabled, isMapReady]);
 
     // Update callback ref
     useEffect(() => {
@@ -104,202 +119,28 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
         onMarkerClickRef.current = onMarkerClick;
     }, [onMapClick, onGeocodeSuccess, onMarkerDragEnd, onMarkerClick]);
 
-    // Handle Resize on Fullscreen Toggle
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // We maintain a local state of items that have *resolved* coordinates
+    const [displayItems, setDisplayItems] = useState<MapItem[]>([]);
     useEffect(() => {
-        if (mapInstanceRef.current) {
-            setTimeout(() => {
-                mapInstanceRef.current.invalidateSize();
-            }, 100);
-        }
-    }, [isFullscreen]);
+        // Load only items that already have coordinates (from DB or URL)
+        const validItems = items.filter(item => {
+            if (item.lat && item.lng) return true;
 
-    // 1. INCREMENTAL GEOCODING & PROCESSING
-    useEffect(() => {
-        let isMounted = true;
-
-        // Restore cache from LocalStorage with validation
-        try {
-            const savedCache = localStorage.getItem('field_maps_geocode_cache');
-            if (savedCache) {
-                const parsed = JSON.parse(savedCache);
-                const now = Date.now();
-                const MAX_CACHE_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
-                const MAX_CACHE_SIZE = 500; // Limit entries
-
-                let validEntries = 0;
-                Object.entries(parsed).forEach(([key, value]: [string, any]) => {
-                    // Validate structure and bounds
-                    if (
-                        value &&
-                        typeof value.lat === 'number' &&
-                        typeof value.lng === 'number' &&
-                        value.lat >= -90 && value.lat <= 90 &&
-                        value.lng >= -180 && value.lng <= 180 &&
-                        (!value.timestamp || (now - value.timestamp < MAX_CACHE_AGE)) &&
-                        validEntries < MAX_CACHE_SIZE
-                    ) {
-                        geocodeCache.current.set(key, {
-                            lat: value.lat,
-                            lng: value.lng,
-                            timestamp: value.timestamp || now
-                        });
-                        validEntries++;
-                    }
-                });
-                console.log(`[MapView] Loaded ${validEntries} valid cache entries`);
-            }
-        } catch (e) {
-            console.warn('[MapView] Cache validation failed, clearing:', e);
-            localStorage.removeItem('field_maps_geocode_cache');
-        }
-
-        const processItems = async () => {
-            // A. Initial Pass: Load valid items immediately (from props, URL, or cache)
-            const initialList: MapItem[] = items.map(item => {
-                // 1. Already has coords
-                if (item.lat && item.lng) return item;
-
-                // 2. Try Google Maps Link
-                const urlCoords = extractCoordsFromUrl(item.googleMapsLink);
-                if (urlCoords) {
-                    return { ...item, lat: urlCoords.lat, lng: urlCoords.lng };
-                }
-
-                // 3. Try Cache
-                const query = item.fullAddress || item.title;
-                if (!query || query.includes('Carregando...')) return item;
-
-                const cached = geocodeCache.current.get(query);
-                if (cached) {
-                    return { ...item, lat: cached.lat, lng: cached.lng };
-                }
-                return item;
-            });
-
-            if (isMounted) setDisplayItems(initialList);
-
-            // B. Identify items needing geocoding (Only if NO coords from URL and NOT disabled)
-            if (disableGeocoding) {
-                if (isMounted) setProgress({ current: 0, total: 0 });
-                return;
+            // Still allow coordinate extraction from Google Maps links if provided
+            const urlCoords = extractCoordsFromUrl(item.googleMapsLink);
+            if (urlCoords) {
+                item.lat = urlCoords.lat;
+                item.lng = urlCoords.lng;
+                return true;
             }
 
-            const toGeocode = items.filter(i => {
-                if (i.lat && i.lng) return false;
-                if (extractCoordsFromUrl(i.googleMapsLink)) return false; // Already resolved via URL
+            return false;
+        });
 
-                return (i.fullAddress || i.title) &&
-                    !i.fullAddress?.includes('Carregando...') &&
-                    !geocodeCache.current.has(i.fullAddress || i.title);
-            });
-
-            if (toGeocode.length === 0) {
-                if (isMounted) setProgress({ current: 0, total: 0 });
-                return;
-            }
-
-            if (isMounted) setProgress({ current: 0, total: toGeocode.length });
-
-            // C. Process Queue Sequentially
-            let processedCount = 0;
-            for (const item of toGeocode) {
-
-                if (!isMounted) break;
-
-                const query = item.fullAddress || item.title;
-
-                // Sanitize query to prevent injection
-                const sanitizedQuery = query
-                    .replace(/[<>\"']/g, '') // Remove HTML/quote chars
-                    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control chars
-                    .trim()
-                    .slice(0, 500); // Limit length to prevent DoS
-
-                if (!sanitizedQuery || sanitizedQuery.length < 3) {
-                    console.warn(`[MapView] Skipping invalid query: ${query}`);
-                    setFailedItems(prev => [...prev, item]);
-                    processedCount++;
-                    if (isMounted) setProgress(p => ({ ...p, current: processedCount }));
-                    continue;
-                }
-
-                try {
-                    // Respect Nominatim Usage Policy (Throttle client-side calls)
-                    await new Promise(r => setTimeout(r, 1100));
-                    if (!isMounted) break;
-
-                    // Server Action Call instead of direct fetch
-                    let data = await geocodeAddress(sanitizedQuery);
-
-                    // FALLBACK STRATEGY
-                    if (!data || data.length === 0) {
-                        const parts = query.split(',');
-
-                        // Tier 2: Try Street + City ("Street, City, Country")
-                        if (parts.length >= 3) {
-                            const fallbackQuery = `${parts[0]}, ${parts.slice(2).join(', ')}`;
-                            await new Promise(r => setTimeout(r, 1100));
-                            if (!isMounted) break;
-
-                            console.log(`[MapView] Fallback 1 (Street): ${fallbackQuery}`);
-                            data = await geocodeAddress(fallbackQuery);
-                        }
-
-                        // Tier 3: Try City Only (Last Resort) if Street failed
-                        if ((!data || data.length === 0) && parts.length >= 2) {
-                            const cityQuery = parts.slice(-2).join(', ');
-                            await new Promise(r => setTimeout(r, 1100));
-                            if (!isMounted) break;
-
-                            console.log(`[MapView] Fallback 2 (City): ${cityQuery}`);
-                            data = await geocodeAddress(cityQuery);
-                        }
-                    }
-
-                    if (data && data.length > 0) {
-                        const lat = parseFloat(data[0].lat);
-                        const lng = parseFloat(data[0].lon);
-                        const coords = { lat, lng };
-
-                        // Update Cache & LocalStorage with timestamp
-                        const cacheEntry = { ...coords, timestamp: Date.now() };
-                        geocodeCache.current.set(query, cacheEntry);
-                        try {
-                            const cacheObj = Object.fromEntries(geocodeCache.current.entries());
-                            localStorage.setItem('field_maps_geocode_cache', JSON.stringify(cacheObj));
-                        } catch (e) {
-                            console.warn('[MapView] Cache storage failed (quota?):', e);
-                            geocodeCache.current.clear();
-                        }
-
-                        // SYNC TO DB
-                        if (onGeocodeSuccessRef.current) onGeocodeSuccessRef.current(item.id, lat, lng);
-
-                        // Update State Incrementally
-                        if (isMounted) {
-                            setDisplayItems(prev => prev.map(p => {
-                                if (p.id === item.id) return { ...p, lat, lng };
-                                return p;
-                            }));
-                        }
-                    } else {
-                        // FAILURE CASE: No data found after all fallbacks
-                        if (isMounted) setFailedItems(prev => [...prev, item]);
-                    }
-                } catch (error) {
-                    console.error(`[MapView] Error geocoding ${query}:`, error);
-                    if (isMounted) setFailedItems(prev => [...prev, item]);
-                } finally {
-                    processedCount++;
-                    if (isMounted) setProgress(p => ({ ...p, current: processedCount }));
-                }
-            }
-        };
-
-        processItems();
-
-        return () => { isMounted = false; };
-    }, [items, disableGeocoding]);
+        setDisplayItems(validItems);
+    }, [items]);
 
     // 2. MAP INITIALIZATION (Leaflet)
     useEffect(() => {
@@ -322,7 +163,11 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                     const startLng = center.lng;
 
                     const map = L.map(mapContainerRef.current, {
-                        zoomControl: false // We can add custom controls
+                        zoomControl: false,
+                        dragging: false,
+                        scrollWheelZoom: false,
+                        doubleClickZoom: false,
+                        touchZoom: false
                     }).setView([startLat, startLng], zoom);
 
                     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -686,13 +531,50 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
         return () => document.removeEventListener('fullscreenchange', handleChange);
     }, []);
 
+    // Handle Resize on Fullscreen Toggle or Interaction Toggle
+    useEffect(() => {
+        if (mapInstanceRef.current) {
+            const map = mapInstanceRef.current;
+            // Chamadas múltiplas para garantir que o mapa se ajuste após qualquer mudança de estado
+            const timer1 = setTimeout(() => map.invalidateSize(), 100);
+            const timer2 = setTimeout(() => map.invalidateSize(), 400);
+            return () => {
+                clearTimeout(timer1);
+                clearTimeout(timer2);
+            };
+        }
+    }, [isFullscreen, isInteractionEnabled]);
+
     return (
         <div
-            className={`w-full h-full relative overflow-hidden rounded-lg shadow-sm border border-gray-100 transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-[5000] rounded-none border-0 bg-white' : ''}`}
+            className={`w-full h-full relative overflow-hidden rounded-lg shadow-sm border border-gray-100 ${isFullscreen ? 'fixed inset-0 z-[5000] rounded-none border-0 bg-white' : ''}`}
             style={isFullscreen ? { height: '100dvh', width: '100vw' } : {}}
+            onMouseDown={() => {
+                if (!isInteractionEnabled) {
+                    setShowLockHint(true);
+                    setTimeout(() => setShowLockHint(false), 2000);
+                }
+            }}
         >
-            {/* Map Container */}
+            {/* Map Container - Removed transitions and filters that break Leaflet */}
             <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+            {/* Interaction Lock Overlay Hint */}
+            {showLockHint && !isInteractionEnabled && (
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center z-20 pointer-events-none px-6">
+                    <div className="bg-black/80 backdrop-blur-md text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
+                        <Lock className="w-4 h-4 text-emerald-400" />
+                        <span>Clique no cadeado para interagir com o mapa</span>
+                    </div>
+                </div>
+            )}
+
+            {!isInteractionEnabled && (
+                <div
+                    className="absolute inset-0 z-10 cursor-default"
+                    title="Mapa travado. Clique no cadeado para liberar."
+                />
+            )}
 
             {!isMapReady && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
@@ -700,28 +582,7 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                 </div>
             )}
 
-            {/* Progress Bar (Top) */}
-            {progress.total > 0 && progress.current < progress.total && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur px-4 py-2 rounded-full shadow-lg z-10 text-xs font-bold text-gray-600 flex items-center gap-3">
-                    <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                    <span>Localizando... {progress.current} / {progress.total}</span>
-                </div>
-            )}
 
-            {/* WARNING: Failed Items Alert */}
-            {failedItems.length > 0 && (
-                <div className="absolute top-16 left-4 bg-red-50/95 backdrop-blur border border-red-100 p-4 rounded-lg shadow-lg z-10 max-w-[250px] animate-in slide-in-from-left-2 duration-300">
-                    <div className="flex items-center gap-2 text-red-700 font-bold text-xs mb-2">
-                        <Ban className="w-4 h-4" />
-                        <span>Endereços não encontrados ({failedItems.length})</span>
-                    </div>
-                    <ul className="text-[10px] text-red-600 space-y-1 max-h-[100px] overflow-y-auto custom-scrollbar">
-                        {failedItems.map(item => (
-                            <li key={item.id} className="truncate">• {item.title} {item.number !== 'S/N' ? `, ${item.number}` : ''}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
 
             {/* Floating Legend (Bottom Center) - Enhanced Design */}
             {showLegend && (
@@ -749,17 +610,33 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                     }
                 }}
                 type="button"
-                className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
+                className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-lg z-20 text-gray-600 hover:text-emerald-600 hover:bg-gray-50 transition-all border border-gray-100 active:scale-95"
                 title="Minha Localização"
             >
-                <Navigation className="w-5 h-5" />
+                <Navigation className="w-5 h-5 transition-transform" />
             </button>
 
-            {/* Fullscreen Button */}
+            {/* Interaction Lock Button - Hide if lock is disabled by prop */}
+            {!disableInteractionLock && (
+                <button
+                    onClick={() => setIsInteractionEnabled(!isInteractionEnabled)}
+                    type="button"
+                    className={`absolute top-4 left-16 p-3 rounded-lg shadow-lg z-20 transition-all border active:scale-95 ${isInteractionEnabled
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-500/20'
+                        : 'bg-white text-gray-600 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600'
+                        }`}
+                    title={isInteractionEnabled ? "Travar Mapa" : "Destravar Mapa"}
+                >
+                    {isInteractionEnabled ? <Unlock className="w-5 h-5 fill-current" /> : <Lock className="w-5 h-5" />}
+                </button>
+            )}
+
+            {/* Fullscreen Button - Adjust position if lock is hidden */}
             <button
                 onClick={toggleFullscreen}
                 type="button"
-                className="absolute top-4 left-16 bg-white p-3 rounded-lg shadow-lg z-10 text-gray-600 hover:text-primary hover:bg-gray-50 transition-all border border-gray-100"
+                className={`absolute top-4 bg-white p-3 rounded-lg shadow-lg z-20 text-gray-600 hover:text-emerald-600 hover:bg-gray-50 transition-all border border-gray-100 active:scale-95 ${disableInteractionLock ? 'left-16' : 'left-28'
+                    }`}
                 title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
             >
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}

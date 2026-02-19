@@ -484,22 +484,23 @@ export default function SuperAdminUsersPage() {
 
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nível de Acesso (Função)</label>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="flex flex-col gap-2">
                                     {ROLE_DEFINITIONS.map(role => {
                                         const isActive = editRoles.includes(role.value);
                                         return (
                                             <button
                                                 key={role.value}
                                                 onClick={() => setEditRoles([role.value])}
-                                                className={`p-3 rounded-lg border text-xs font-bold transition-all
+                                                className={`p-4 rounded-lg border text-sm font-bold transition-all flex items-center justify-between
                                                     ${isActive
-                                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-md scale-105'
-                                                        : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100'
+                                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                                                        : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100 hover:border-gray-200'
                                                     }
                                                 `}
                                             >
-                                                {role.label.split(' ')[0]}
-                                                {isActive && <CheckCircle2 className="w-3 h-3 inline-block ml-1" />}
+                                                <span>{role.label}</span>
+                                                {isActive && <CheckCircle2 className="w-4 h-4" />}
+                                                {!isActive && <div className="w-4 h-4 rounded-full border-2 border-gray-200" />}
                                             </button>
                                         );
                                     })}

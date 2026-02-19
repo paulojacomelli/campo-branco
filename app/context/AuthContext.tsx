@@ -139,7 +139,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.warn("User record not found in public.users");
                 data = null;
             } else if (error) {
-                console.error("Error fetching user profile:", JSON.stringify(error, null, 2));
+                // Ignore AbortError which is harmless request cancellation
+                if ((error as any).message?.includes('AbortError') || (error as any).details?.includes('AbortError')) {
+                    // silently ignore
+                } else {
+                    console.error("Error fetching user profile:", JSON.stringify(error, null, 2));
+                }
             }
 
             if (data) {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { toast } from 'sonner';
+import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 import {
     Link as LinkIcon,
     Link2,
@@ -76,6 +77,7 @@ function AddressListContent() {
     const congregationId = searchParams.get('congregationId') || '';
     const cityId = searchParams.get('cityId') || '';
     const territoryId = searchParams.get('territoryId') || '';
+    const currentView = searchParams.get('view') || 'grid';
 
     const { user, isAdmin, isElder, isServant, loading: authLoading, congregationType: authCongregationType, termType } = useAuth();
     const [localCongregationType, setLocalCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
@@ -735,6 +737,7 @@ function AddressListContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
+
                     {(isElder || isServant) && (
                         <>
                             <button
@@ -787,6 +790,72 @@ function AddressListContent() {
                         <div className="text-center py-12 opacity-50">
                             <Home className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                             <p className="text-gray-400 font-medium">Nenhum endereço cadastrado</p>
+                        </div>
+                    ) : currentView === 'table' ? (
+                        <div className="px-6 pb-6 max-w-6xl mx-auto overflow-hidden">
+                            <div className="bg-surface rounded-2xl border border-surface-border overflow-hidden shadow-sm">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-surface-highlight border-b border-surface-border text-muted uppercase tracking-wider text-[10px] font-bold">
+                                            <tr>
+                                                <th className="px-4 py-4 w-12 text-center">#</th>
+                                                <th className="px-4 py-4">Endereço</th>
+                                                <th className="px-4 py-4">Morador</th>
+                                                <th className="px-4 py-4">Status</th>
+                                                <th className="px-4 py-4 text-right">Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-surface-border">
+                                            {activeAddresses.map((addr, idx) => (
+                                                <tr key={addr.id} className="hover:bg-surface-highlight/50 transition-colors group">
+                                                    <td className="px-4 py-4 text-center font-bold text-muted">{idx + 1}</td>
+                                                    <td className="px-4 py-4">
+                                                        <div className="font-bold text-main">{addr.street}{!isTraditional && !addr.street.includes(addr.number) && addr.number !== 'S/N' ? `, ${addr.number}` : ''}</div>
+                                                        {addr.observations && <div className="text-[10px] text-muted truncate max-w-[150px]">{addr.observations}</div>}
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        <div className="flex flex-col gap-1">
+                                                            {addr.resident_name && <span className="font-semibold text-xs text-main">{addr.resident_name}</span>}
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {addr.gender && (
+                                                                    <span className={`px-1 rounded text-[8px] font-black uppercase ${addr.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700' : addr.gender === 'MULHER' ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                                        {addr.gender.substring(0, 1)}
+                                                                    </span>
+                                                                )}
+                                                                {addr.is_deaf && <span className="px-1 bg-yellow-100 text-yellow-800 rounded text-[8px] font-black uppercase">S</span>}
+                                                                {addr.is_minor && <span className="px-1 bg-primary-light/50 text-primary-dark rounded text-[8px] font-black uppercase">M</span>}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        {addr.visit_status && (
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${addr.visit_status === 'contacted' ? 'bg-green-100 text-green-700' :
+                                                                addr.visit_status === 'moved' ? 'bg-sky-100 text-sky-700' :
+                                                                    addr.visit_status === 'do_not_visit' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
+                                                                }`}>
+                                                                {addr.visit_status === 'contacted' ? 'Visitado' :
+                                                                    addr.visit_status === 'moved' ? 'Mudou' :
+                                                                        addr.visit_status === 'do_not_visit' ? 'Não Visitar' : 'Pendente'}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-4 text-right">
+                                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => handleOpenMap(addr)} className="p-1.5 text-muted hover:text-primary hover:bg-primary-light/50 rounded-lg"><Navigation className="w-4 h-4" /></button>
+                                                            {(isElder || isServant) && (
+                                                                <>
+                                                                    <button onClick={() => handleEditAddress(addr)} className="p-1.5 text-muted hover:text-main hover:bg-background rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                    <button onClick={() => handleDeleteAddress(addr.id)} className="p-1.5 text-muted hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         <div className="px-6 pb-6 space-y-3 max-w-6xl mx-auto">

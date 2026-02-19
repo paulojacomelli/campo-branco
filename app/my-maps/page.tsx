@@ -30,7 +30,7 @@ interface Congregation {
 }
 
 export default function CongregationListPage() {
-    const { user, isSuperAdmin, loading: authLoading, congregationId, logout } = useAuth(); // Added congregationId and logout from useAuth
+    const { user, isSuperAdmin, isElder, isServant, loading: authLoading, congregationId, logout } = useAuth(); // Added congregationId and logout from useAuth
     const router = useRouter();
 
     const CATEGORY_LABELS: Record<string, string> = {
@@ -261,16 +261,12 @@ export default function CongregationListPage() {
 
             {/* List */}
             <main className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {loading && isSuperAdmin ? ( // Only show loading here if super admin, as others are redirecting
-                    <div className="flex justify-center p-8">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                ) : !isSuperAdmin && loading ? (
-                    <div className="flex justify-center p-8">
+                {loading && (isSuperAdmin || !isSuperAdmin) ? (
+                    <div className="col-span-full flex justify-center p-8">
                         <Loader2 className="w-8 h-8 animate-spin text-primary" />
                     </div>
                 ) : filteredCongregations.length === 0 ? (
-                    <div className="text-center py-12 opacity-50">
+                    <div className="col-span-full text-center py-12 opacity-50">
                         <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                         <p className="text-gray-400 font-medium">Nenhuma congregação encontrada</p>
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, Fragment } from 'react';
 import {
     Plus,
     Link as LinkIcon,
@@ -17,9 +17,11 @@ import {
     List,
     History,
     MoreVertical,
-    User
+    User,
+    Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
+import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
 import TerritoryHistoryModal from '@/app/components/TerritoryHistoryModal';
@@ -126,7 +128,10 @@ function TerritoryListContent() {
 
     // Fetch Territories
     const fetchTerritories = async () => {
-        if (!congregationId || !cityId) return;
+        if (!congregationId || !cityId) {
+            setLoading(false);
+            return;
+        }
         try {
             const { data, error } = await supabase
                 .from('territories')
@@ -174,7 +179,7 @@ function TerritoryListContent() {
         try {
             const { data, error } = await supabase
                 .from('addresses')
-                .select('id, territory_id, is_active, street, number, resident_name, notes, gender')
+                .select('id, territory_id, is_active, street, number, resident_name, notes, gender, is_deaf, is_neurodivergent, is_student, is_minor')
                 .eq('congregation_id', congregationId)
                 .eq('city_id', cityId);
 
@@ -322,6 +327,8 @@ function TerritoryListContent() {
 
             if (error) throw error;
 
+            toast.success("Território atualizado com sucesso!");
+            fetchTerritories();
             setIsEditModalOpen(false);
             setEditingTerritory(null);
         } catch (error) {
@@ -352,12 +359,13 @@ function TerritoryListContent() {
         setIsSelectionMode(newSelected.size > 0);
     };
 
-    // simplified sharing for Supabase migration MVP
+    // Simplified sharing: navigates to the setup page with selected IDs
     const handleConfirmShare = async () => {
         if (selectedIds.size === 0) return;
-        toast.info("Funcionalidade de compartilhamento em migração. Aguarde a próxima atualização.");
-        // TODO: Implement shared list creation with Supabase (requires new table structure or adapting existing)
-        setIsShareModalOpen(false);
+
+        const ids = Array.from(selectedIds).join(',');
+        const currentUrl = window.location.pathname + window.location.search;
+        router.push(`/share-setup?ids=${ids}&returnUrl=${encodeURIComponent(currentUrl)}`);
     };
 
     const filteredTerritories = territories.filter(t => {
@@ -379,9 +387,12 @@ function TerritoryListContent() {
         return <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] text-muted">Informações incompletas.</div>;
     }
 
+    // View state
+    const currentView = searchParams.get('view') || 'grid';
+
     return (
         <div className="bg-background min-h-screen pb-24 font-sans text-main transition-colors duration-300">
-            {/* Header */}
+            {/* ... Header ... */}
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center shadow-sm dark:shadow-none transition-colors">
                 <div className="flex items-center gap-3">
                     <Link href={`/my-maps/city?congregationId=${congregationId}`} className="bg-gray-100 dark:bg-gray-800 p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title={`Voltar para ${localTermType === 'neighborhood' ? 'Bairros' : 'Cidades'}`}>
@@ -393,6 +404,7 @@ function TerritoryListContent() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <RoleBasedSwitcher />
                     {(isElder || isServant) && (
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
@@ -434,6 +446,151 @@ function TerritoryListContent() {
                     <div className="text-center py-12 opacity-50">
                         <MapIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                         <p className="text-gray-400 font-medium">Nenhum território encontrado</p>
+                    </div>
+                ) : currentView === 'table' ? (
+                    <div className="w-full overflow-x-auto pb-4 flex justify-start lg:justify-center">
+                        <div className="bg-surface rounded-lg border border-surface-border shadow-sm inline-block min-w-full sm:min-w-0">
+                            <table className="w-auto min-w-full sm:min-w-0 text-left text-sm">
+                                <thead className="bg-surface-highlight border-b border-surface-border text-muted uppercase tracking-wider text-[10px] font-bold">
+                                    <tr>
+                                        <th className="px-6 py-4 w-[100px] text-left">Opções</th>
+                                        <th className="px-6 py-4 text-left">Nome</th>
+                                        <th className="px-6 py-4 text-left">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-surface-border">
+                                    {filteredTerritories.map(t => {
+                                        const assignments = territoryAssignments[t.id] || [];
+                                        const territoryAddresses = allAddresses.filter(a => a.territory_id === t.id);
+                                        return (
+                                            <Fragment key={t.id}>
+                                                <tr className="hover:bg-surface-highlight/50 transition-colors group bg-surface">
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center justify-start gap-2">
+                                                            {(isElder || isServant) && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditingTerritory(t);
+                                                                            setEditName(t.name);
+                                                                            setEditDescription(t.notes || '');
+                                                                            setIsEditModalOpen(true);
+                                                                        }}
+                                                                        className="p-2 text-muted hover:text-main hover:bg-background rounded-lg transition-colors"
+                                                                        title="Editar"
+                                                                    >
+                                                                        <Pencil className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteTerritory(t.id, t.name)}
+                                                                        className="p-2 text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                                        title="Excluir"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 font-bold text-main whitespace-nowrap">
+                                                        <Link href={`/my-maps/address?congregationId=${congregationId}&cityId=${cityId}&territoryId=${t.id}`} className="hover:text-primary transition-colors block">
+                                                            {t.name} {t.notes ? `- ${t.notes}` : ''}
+                                                        </Link>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {assignments.length > 0 ? (
+                                                            <div className="flex -space-x-2">
+                                                                {assignments.map((a, i) => (
+                                                                    <div key={i} className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold border-2 border-surface" title={a.publisher_id}>
+                                                                        {a.publisher_id.substring(0, 1).toUpperCase()}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-md text-[10px] font-bold uppercase">
+                                                                Livre
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                                {/* Addresses Row */}
+                                                <tr>
+                                                    <td colSpan={3} className="p-0 border-b border-surface-border/50">
+                                                        <div className="overflow-x-auto w-full">
+                                                            <table className="w-full text-xs bg-surface border-x border-b border-surface-border/50 shadow-sm first:border-t-0">
+                                                                <tbody className="divide-y divide-surface-border/50">
+                                                                    {territoryAddresses.length > 0 ? territoryAddresses.map(addr => (
+                                                                        <tr key={addr.id} className="hover:bg-surface-highlight/30 transition-colors group/addr">
+                                                                            <td className="px-6 py-3 whitespace-nowrap w-[60px]">
+                                                                                <div className="flex items-center justify-center">
+                                                                                    <Link
+                                                                                        href={`/my-maps/address?congregationId=${congregationId}&cityId=${cityId}&territoryId=${t.id}`}
+                                                                                        className="p-1.5 text-muted hover:text-main hover:bg-surface-highlight rounded-lg transition-colors"
+                                                                                        title="Gerenciar Endereço"
+                                                                                    >
+                                                                                        <Pencil className="w-3.5 h-3.5" />
+                                                                                    </Link>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-6 py-3 font-medium text-main whitespace-nowrap">
+                                                                                <div className="flex items-center justify-start gap-2">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+                                                                                    <span>{addr.street}, {addr.number}</span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-6 py-3 text-main whitespace-nowrap text-left">
+                                                                                {addr.resident_name || <span className="text-muted italic">Sem nome</span>}
+                                                                            </td>
+                                                                            <td className="px-6 py-3 text-muted flex gap-2 items-center justify-start whitespace-nowrap">
+                                                                                {addr.gender && (
+                                                                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${addr.gender === 'HOMEM' ? 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900/50' :
+                                                                                        addr.gender === 'MULHER' ? 'bg-pink-50 text-pink-600 border-pink-100 dark:bg-pink-900/20 dark:text-pink-400 dark:border-pink-900/50' :
+                                                                                            'bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-900/50'
+                                                                                        }`}>
+                                                                                        {addr.gender}
+                                                                                    </span>
+                                                                                )}
+                                                                                {addr.is_deaf && (
+                                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border bg-teal-50 text-teal-600 border-teal-100 dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-900/50">
+                                                                                        Surdo
+                                                                                    </span>
+                                                                                )}
+                                                                                {addr.is_neurodivergent && (
+                                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100 dark:bg-fuchsia-900/20 dark:text-fuchsia-400 dark:border-fuchsia-900/50">
+                                                                                        Neuro
+                                                                                    </span>
+                                                                                )}
+                                                                                {addr.is_student && (
+                                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-900/50">
+                                                                                        Estudante
+                                                                                    </span>
+                                                                                )}
+                                                                                {addr.is_minor && (
+                                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900/50">
+                                                                                        Menor
+                                                                                    </span>
+                                                                                )}
+                                                                                {addr.notes && <span className="truncate max-w-[100px] text-[9px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-gray-500">{addr.notes}</span>}
+                                                                            </td>
+                                                                        </tr>
+                                                                    )) : (
+                                                                        <tr>
+                                                                            <td colSpan={3} className="px-6 py-4 text-center text-muted italic text-xs">
+                                                                                Nenhum endereço cadastrado.
+                                                                            </td>
+                                                                        </tr>
+                                                                    )}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
@@ -605,7 +762,7 @@ function TerritoryListContent() {
                                 </div>
                                 <div className="flex gap-3 pt-2">
                                     <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
-                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Criar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-emerald-500/20 hover:bg-primary-dark transition-colors">Criar</button>
                                 </div>
                             </form>
                         </div>
@@ -646,7 +803,7 @@ function TerritoryListContent() {
                                 </div>
                                 <div className="flex gap-3 pt-2">
                                     <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
-                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">Salvar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-emerald-500/20 hover:bg-primary-dark transition-colors">Salvar</button>
                                 </div>
                             </form>
                         </div>
