@@ -32,11 +32,11 @@ interface Congregation {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-    'SIGN_LANGUAGE': 'Língua de Sinais',
-    'FOREIGN_LANGUAGE': 'Língua Estrangeira',
+    'SIGN_LANGUAGE': 'Língua de sinais',
+    'FOREIGN_LANGUAGE': 'Língua estrangeira',
     'Tradicional': 'Tradicional',
-    'Língua de Sinais': 'Língua de Sinais',
-    'Língua Estrangeira': 'Língua Estrangeira'
+    'Língua de Sinais': 'Língua de sinais',
+    'Língua Estrangeira': 'Língua estrangeira'
 };
 
 export default function CongregationsPage() {

@@ -33,6 +33,14 @@ export default function CongregationListPage() {
     const { user, isSuperAdmin, loading: authLoading, congregationId, logout } = useAuth(); // Added congregationId and logout from useAuth
     const router = useRouter();
 
+    const CATEGORY_LABELS: Record<string, string> = {
+        'SIGN_LANGUAGE': 'Língua de sinais',
+        'FOREIGN_LANGUAGE': 'Língua estrangeira',
+        'Tradicional': 'Tradicional',
+        'Língua de Sinais': 'Língua de sinais',
+        'Língua Estrangeira': 'Língua estrangeira'
+    };
+
     // State
     const [congregations, setCongregations] = useState<Congregation[]>([]);
     const [loading, setLoading] = useState(true);
@@ -247,7 +255,7 @@ export default function CongregationListPage() {
                                 onClick={() => setSelectedCategory(cat)}
                                 className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all border ${selectedCategory === cat ? 'bg-primary text-white border-primary shadow-md shadow-primary/10' : 'bg-surface text-muted border-surface-border hover:border-primary-light/50'}`}
                             >
-                                {cat}
+                                {CATEGORY_LABELS[cat] || cat}
                             </button>
                         ))}
                     </div>
@@ -284,7 +292,7 @@ export default function CongregationListPage() {
                                         <h3 className="font-bold text-main text-base truncate">{cong.name}</h3>
                                         {cong.category && (
                                             <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-primary-dark/20 text-primary dark:text-primary-light rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light/30 dark:border-primary-dark/30 shrink-0">
-                                                {cong.category}
+                                                {CATEGORY_LABELS[cong.category] || cong.category}
                                             </span>
                                         )}
                                     </div>
