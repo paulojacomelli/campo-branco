@@ -779,7 +779,7 @@ export default function DashboardPage() {
             <header className="bg-surface sticky top-0 z-30 px-6 py-4 border-b border-surface-border flex justify-between items-center">
                 <div className="flex items-center gap-3">
                     <div className="bg-transparent p-0 rounded-lg">
-                        <Image src="/app-icon.svg" alt="Logo" width={40} height={40} className="object-contain drop-shadow-md" />
+                        <Image src="/app-icon.svg" alt="Logo" width={40} height={40} className="object-contain drop-shadow-md" priority />
                     </div>
                     <div>
                         <span className="font-bold text-lg text-main tracking-tight block leading-tight">Campo Branco</span>
