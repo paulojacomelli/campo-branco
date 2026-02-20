@@ -27,8 +27,11 @@ import {
     ExternalLink,
     MoreVertical,
     UserMinus,
-    Bell
+    Bell,
+    CheckCircle2,
+    ChevronDown
 } from "lucide-react";
+import { toast } from 'sonner';
 import { getServiceYear, getServiceYearRange } from "@/lib/serviceYearUtils";
 import { useRouter } from 'next/navigation'; // Added useRouter
 import Link from "next/link";
@@ -57,11 +60,20 @@ export default function DashboardPage() {
         coverage: 0
     });
 
+    const [congregations, setCongregations] = useState<{ id: string, name: string }[]>([]);
+    const [selectedCongId, setSelectedCongId] = useState<string>('all');
+
     const [pendingMapsCount, setPendingMapsCount] = useState(0);
     const [idleTerritories, setIdleTerritories] = useState<{ id: string; name: string; city: string; lastVisit?: any }[]>([]);
     const [cityCompletion, setCityCompletion] = useState<{ cityName: string; percentage: number } | undefined>();
     const [expiringMaps, setExpiringMaps] = useState<{ id: string, title: string, daysLeft: number }[]>([]);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [confirmModal, setConfirmModal] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant: 'danger' | 'warning';
+    } | null>(null);
 
     const totalNotifications = pendingMapsCount + expiringMaps.length + (isElder ? idleTerritories.length : 0) + (cityCompletion && cityCompletion.percentage === 100 ? 1 : 0);
 
@@ -136,7 +148,13 @@ export default function DashboardPage() {
         };
 
         fetchMyAssignments();
-    }, [user]);
+        if (isSuperAdmin) {
+            supabase.from('congregations').select('id, name').order('name')
+                .then(({ data }) => {
+                    if (data) setCongregations(data);
+                });
+        }
+    }, [user, isSuperAdmin]);
 
     // Close menu on click outside
     useEffect(() => {
@@ -164,6 +182,8 @@ export default function DashboardPage() {
 
             if (role !== 'SUPER_ADMIN') {
                 query = query.eq('congregation_id', congregationId);
+            } else if (selectedCongId !== 'all') {
+                query = query.eq('congregation_id', selectedCongId);
             } else {
                 query = query.limit(50);
             }
@@ -171,8 +191,10 @@ export default function DashboardPage() {
             const usersMap: Record<string, string> = {};
             try {
                 let uQuery = supabase.from('users').select('id, name');
-                if (congregationId) {
+                if (congregationId && role !== 'SUPER_ADMIN') {
                     uQuery = uQuery.eq('congregation_id', congregationId);
+                } else if (role === 'SUPER_ADMIN' && selectedCongId !== 'all') {
+                    uQuery = uQuery.eq('congregation_id', selectedCongId);
                 } else if (role === 'SUPER_ADMIN') {
                     uQuery = uQuery.limit(500);
                 }
@@ -231,7 +253,7 @@ export default function DashboardPage() {
         } finally {
             setHistoryLoading(false);
         }
-    }, [congregationId, role, isElder, isServant, profileName, user]);
+    }, [congregationId, role, isElder, isServant, profileName, user, selectedCongId]);
 
     // --- NOTIFICATION & ENCOURAGEMENT LOGIC ---
     useEffect(() => {
@@ -330,21 +352,35 @@ export default function DashboardPage() {
                 const countTable = async (table: string, filters: any = {}) => {
                     let q = supabase.from(table).select('*', { count: 'exact', head: true });
                     Object.entries(filters).forEach(([col, val]) => {
-                        q = q.eq(col, val);
+                        if (val !== undefined && val !== 'all') {
+                            q = q.eq(col, val);
+                        }
                     });
                     const { count, error } = await q;
                     if (error) console.error(`Error counting ${table}:`, error);
                     return count || 0;
                 };
 
+                // Função auxiliar para contar cidades distintas com base nos territórios da congregação
+                const countDistinctCitiesFromTerritories = async (congId?: string) => {
+                    let q = supabase.from('territories').select('city_id');
+                    if (congId) q = q.eq('congregation_id', congId);
+                    const { data, error } = await q;
+                    if (error) { console.error('Error counting cities:', error); return 0; }
+                    // Conta UUIDs únicos de cidades
+                    const unique = new Set((data || []).map((r: any) => r.city_id).filter(Boolean));
+                    return unique.size;
+                };
+
                 if (role === 'SUPER_ADMIN') {
+                    const targetCong = selectedCongId === 'all' ? undefined : selectedCongId;
                     const [congC, cityC, mapC, addrC, pwC, visitC] = await Promise.all([
                         countTable('congregations'),
-                        countTable('cities'),
-                        countTable('territories'),
-                        countTable('addresses'),
-                        countTable('witnessing_points'),
-                        countTable('visits')
+                        countDistinctCitiesFromTerritories(targetCong),
+                        countTable('territories', { congregation_id: targetCong }),
+                        countTable('addresses', { congregation_id: targetCong }),
+                        countTable('witnessing_points', { congregation_id: targetCong }),
+                        countTable('visits', { congregation_id: targetCong })
                     ]);
 
                     congCount = congC;
@@ -355,7 +391,7 @@ export default function DashboardPage() {
                     visitCount = visitC;
                 } else {
                     congCount = 1;
-                    cityCount = await countTable('cities', { congregation_id: congregationId });
+                    cityCount = await countDistinctCitiesFromTerritories(congregationId || undefined);
                     mapsCount = await countTable('territories', { congregation_id: congregationId });
                     addressCount = await countTable('addresses', { congregation_id: congregationId });
                     publicWitnessingCount = await countTable('witnessing_points', { congregation_id: congregationId });
@@ -373,6 +409,10 @@ export default function DashboardPage() {
                             mapsQuery = mapsQuery.eq('congregation_id', congregationId);
                             citiesQuery = citiesQuery.eq('congregation_id', congregationId);
                             historyQuery = historyQuery.eq('congregation_id', congregationId);
+                        } else if (selectedCongId !== 'all') {
+                            mapsQuery = mapsQuery.eq('congregation_id', selectedCongId);
+                            citiesQuery = citiesQuery.eq('congregation_id', selectedCongId);
+                            historyQuery = historyQuery.eq('congregation_id', selectedCongId);
                         }
 
                         const [
@@ -505,15 +545,16 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory, selectedCongId]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;
         try {
             await navigator.clipboard.writeText(shareUrl);
-            alert("Link copiado!");
+            toast.success("Link copiado com sucesso!");
         } catch (err) {
             console.error("Error copying link:", err);
+            toast.error("Erro ao copiar link.");
         }
     };
 
@@ -541,31 +582,32 @@ export default function DashboardPage() {
     };
 
     const handleDeleteShare = async (id: string) => {
-        if (!confirm("Tem certeza que deseja excluir este cartão do histórico? O link deixará de funcionar.")) return;
+        setConfirmModal(null);
         try {
-            await supabase.from('shared_lists').delete().eq('id', id);
-            // Refresh list
+            const { error } = await supabase.from('shared_lists').delete().eq('id', id);
+            if (error) throw error;
+            toast.success("Cartão removido do histórico.");
             setSharedHistory(prev => prev.filter(item => item.id !== id));
         } catch (err) {
             console.error("Error deleting share:", err);
-            alert("Erro ao excluir.");
+            toast.error("Erro ao excluir cartão.");
         }
     };
 
     const handleRemoveResponsible = async (id: string) => {
-        if (!confirm("Tem certeza que deseja remover o responsável deste cartão?")) return;
+        setConfirmModal(null);
         try {
-            await supabase.from('shared_lists').update({
+            const { error } = await supabase.from('shared_lists').update({
                 assigned_to: null,
                 assigned_name: null
             }).eq('id', id);
-            // Refresh lists
+            if (error) throw error;
             fetchSharedHistory();
             setMyAssignments(prev => prev.filter(item => item.id !== id));
-            alert("Responsável removido com sucesso.");
+            toast.success("Responsável removido com sucesso!");
         } catch (err) {
             console.error("Error removing responsible:", err);
-            alert("Erro ao remover responsável.");
+            toast.error("Erro ao remover responsável.");
         }
     };
 
@@ -706,7 +748,12 @@ export default function DashboardPage() {
                                                 {(isElder || isServant || role === 'SUPER_ADMIN') && (
                                                     <button
                                                         onClick={() => {
-                                                            handleRemoveResponsible(list.id);
+                                                            setConfirmModal({
+                                                                title: 'Remover Responsável?',
+                                                                message: 'Tem certeza que deseja remover o responsável deste cartão?',
+                                                                variant: 'warning',
+                                                                onConfirm: () => handleRemoveResponsible(list.id)
+                                                            });
                                                             setOpenMenuId(null);
                                                         }}
                                                         className="w-full px-4 py-2.5 text-left text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 flex items-center gap-2 transition-colors border-b border-surface-border"
@@ -717,9 +764,12 @@ export default function DashboardPage() {
                                                 )}
                                                 <button
                                                     onClick={() => {
-                                                        if (confirm("Tem certeza que deseja excluir?")) {
-                                                            handleDeleteShare(list.id);
-                                                        }
+                                                        setConfirmModal({
+                                                            title: 'Excluir Cartão?',
+                                                            message: 'Tem certeza que deseja excluir? O link deixará de funcionar.',
+                                                            variant: 'danger',
+                                                            onConfirm: () => handleDeleteShare(list.id)
+                                                        });
                                                         setOpenMenuId(null);
                                                     }}
                                                     className="w-full px-4 py-2.5 text-left text-xs font-bold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 transition-colors"
@@ -879,16 +929,35 @@ export default function DashboardPage() {
                     </section>
                 )}
 
-                {/* SECTION 3: A CONGREGAÇÃO (Todos) */}
                 <section className="space-y-6">
-                    <div className="flex items-center gap-2 px-1">
-                        <div className="w-1 h-6 bg-emerald-600 rounded-full" />
-                        <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+                        <div className="flex items-center gap-2">
+                            <div className="w-1 h-6 bg-emerald-600 rounded-full" />
+                            <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
+                        </div>
+
+                        {role === 'SUPER_ADMIN' && congregations.length > 0 && (
+                            <div className="relative group min-w-[200px]">
+                                <select
+                                    value={selectedCongId}
+                                    onChange={(e) => setSelectedCongId(e.target.value)}
+                                    className="w-full appearance-none bg-surface border border-surface-border rounded-lg px-4 py-2 pr-10 text-xs font-bold text-main focus:outline-none focus:ring-2 focus:ring-primary/20 hover:border-primary/50 transition-all cursor-pointer shadow-sm"
+                                >
+                                    <option value="all">Todas as Congregações</option>
+                                    {congregations.map(cong => (
+                                        <option key={cong.id} value={cong.id}>{cong.name}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted group-hover:text-primary transition-colors">
+                                    <ChevronDown className="w-4 h-4" />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        {role === 'SUPER_ADMIN' && (
-                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                        {role === 'SUPER_ADMIN' && selectedCongId === 'all' && (
+                            <div className="col-span-2 bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
                                 <p className="text-2xl font-bold text-main">{stats.congregations}</p>
                             </div>
@@ -925,6 +994,33 @@ export default function DashboardPage() {
                 </section>
             </main>
 
+            {confirmModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-surface rounded-xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
+                        <div className="flex flex-col items-center text-center">
+                            <div className={`w-16 h-16 ${confirmModal.variant === 'danger' ? 'bg-red-100 dark:bg-red-900/20 text-red-600' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-600'} rounded-full flex items-center justify-center mb-4`}>
+                                {confirmModal.variant === 'danger' ? <Trash2 className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
+                            </div>
+                            <h2 className="text-lg font-bold text-main mb-2">{confirmModal.title}</h2>
+                            <p className="text-sm text-muted mb-6">{confirmModal.message}</p>
+                            <div className="flex flex-col w-full gap-2">
+                                <button
+                                    onClick={confirmModal.onConfirm}
+                                    className={`w-full py-3 ${confirmModal.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'} text-white rounded-lg font-bold text-sm transition-colors`}
+                                >
+                                    Confirmar
+                                </button>
+                                <button
+                                    onClick={() => setConfirmModal(null)}
+                                    className="w-full py-3 bg-background text-muted rounded-lg font-bold text-sm hover:bg-surface-highlight border border-surface-border transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             <BottomNav />
         </div>
     );

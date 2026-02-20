@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import html2canvas from 'html2canvas';
 import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -38,6 +39,7 @@ import {
     Mail,
     Github,
     Trash2,
+    Bug,
 } from 'lucide-react';
 import Link from 'next/link';
 // import NotificationToggle from '@/app/components/NotificationToggle'; // Removed
@@ -46,6 +48,7 @@ import { toast } from 'sonner';
 
 import BottomNav from '@/app/components/BottomNav';
 import { APP_VERSION } from '@/lib/version';
+import { getConsoleLogs } from '@/lib/logger';
 
 
 export default function SettingsPage() {
@@ -80,6 +83,14 @@ export default function SettingsPage() {
     const [generatingToken, setGeneratingToken] = useState(false);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [showDangerZone, setShowDangerZone] = useState(false);
+
+    // Bug Report State
+    const [showBugModal, setShowBugModal] = useState(false);
+    const [bugTitle, setBugTitle] = useState('');
+    const [bugDescription, setBugDescription] = useState('');
+    const [bugScreenshot, setBugScreenshot] = useState<string | null>(null);
+    const [sendingBug, setSendingBug] = useState(false);
+    const [capturingScreen, setCapturingScreen] = useState(false);
 
     // Close menu on click outside
     useEffect(() => {
@@ -124,14 +135,14 @@ export default function SettingsPage() {
                         .from("congregations")
                         .select("invite_token")
                         .eq("id", congregationId)
-                        .single();
+                        .maybeSingle(); // Use maybeSingle to avoid crash if not found
 
                     if (congError) throw congError;
 
                     if (congData) {
                         let token = congData.invite_token;
 
-                        // If no token exists, auto-generate one
+                        // Se não existe token, gera um automaticamente
                         if (!token) {
                             token = crypto.randomUUID();
                             await supabase.from("congregations").update({ invite_token: token }).eq("id", congregationId);
@@ -139,9 +150,11 @@ export default function SettingsPage() {
 
                         setInviteToken(token);
                         setInviteLink(`${window.location.origin}/invite?token=${token}`);
+                    } else {
+                        console.warn("Congregação não encontrada para o ID:", congregationId);
                     }
-                } catch (e) {
-                    console.error("Error fetching settings data:", e);
+                } catch (e: any) {
+                    console.error("Error fetching settings data:", e.message || e);
                 } finally {
                     setMembersLoading(false);
                 }
@@ -255,6 +268,72 @@ export default function SettingsPage() {
         } catch (error) {
             console.error("Logout error:", error);
             window.location.href = '/login';
+        }
+    };
+
+    const handleOpenBugModal = async () => {
+        setShowBugModal(true);
+        setCapturingScreen(true);
+        try {
+            // 'logging: false' suprime os console.error internos do html2canvas
+            // 'allowTaint: true' + 'useCORS: true' tentam capturar imagens externas sem bloquear
+            // 'imageTimeout: 0' evita tentativas repetidas de baixar imagens bloqueadas
+            const canvas = await html2canvas(document.documentElement, {
+                useCORS: true,
+                allowTaint: false, // false = ignora imagens que falham CORS em vez de travar
+                logging: false,    // silencia console.error interno do html2canvas
+                scale: 1,
+                imageTimeout: 2000, // desiste de baixar imagens externas após 2s
+            });
+            setBugScreenshot(canvas.toDataURL('image/jpeg', 0.6));
+        } catch (e) {
+            // Sem console.error aqui para não disparar falso positivo no badge
+        } finally {
+            setCapturingScreen(false);
+        }
+    };
+
+    const handleSendBugReport = async () => {
+        if (!bugTitle) {
+            toast.error("Por favor, preencha o título.");
+            return;
+        }
+
+        setSendingBug(true);
+        try {
+            const deviceInfo = {
+                platform: window.navigator.platform,
+                vendor: window.navigator.vendor,
+                userAgent: window.navigator.userAgent,
+                screen: `${window.screen.width}x${window.screen.height}`,
+                pixelRatio: window.devicePixelRatio,
+                language: window.navigator.language,
+                appVersion: APP_VERSION,
+                zoom: Math.round(displayScale * 100) + '%',
+                consoleLogs: getConsoleLogs(),
+                screenshot: bugScreenshot
+            };
+
+            const { error } = await supabase.from('bug_reports').insert({
+                user_id: user?.id,
+                title: bugTitle,
+                description: bugDescription || null,
+                device_info: deviceInfo,
+                status: 'NEW'
+            });
+
+            if (error) throw error;
+
+            toast.success("Bug relatado com sucesso! Obrigado pelo feedback.");
+            setShowBugModal(false);
+            setBugTitle('');
+            setBugDescription('');
+            setBugScreenshot(null);
+        } catch (error: any) {
+            console.error("Error sending bug report:", error);
+            toast.error("Erro ao enviar relato. Tente novamente mais tarde.");
+        } finally {
+            setSendingBug(false);
         }
     };
 
@@ -437,9 +516,29 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
-                {/* App Preferences */}
+                {/* Bug Report Section */}
                 <section className="space-y-4">
-                    {/* Notifications Section Removed */}
+                    <h2 className="text-sm font-bold text-muted uppercase tracking-widest pl-1">Ajuda & Feedback</h2>
+                    <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-xl">
+                                    <Bug className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-main">Encontrou um Bug?</h3>
+                                    <p className="text-sm text-muted">Relate erros ou sugira melhorias para o sistema.</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleOpenBugModal}
+                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <Bug className="w-5 h-5" />
+                                Relatar Bug
+                            </button>
+                        </div>
+                    </div>
                 </section>
 
                 {/* Edit Profile Modal */}
@@ -476,6 +575,89 @@ export default function SettingsPage() {
                                     >
                                         {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Bug Report Modal */}
+                {showBugModal && (
+                    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+                            <div className="bg-surface rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-in zoom-in-95 duration-200 my-8">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-xl">
+                                            <Bug className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-bold text-main tracking-tight">Relatar Problema</h2>
+                                            <p className="text-xs text-muted font-medium tracking-tight">Seja o mais descritivo possível.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowBugModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
+                                        <X className="w-6 h-6 text-muted" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-5">
+                                    {bugScreenshot && (
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Captura de Tela Automática</label>
+                                            <div className="relative rounded-xl overflow-hidden border border-surface-border h-32 bg-background">
+                                                <Image src={bugScreenshot} alt="Bug Capture" fill className="object-cover opacity-50" />
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <span className="text-[10px] font-bold text-main bg-surface/80 px-2 py-1 rounded-md border border-surface-border">Tela Capturada!</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Título do Problema</label>
+                                        <input
+                                            type="text"
+                                            value={bugTitle}
+                                            onChange={(e) => setBugTitle(e.target.value)}
+                                            className="w-full bg-background border border-surface-border rounded-xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-main transition-all outline-none"
+                                            placeholder="Ex: Erro ao carregar mapa"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Descrição Detalhada</label>
+                                        <textarea
+                                            value={bugDescription}
+                                            onChange={(e) => setBugDescription(e.target.value)}
+                                            rows={5}
+                                            className="w-full bg-background border border-surface-border rounded-xl py-3 px-4 text-sm font-medium focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-main transition-all outline-none resize-none"
+                                            placeholder="Descreva o que aconteceu, o que você estava fazendo e se o erro se repete..."
+                                        />
+                                    </div>
+
+                                    <div className="bg-background/50 border border-surface-border p-3 rounded-lg">
+                                        <p className="text-[10px] text-muted flex items-center gap-2 italic">
+                                            <Monitor className="w-3 h-3" />
+                                            Enviaremos automaticamente informações sobre seu navegador e zoom para ajudar na correção.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setShowBugModal(false)}
+                                            className="flex-1 bg-surface hover:bg-background text-main font-bold py-4 rounded-xl transition-all border border-surface-border"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleSendBugReport}
+                                            disabled={sendingBug || !bugTitle}
+                                            className="flex-[2] bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-xl shadow-orange-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                        >
+                                            {sendingBug ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enviar Relato'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -726,6 +908,13 @@ export default function SettingsPage() {
                                             <Database className="w-4 h-4" />
                                             Dados Órfãos
                                         </Link>
+                                        <Link
+                                            href="/admin/bugs"
+                                            className="inline-block bg-background hover:bg-orange-50 dark:hover:bg-orange-950/20 text-orange-600 border border-orange-200 dark:border-orange-900/30 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm flex items-center gap-2"
+                                        >
+                                            <Bug className="w-4 h-4" />
+                                            Bug Reports
+                                        </Link>
                                     </div>
 
                                 </div>
@@ -874,9 +1063,10 @@ export default function SettingsPage() {
                         <Image
                             src="https://img.shields.io/github/stars/paulojacomelli/campo-branco?style=social"
                             alt="GitHub Repo stars"
-                            width={100}
-                            height={20}
-                            className="h-5 w-auto grayscale group-hover:grayscale-0 transition-all duration-300"
+                            width={0}
+                            height={0}
+                            style={{ width: 'auto', height: '20px' }}
+                            className="grayscale group-hover:grayscale-0 transition-all duration-300"
                             unoptimized
                         />
                     </a>

@@ -51,6 +51,7 @@ Este aplicativo é uma iniciativa **independente e open source**. Ele **não** �
 ### 1. Pré-requisitos
 - Node.js 18+
 - Projeto no Supabase (Banco de Dados e Auth configurados)
+- **Importante:** Após criar seu projeto no Supabase, execute o conteúdo do arquivo `supabase/schema.sql` no Editor SQL do seu painel Supabase para criar todas as tabelas e permissões necessárias.
 
 ### 2. Instalação
 ```bash

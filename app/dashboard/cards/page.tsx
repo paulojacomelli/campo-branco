@@ -19,8 +19,14 @@ import {
     Copy,
     Share2,
     UserMinus,
+    CheckCircle2,
+    AlertCircle,
+    CheckSquare,
+    Square,
+    ListChecks,
     Trash2
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 function CardsContent() {
     const searchParams = useSearchParams();
@@ -31,6 +37,14 @@ function CardsContent() {
     const [lists, setLists] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [confirmModal, setConfirmModal] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant: 'danger' | 'warning';
+    } | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
 
     // Close menu on click outside
     useEffect(() => {
@@ -130,9 +144,10 @@ function CardsContent() {
         const shareUrl = window.location.origin + "/share?id=" + id;
         try {
             await navigator.clipboard.writeText(shareUrl);
-            alert("Link copiado!");
+            toast.success("Link copiado com sucesso!");
         } catch (err) {
             console.error("Error copying link:", err);
+            toast.error("Erro ao copiar link.");
         }
     };
 
@@ -158,19 +173,33 @@ function CardsContent() {
     };
 
     const handleDeleteShare = async (id: string) => {
-        if (!confirm("Tem certeza que deseja excluir este cartão? O link deixará de funcionar.")) return;
+        setConfirmModal(null);
+        setLoading(true);
         try {
-            const { error } = await supabase.from("shared_lists").delete().eq("id", id);
-            if (error) throw error;
+            const response = await fetch('/api/cards/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [id] })
+            });
+
+            const resData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir');
+            }
+
             setLists(prev => prev.filter(item => item.id !== id));
-        } catch (err) {
+            toast.success("Cartão excluído com sucesso.");
+        } catch (err: any) {
             console.error("Error deleting share:", err);
-            alert("Erro ao excluir.");
+            toast.error(err.message || "Erro ao excluir.");
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleRemoveResponsible = async (id: string) => {
-        if (!confirm("Tem certeza que deseja remover o responsável?")) return;
+        setConfirmModal(null);
         try {
             const { error } = await supabase.from("shared_lists").update({
                 assigned_to: null,
@@ -178,10 +207,73 @@ function CardsContent() {
             }).eq("id", id);
             if (error) throw error;
             fetchLists();
-            alert("Responsável removido.");
+            toast.success("Responsável removido.");
         } catch (err) {
             console.error("Error removing responsible:", err);
-            alert("Erro ao remover responsável.");
+            toast.error("Erro ao remover responsável.");
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        setConfirmModal(null);
+        setLoading(true);
+        try {
+            const response = await fetch('/api/cards/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+
+            const resData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir cartões');
+            }
+
+            setLists(prev => prev.filter(item => !selectedIds.includes(item.id)));
+            toast.success(`${selectedIds.length} cartões excluídos.`);
+            setSelectedIds([]);
+            setIsSelectionMode(false);
+        } catch (err: any) {
+            console.error("Bulk delete error:", err);
+            toast.error(err.message || "Erro ao excluir cartões.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBulkRemoveResponsible = async () => {
+        setConfirmModal(null);
+        setLoading(true);
+        try {
+            const { error } = await supabase.from("shared_lists").update({
+                assigned_to: null,
+                assigned_name: null
+            }).in("id", selectedIds);
+            if (error) throw error;
+            fetchLists();
+            setSelectedIds([]);
+            setIsSelectionMode(false);
+            toast.success(`Responsáveis removidos de ${selectedIds.length} cartões.`);
+        } catch (err) {
+            console.error("Bulk remove responsible error:", err);
+            toast.error("Erro ao remover responsáveis.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleIdSelection = (id: string) => {
+        setSelectedIds(prev =>
+            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+        );
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.length === lists.length) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(lists.map(l => l.id));
         }
     };
 
@@ -208,19 +300,82 @@ function CardsContent() {
     return (
         <div className="bg-background min-h-screen font-sans pb-24 transition-colors duration-300">
             {/* Header */}
-            <header className="px-6 py-4 bg-surface border-b border-surface-border flex items-center gap-4 sticky top-0 z-20">
-                <Link href="/dashboard" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
-                    <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                </Link>
-                <div className="flex flex-col">
-                    <h1 className="font-bold text-lg text-main leading-tight">
-                        {scope === 'mine' ? 'Meus Cartões' : 'Cartões Enviados'}
-                    </h1>
-                    <span className="text-[10px] text-primary dark:text-blue-400 font-bold uppercase tracking-widest">
-                        {scope === 'mine' ? 'Designações Pessoais' : 'Gestão de Territórios'}
-                    </span>
+            <header className="px-6 py-4 bg-surface border-b border-surface-border flex items-center justify-between sticky top-0 z-40">
+                <div className="flex items-center gap-4">
+                    <Link href="/dashboard" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                    </Link>
+                    <div className="flex flex-col">
+                        <h1 className="font-bold text-lg text-main leading-tight">
+                            {scope === 'mine' ? 'Meus Cartões' : 'Cartões Enviados'}
+                        </h1>
+                        <span className="text-[10px] text-primary dark:text-blue-400 font-bold uppercase tracking-widest">
+                            {scope === 'mine' ? 'Designações Pessoais' : 'Gestão de Territórios'}
+                        </span>
+                    </div>
                 </div>
+
+                {scope === 'managed' && !loading && lists.length > 0 && (
+                    <button
+                        onClick={() => {
+                            setIsSelectionMode(!isSelectionMode);
+                            if (isSelectionMode) setSelectedIds([]);
+                        }}
+                        className={`p-2 rounded-lg transition-all ${isSelectionMode ? 'bg-primary text-white shadow-lg' : 'bg-surface border border-surface-border text-muted hover:text-main'}`}
+                    >
+                        <ListChecks className="w-5 h-5" />
+                    </button>
+                )}
             </header>
+
+            {/* Selection Toolbar */}
+            {isSelectionMode && (
+                <div className="bg-primary/5 dark:bg-blue-900/10 border-b border-primary/20 px-6 py-3 sticky top-[73px] z-30 animate-in slide-in-from-top-4 duration-300">
+                    <div className="max-w-xl mx-auto flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={toggleSelectAll}
+                                className="flex items-center gap-2 text-xs font-bold text-primary dark:text-blue-400"
+                            >
+                                {selectedIds.length === lists.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                                {selectedIds.length === lists.length ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+                            </button>
+                            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-black">
+                                {selectedIds.length} selecionado(s)
+                            </span>
+                        </div>
+
+                        {selectedIds.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setConfirmModal({
+                                        title: 'Remover Responsáveis?',
+                                        message: `Deseja remover o responsável de ${selectedIds.length} cartões selecionados?`,
+                                        variant: 'warning',
+                                        onConfirm: handleBulkRemoveResponsible
+                                    })}
+                                    className="p-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-lg transition-colors border border-orange-200 dark:border-orange-800/30"
+                                    title="Remover responsáveis em massa"
+                                >
+                                    <UserMinus className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => setConfirmModal({
+                                        title: 'Excluir Selecionados?',
+                                        message: `Deseja excluir definitivamente os ${selectedIds.length} cartões selecionados?`,
+                                        variant: 'danger',
+                                        onConfirm: handleBulkDelete
+                                    })}
+                                    className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-colors border border-red-200 dark:border-red-800/30"
+                                    title="Excluir em massa"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <main className="max-w-xl mx-auto px-6 py-8">
                 {/* Icon Banner */}
@@ -248,7 +403,19 @@ function CardsContent() {
                 ) : (
                     <div className="space-y-3">
                         {lists.map((list) => (
-                            <div key={list.id} className="p-4 rounded-lg bg-surface border border-surface-border hover:border-blue-200 dark:hover:border-blue-800 transition-colors group relative shadow-sm">
+                            <div
+                                key={list.id}
+                                onClick={() => isSelectionMode && toggleIdSelection(list.id)}
+                                className={`p-4 rounded-lg bg-surface border ${selectedIds.includes(list.id) ? 'border-primary border-2 shadow-md' : 'border-surface-border'} hover:border-blue-200 dark:hover:border-blue-800 transition-all group relative shadow-sm ${isSelectionMode ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                            >
+                                {isSelectionMode && (
+                                    <div className="absolute right-4 top-4">
+                                        {selectedIds.includes(list.id)
+                                            ? <CheckCircle2 className="w-5 h-5 text-primary" />
+                                            : <div className="w-5 h-5 rounded-full border-2 border-surface-border" />
+                                        }
+                                    </div>
+                                )}
                                 <div className="flex items-start justify-between mb-2">
                                     <div className="min-w-0">
                                         <h4 className="font-bold text-main text-sm truncate">
@@ -288,15 +455,17 @@ function CardsContent() {
                                     </div>
 
                                     <div className="relative">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setOpenMenuId(openMenuId === list.id ? null : list.id);
-                                            }}
-                                            className="p-1.5 text-muted hover:text-main hover:bg-surface rounded-lg transition-all shadow-sm"
-                                        >
-                                            <MoreVertical className="w-4 h-4" />
-                                        </button>
+                                        {!isSelectionMode && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setOpenMenuId(openMenuId === list.id ? null : list.id);
+                                                }}
+                                                className="p-1.5 text-muted hover:text-main hover:bg-surface rounded-lg transition-all shadow-sm"
+                                            >
+                                                <MoreVertical className="w-4 h-4" />
+                                            </button>
+                                        )}
 
                                         {openMenuId === list.id && (
                                             <div className="absolute right-0 top-8 w-48 bg-surface rounded-lg shadow-xl border border-surface-border py-2 z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
@@ -333,7 +502,12 @@ function CardsContent() {
                                                 {(isElder || isServant || role === 'SUPER_ADMIN') && (
                                                     <button
                                                         onClick={() => {
-                                                            handleRemoveResponsible(list.id);
+                                                            setConfirmModal({
+                                                                title: 'Remover Responsável?',
+                                                                message: 'Tem certeza que deseja remover o responsável?',
+                                                                variant: 'warning',
+                                                                onConfirm: () => handleRemoveResponsible(list.id)
+                                                            });
                                                             setOpenMenuId(null);
                                                         }}
                                                         className="w-full px-4 py-2.5 text-left text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 flex items-center gap-2 transition-colors border-b border-surface-border"
@@ -344,9 +518,12 @@ function CardsContent() {
                                                 )}
                                                 <button
                                                     onClick={() => {
-                                                        if (confirm("Tem certeza que deseja excluir?")) {
-                                                            handleDeleteShare(list.id);
-                                                        }
+                                                        setConfirmModal({
+                                                            title: 'Excluir Cartão?',
+                                                            message: 'Tem certeza que deseja excluir? O link deixará de funcionar.',
+                                                            variant: 'danger',
+                                                            onConfirm: () => handleDeleteShare(list.id)
+                                                        });
                                                         setOpenMenuId(null);
                                                     }}
                                                     className="w-full px-4 py-2.5 text-left text-xs font-bold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 transition-colors"
@@ -364,6 +541,33 @@ function CardsContent() {
                 )}
             </main>
 
+            {confirmModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-surface rounded-xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
+                        <div className="flex flex-col items-center text-center">
+                            <div className={`w-16 h-16 ${confirmModal.variant === 'danger' ? 'bg-red-100 dark:bg-red-900/20 text-red-600' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-600'} rounded-full flex items-center justify-center mb-4`}>
+                                {confirmModal.variant === 'danger' ? <Trash2 className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
+                            </div>
+                            <h2 className="text-lg font-bold text-main mb-2">{confirmModal.title}</h2>
+                            <p className="text-sm text-muted mb-6">{confirmModal.message}</p>
+                            <div className="flex flex-col w-full gap-2">
+                                <button
+                                    onClick={confirmModal.onConfirm}
+                                    className={`w-full py-3 ${confirmModal.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'} text-white rounded-lg font-bold text-sm transition-colors`}
+                                >
+                                    Confirmar
+                                </button>
+                                <button
+                                    onClick={() => setConfirmModal(null)}
+                                    className="w-full py-3 bg-background text-muted rounded-lg font-bold text-sm hover:bg-surface-highlight border border-surface-border transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             <BottomNav />
         </div>
     );

@@ -37,6 +37,13 @@ export default function OrphanedDataPage() {
     const [selTerr, setSelTerr] = useState('');
 
     const [saving, setSaving] = useState(false);
+    const [editName, setEditName] = useState('');
+    const [editDetails, setEditDetails] = useState('');
+    const [editNumber, setEditNumber] = useState('');
+    const [editBlock, setEditBlock] = useState('');
+    const [editObservation, setEditObservation] = useState('');
+    const [editSchedule, setEditSchedule] = useState('');
+    const [editState, setEditState] = useState('');
 
     useEffect(() => {
         if (!authLoading && !isSuperAdmin) {
@@ -125,7 +132,7 @@ export default function OrphanedDataPage() {
                         id: data.id,
                         type: 'witnessing',
                         name: data.name || 'Ponto sem Nome',
-                        details: 'T. Público',
+                        details: data.address || 'Sem Endereço',
                         missing,
                         data
                     });
@@ -194,10 +201,22 @@ export default function OrphanedDataPage() {
                 if (data) setCongs(data);
             });
 
-            // Pre-fill if exists
-            setSelCong(fixingItem.data.congregation_id || '');
-            setSelCity(fixingItem.data.city_id || '');
-            setSelTerr(fixingItem.data.territory_id || '');
+            // Pre-fill if exists (only if not marked as invalid)
+            const isCongInvalid = fixingItem.missing.some(m => m.includes('Congregação'));
+            const isCityInvalid = fixingItem.missing.some(m => m.includes('Cidade'));
+            const isTerrInvalid = fixingItem.missing.some(m => m.includes('Território'));
+
+            setSelCong(isCongInvalid ? '' : (fixingItem.data.congregation_id || ''));
+            setSelCity(isCityInvalid ? '' : (fixingItem.data.city_id || ''));
+            setSelTerr(isTerrInvalid ? '' : (fixingItem.data.territory_id || ''));
+
+            setEditName(fixingItem.name || '');
+            setEditDetails(fixingItem.details || '');
+            setEditNumber(fixingItem.data.number || '');
+            setEditBlock(fixingItem.data.block || '');
+            setEditObservation(fixingItem.data.observation || fixingItem.data.notes || '');
+            setEditSchedule(fixingItem.data.schedule || '');
+            setEditState(fixingItem.data.state || 'SP');
         }
     }, [fixingItem]);
 
@@ -269,25 +288,60 @@ export default function OrphanedDataPage() {
                     return;
                 }
                 updates.congregation_id = selCong;
+                updates.state = editState;
             }
 
-            const tableName = fixingItem.type === 'address' ? 'addresses' :
-                fixingItem.type === 'territory' ? 'territories' :
-                    fixingItem.type === 'witnessing' ? 'witnessing_points' :
-                        fixingItem.type === 'visit' ? 'visits' : 'cities';
+            // Common field updates based on type
+            if (fixingItem.type === 'address') {
+                updates.street = editName;
+                updates.number = editNumber;
+                updates.block = editBlock;
+                updates.observation = editObservation;
+            } else if (fixingItem.type === 'territory' || fixingItem.type === 'witnessing' || fixingItem.type === 'city') {
+                updates.name = editName;
+                if (fixingItem.type === 'territory') updates.description = editObservation;
+                if (fixingItem.type === 'witnessing') {
+                    updates.address = editDetails;
+                    updates.schedule = editSchedule;
+                }
+            }
 
-            const { error } = await supabase
-                .from(tableName)
-                .update(updates)
-                .eq('id', fixingItem.id);
+            // Remover campos nulos ou indefinidos de updates
+            Object.keys(updates).forEach(key => (updates[key] === undefined) && delete updates[key]);
 
-            if (error) throw error;
+            if (Object.keys(updates).length === 0) {
+                toast.info("Nenhuma alteração para salvar.");
+                setSaving(false);
+                return;
+            }
 
+            // Chamada para a API administrativa para contornar restrições de RLS
+            const response = await fetch('/api/admin/repair-orphan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: fixingItem.id,
+                    type: fixingItem.type,
+                    updates
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Falha ao processar reparo');
+            }
+
+            toast.success("Dados restaurados e vinculados com sucesso!");
             setFixItem(null);
-            fetchOrphans(); // Refresh
-        } catch (error) {
-            console.error("Error fixing:", error);
-            toast.error("Erro ao salvar.");
+
+            // Pequeno delay para consistência do banco antes do refresh
+            setTimeout(() => {
+                fetchOrphans();
+            }, 500);
+        } catch (error: any) {
+            console.error("DEBUG - Repair Error:", error);
+            toast.error(`Erro ao salvar: ${error.message || "Erro desconhecido"}`);
         } finally {
             setSaving(false);
         }
@@ -338,20 +392,20 @@ export default function OrphanedDataPage() {
                         <Loader2 className="w-8 h-8 text-primary animate-spin" />
                     </div>
                 ) : orphans.length === 0 ? (
-                    <div className="text-center py-20 bg-surface rounded-3xl border-2 border-dashed border-surface-border">
+                    <div className="text-center py-20 bg-surface rounded-xl border-2 border-dashed border-surface-border">
                         <Check className="w-12 h-12 text-green-500 mx-auto mb-4" />
                         <h3 className="text-lg font-bold text-main">Tudo limpo!</h3>
                         <p className="text-muted">Nenhum dado órfão encontrado.</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        <div className="flex items-center gap-2 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-xl text-sm border border-orange-100 dark:border-orange-800">
+                        <div className="flex items-center gap-2 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg text-sm border border-orange-100 dark:border-orange-800">
                             <AlertTriangle className="w-5 h-5 shrink-0" />
                             <p>Foram encontrados <b>{orphans.length}</b> itens com vínculos quebrados.</p>
                         </div>
 
                         {orphans.map(item => (
-                            <div key={item.id} className="bg-surface p-5 rounded-2xl shadow-sm border border-surface-border flex flex-col gap-4">
+                            <div key={item.id} className="bg-surface p-5 rounded-lg shadow-sm border border-surface-border flex flex-col gap-4">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <div className="flex items-center gap-2 mb-1">
@@ -397,7 +451,7 @@ export default function OrphanedDataPage() {
             {
                 fixingItem && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-surface rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
+                        <div className="bg-surface rounded-xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
                             <h2 className="text-xl font-bold text-main mb-6 flex items-center gap-2">
                                 <LinkIcon className="w-6 h-6 text-primary" />
                                 Vincular Dados
@@ -407,7 +461,7 @@ export default function OrphanedDataPage() {
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-muted uppercase">Congregação</label>
                                     <select
-                                        className="w-full bg-background border border-surface-border text-main rounded-xl p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                        className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
                                         value={selCong}
                                         onChange={(e) => setSelCong(e.target.value)}
                                     >
@@ -416,11 +470,11 @@ export default function OrphanedDataPage() {
                                     </select>
                                 </div>
 
-                                {(fixingItem.type === 'address' || fixingItem.type === 'territory') && (
+                                {(fixingItem.type === 'address' || fixingItem.type === 'territory' || fixingItem.type === 'witnessing') && (
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-muted uppercase">Cidade</label>
                                         <select
-                                            className="w-full bg-background border border-surface-border text-main rounded-xl p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                            className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
                                             value={selCity}
                                             onChange={(e) => setSelCity(e.target.value)}
                                             disabled={!selCong && cities.length === 0}
@@ -435,7 +489,7 @@ export default function OrphanedDataPage() {
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-muted uppercase">Território (Mapa)</label>
                                         <select
-                                            className="w-full bg-background border border-surface-border text-main rounded-xl p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                            className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
                                             value={selTerr}
                                             onChange={(e) => setSelTerr(e.target.value)}
                                             disabled={!selCity && territories.length === 0}
@@ -445,18 +499,106 @@ export default function OrphanedDataPage() {
                                         </select>
                                     </div>
                                 )}
+
+                                <div className="border-t border-surface-border pt-4 mt-4 space-y-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-muted uppercase">
+                                            {fixingItem.type === 'address' ? 'Rua / Logradouro' :
+                                                fixingItem.type === 'territory' ? 'Número do Mapa' : 'Nome'}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                            value={editName}
+                                            onChange={(e) => setEditName(e.target.value)}
+                                        />
+                                    </div>
+
+                                    {fixingItem.type === 'city' && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-muted uppercase">UF</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                                value={editState}
+                                                onChange={(e) => setEditState(e.target.value.toUpperCase().slice(0, 2))}
+                                                placeholder="Ex: SP"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {fixingItem.type === 'address' && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-muted uppercase">Número</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                                    value={editNumber}
+                                                    onChange={(e) => setEditNumber(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-muted uppercase">Bloco/Apt</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                                    value={editBlock}
+                                                    onChange={(e) => setEditBlock(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {fixingItem.type === 'witnessing' && (
+                                        <div className="space-y-4">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-muted uppercase">Endereço Completo</label>
+                                                <textarea
+                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors min-h-[80px]"
+                                                    value={editDetails}
+                                                    onChange={(e) => setEditDetails(e.target.value)}
+                                                    placeholder="Rua, número, bairro..."
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-muted uppercase">Horário (Opcional)</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
+                                                    value={editSchedule}
+                                                    onChange={(e) => setEditSchedule(e.target.value)}
+                                                    placeholder="Ex: Segundas, 08:00 - 12:00"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(fixingItem.type === 'address' || fixingItem.type === 'territory') && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-muted uppercase">
+                                                {fixingItem.type === 'territory' ? 'Descrição' : 'Observações'}
+                                            </label>
+                                            <textarea
+                                                className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors min-h-[80px]"
+                                                value={editObservation}
+                                                onChange={(e) => setEditObservation(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="flex gap-3 mt-8">
                                 <button
                                     onClick={() => setFixItem(null)}
-                                    className="flex-1 py-3 bg-background border border-surface-border rounded-xl font-bold text-muted hover:text-main hover:bg-surface-highlight"
+                                    className="flex-1 py-3 bg-background border border-surface-border rounded-md font-bold text-muted hover:text-main hover:bg-surface-highlight"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={handleSaveFix}
-                                    className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary-light/500/30 hover:bg-primary-dark"
+                                    className="flex-1 py-3 bg-primary text-white rounded-md font-bold shadow-lg shadow-primary-light/500/30 hover:bg-primary-dark"
                                 >
                                     Salvar
                                 </button>

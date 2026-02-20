@@ -147,19 +147,19 @@ export default function CongregationListPage() {
         setIsDeleting(true);
 
         try {
-            const { data, error } = await supabase
-                .from('congregations')
-                .delete()
-                .eq('id', deleteConfirmation.id)
-                .select(); // Check returned data
+            const response = await fetch('/api/admin/congregations/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deleteConfirmation.id })
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
 
-            if (!data || data.length === 0) {
-                throw new Error("Não foi possível excluir. Verifique se você tem permissão ou se o item já foi removido.");
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir congregação');
             }
 
-            // Update local state to remove the deleted congregation
+            // Atualiza o estado local para remover a congregação excluída
             setCongregations(prev => prev.filter(c => c.id !== deleteConfirmation.id));
 
             toast.success("Congregação excluída com sucesso.");

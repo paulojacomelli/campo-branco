@@ -17,7 +17,8 @@ import {
     CheckCircle2,
     Pencil,
     MoreVertical,
-    Navigation
+    Navigation,
+    LogOut
 } from 'lucide-react';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
@@ -68,7 +69,6 @@ function WitnessingPointListContent() {
     // Check-In Logic State
     const [pendingCheckInPoint, setPendingCheckInPoint] = useState<WitnessingPoint | null>(null);
     const [conflictingPoint, setConflictingPoint] = useState<WitnessingPoint | null>(null);
-    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
     // Fetch City Name
     useEffect(() => {
@@ -218,37 +218,69 @@ function WitnessingPointListContent() {
     };
 
     // 1. Initial Check
-    const handleCheckInClick = (point: WitnessingPoint) => {
-        if (!user) return;
+    const handleCheckInClick = async (point: WitnessingPoint) => {
+        if (!user) {
+            console.warn("Check-in attempt without authenticated user");
+            toast.error("Você precisa estar logado para fazer check-in.");
+            return;
+        }
+
         const userName = profileName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Publicador';
         const userId = user.id;
 
         // Is user checked in HERE?
-        const legacyIndex = (point.current_publishers || []).indexOf(userName);
-        const activeIndex = (point.active_users || []).findIndex(u => u.uid === userId);
-        const activeByNameIndex = (point.active_users || []).findIndex(u => u.name === userName);
-        const isCheckedInHere = legacyIndex >= 0 || activeIndex >= 0 || activeByNameIndex >= 0;
+        const isCheckedInHere =
+            point.active_users?.some(u => u.uid === userId || (u as any).id === userId || u.name === userName) ||
+            point.current_publishers?.includes(userName);
 
         if (isCheckedInHere) {
-            // If already here, just toggle out (no confirmation needed)
-            executeCheckInOut(point, true); // true = checkout
+            // Já está aqui, então faz CHECKOUT
+            console.log("User already checked in here, toggling out...");
+            await executeCheckInOut(point, true); // true = checkout
         } else {
-            // Check collision
+            // Verifica se está em OUTRO ponto
             const otherPoint = points.find(p =>
                 p.id !== point.id && (
-                    p.active_users?.some(u => u.uid === userId || u.name === userName) ||
+                    p.active_users?.some(u => u.uid === userId || (u as any).id === userId || u.name === userName) ||
                     p.current_publishers?.includes(userName)
                 )
             );
 
             if (otherPoint) {
-                // Collision detected! Open modal
-                setPendingCheckInPoint(point);
-                setConflictingPoint(otherPoint);
-                setIsConfirmModalOpen(true);
+                // TROCA AUTOMÁTICA: Sai do outro e entra neste
+                console.log(`Auto-switching from ${otherPoint.name} to ${point.name}`);
+
+                const otherActiveBuffer = [...(otherPoint.active_users || [])];
+                const otherActive = otherActiveBuffer.filter(u => {
+                    const isThisUser = (u.uid && u.uid === userId) || ((u as any).id && (u as any).id === userId) || (u.name && u.name === userName);
+                    return !isThisUser;
+                });
+                const otherLegacy = (otherPoint.current_publishers || []).filter(n => n !== userName);
+                const otherStatus = (otherActive.length > 0 || otherLegacy.length > 0) ? 'OCCUPIED' : 'AVAILABLE';
+
+                try {
+                    // Checkout do ponto anterior via API (para evitar bloqueio de RLS)
+                    await fetch('/api/witnessing/check-in', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: otherPoint.id,
+                            updates: {
+                                active_users: otherActive,
+                                current_publishers: otherLegacy,
+                                status: otherStatus
+                            }
+                        })
+                    });
+
+                    await executeCheckInOut(point, false);
+                } catch (err) {
+                    console.error("Error auto-switching:", err);
+                    toast.error("Erro ao trocar de ponto automaticamente.");
+                }
             } else {
-                // No collision, just proceed
-                executeCheckInOut(point, false); // false = checkin
+                // Checkin normal
+                await executeCheckInOut(point, false);
             }
         }
     };
@@ -263,8 +295,12 @@ function WitnessingPointListContent() {
         let newActiveUsers = [...(point.active_users || [])];
 
         if (isCheckingOut) {
+            // Robust filtering: remove if uid matches OR id matches OR name matches
             newPublishers = newPublishers.filter(n => n !== userName);
-            newActiveUsers = newActiveUsers.filter(u => u.uid !== userId && u.name !== userName);
+            newActiveUsers = newActiveUsers.filter(u => {
+                const isThisUser = (u.uid && u.uid === userId) || ((u as any).id && (u as any).id === userId) || (u.name && u.name === userName);
+                return !isThisUser;
+            });
         } else {
             if (!newActiveUsers.some(u => u.uid === userId)) {
                 newActiveUsers.push({ uid: userId, name: userName, timestamp: Date.now() });
@@ -277,48 +313,38 @@ function WitnessingPointListContent() {
         const newStatus = (newPublishers.length > 0 || newActiveUsers.length > 0) ? 'OCCUPIED' : 'AVAILABLE';
 
         try {
-            const { error } = await supabase
-                .from('witnessing_points')
-                .update({
-                    current_publishers: newPublishers,
-                    active_users: newActiveUsers,
-                    status: newStatus
-                })
-                .eq('id', point.id);
+            console.log(`DEBUG - [${isCheckingOut ? 'CHECKOUT' : 'CHECKIN'}] Enviando para API: ${point.name}`);
 
-            if (error) throw error;
-        } catch (error) {
-            console.error("Error updating status:", error);
-            toast.error("Erro ao atualizar status.");
+            const updates = {
+                current_publishers: newPublishers,
+                active_users: newActiveUsers,
+                status: newStatus
+            };
+
+            const response = await fetch('/api/witnessing/check-in', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: point.id, updates })
+            });
+
+            const resData = await response.json();
+
+            if (!response.ok) {
+                console.error("DEBUG - Erro na API de Check-in:", resData);
+                throw new Error(resData.error || 'Erro ao processar check-in');
+            }
+
+            console.log("DEBUG - Check-in realizado com sucesso via API");
+
+            // Atualiza a lista local imediatamente
+            await fetchPoints();
+        } catch (error: any) {
+            console.error("DEBUG - Falha no processo:", error);
+            toast.error(`Erro ao salvar: ${error.message}`);
         }
     };
 
-    // 3. Confirm Switch
-    const handleConfirmSwitch = async () => {
-        if (!conflictingPoint || !pendingCheckInPoint || !user) return;
-        const userName = profileName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Publicador';
-        const userId = user.id;
 
-        try {
-            // Checkout from old
-            const otherActive = (conflictingPoint.active_users || []).filter(u => u.uid !== userId && u.name !== userName);
-            const otherLegacy = (conflictingPoint.current_publishers || []).filter(n => n !== userName);
-            const otherStatus = (otherActive.length > 0 || otherLegacy.length > 0) ? 'OCCUPIED' : 'AVAILABLE';
-
-            await supabase.from('witnessing_points').update({
-                active_users: otherActive,
-                current_publishers: otherLegacy,
-                status: otherStatus
-            }).eq('id', conflictingPoint.id);
-
-            // Checkin to new
-            await executeCheckInOut(pendingCheckInPoint, false);
-            setIsConfirmModalOpen(false);
-        } catch (err) {
-            console.error("Error auto-checking out:", err);
-            toast.error("Erro ao sair do ponto anterior.");
-        }
-    };
 
     const filteredPoints = points.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -385,9 +411,10 @@ function WitnessingPointListContent() {
                                 const isOccupied = point.status === 'OCCUPIED';
 
                                 // Determine checked-in status
+                                const currentUserName = profileName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Publicador';
                                 const userIsCheckedIn =
-                                    point.active_users?.some(u => u.uid === user?.id) ||
-                                    point.current_publishers?.includes(user?.user_metadata?.full_name || user?.email || '');
+                                    point.active_users?.some(u => u.uid === user?.id || (u as any).id === user?.id || u.name === currentUserName) ||
+                                    point.current_publishers?.includes(currentUserName);
 
                                 return (
                                     <div
@@ -502,12 +529,15 @@ function WitnessingPointListContent() {
                                             <button
                                                 onClick={() => handleCheckInClick(point)}
                                                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${userIsCheckedIn
-                                                    ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50'
+                                                    ? 'bg-red-500 text-white shadow-lg active:scale-95 hover:bg-red-600'
                                                     : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'
                                                     }`}
                                             >
                                                 {userIsCheckedIn ? (
-                                                    <>Sair</>
+                                                    <>
+                                                        <LogOut className="w-3.5 h-3.5" />
+                                                        Check-out
+                                                    </>
                                                 ) : (
                                                     <>
                                                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -566,16 +596,7 @@ function WitnessingPointListContent() {
                 cityName={cityName}
             />
 
-            <ConfirmationModal
-                isOpen={isConfirmModalOpen}
-                onClose={() => setIsConfirmModalOpen(false)}
-                onConfirm={handleConfirmSwitch}
-                title="Trocar de Ponto"
-                message={`Você já está no ponto "${conflictingPoint?.name}". Deseja sair dele e marcar entrada em "${pendingCheckInPoint?.name}"?`}
-                confirmText="Sim, trocar"
-                cancelText="Cancelar"
-                variant="info"
-            />
+
         </div>
     );
 }

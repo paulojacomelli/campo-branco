@@ -21,10 +21,12 @@ import {
     CheckCircle2,
     Globe,
     ExternalLink,
-    UserPlus2
+    UserPlus2,
+    AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import BottomNav from '@/app/components/BottomNav';
+import { toast } from 'sonner';
 
 interface UserProfile {
     id: string;
@@ -33,7 +35,7 @@ interface UserProfile {
     roles?: string[];
     name?: string;
     provider?: string;
-    congregation_id?: string;
+    congregation_id?: string | null;
 }
 
 interface Congregation {
@@ -62,6 +64,7 @@ export default function SuperAdminUsersPage() {
     const [editRoles, setEditRoles] = useState<string[]>([]);
     const [editCongId, setEditCongId] = useState<string>('');
     const [newUser, setNewUser] = useState({ name: '', email: '', congregationId: '' });
+    const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
     const router = useRouter();
 
     const fetchInitialData = async () => {
@@ -122,19 +125,21 @@ export default function SuperAdminUsersPage() {
     }, [openMenuId]);
 
     const handleSaveUser = async () => {
-        if ((!isSuperAdmin && !isElder) || !editingUser) return;
+        if (!isSuperAdmin && !isElder) return;
+        if (!editingUser) return;
+
         if (!isSuperAdmin && editingUser.congregation_id !== congregationId) {
-            alert("Você só pode editar usuários da sua própria congregação.");
+            toast.error("Você só pode editar usuários da sua própria congregação.");
             return;
         }
 
         if (!isSuperAdmin) {
             if (editingUser.role === 'SUPER_ADMIN' || (editingUser.roles && editingUser.roles.includes('SUPER_ADMIN'))) {
-                alert("Você não pode editar um Super Admin.");
+                toast.error("Você não pode editar um Super Admin.");
                 return;
             }
             if (editRoles.includes('SUPER_ADMIN')) {
-                alert("Você não pode promover alguém a Super Admin.");
+                toast.error("Você não pode promover alguém a Super Admin.");
                 return;
             }
         }
@@ -155,10 +160,19 @@ export default function SuperAdminUsersPage() {
                 .eq('id', editingUser.id);
 
             if (error) throw error;
+
+            // Atualiza o estado local para feedback imediato
+            setUsers(prev => prev.map(u =>
+                u.id === editingUser.id
+                    ? { ...u, name: editName.trim(), role: legacyRole, congregation_id: editCongId || null }
+                    : u
+            ));
+
             setShowEditModal(false);
+            toast.success("Usuário atualizado com sucesso!");
         } catch (error) {
             console.error("Erro ao salvar usuário:", error);
-            alert("Erro ao salvar alterações.");
+            toast.error("Erro ao salvar alterações.");
         } finally {
             setUpdatingId(null);
         }
@@ -170,10 +184,11 @@ export default function SuperAdminUsersPage() {
 
         setLoadingData(true);
         try {
+            const newUserId = crypto.randomUUID();
             const { error } = await supabase
                 .from('users')
                 .insert({
-                    id: crypto.randomUUID(),
+                    id: newUserId,
                     name: newUser.name.trim(),
                     email: newUser.email.trim().toLowerCase(),
                     congregation_id: isSuperAdmin ? (newUser.congregationId || null) : congregationId,
@@ -181,12 +196,23 @@ export default function SuperAdminUsersPage() {
                 });
 
             if (error) throw error;
+
+            // Atualiza o estado local (otimista)
+            const createdUser: UserProfile = {
+                id: newUserId,
+                name: newUser.name.trim(),
+                email: newUser.email.trim().toLowerCase(),
+                congregation_id: isSuperAdmin ? (newUser.congregationId || null) : (congregationId || null),
+                role: 'PUBLICADOR'
+            };
+            setUsers(prev => [createdUser, ...prev]);
+
             setShowCreateModal(false);
             setNewUser({ name: '', email: '', congregationId: '' });
-            alert("Usuário criado com sucesso!");
+            toast.success("Usuário criado com sucesso!");
         } catch (error) {
             console.error("Erro ao criar usuário:", error);
-            alert("Erro ao criar usuário.");
+            toast.error("Erro ao criar usuário.");
         } finally {
             setLoadingData(false);
         }
@@ -194,33 +220,54 @@ export default function SuperAdminUsersPage() {
 
     const handleDeleteUser = async (userId: string) => {
         if (!isSuperAdmin && !isElder) return;
+
+        // Impede que o usuário exclua a própria conta
+        if (userId === user?.id) {
+            toast.error("Você não pode excluir sua própria conta por aqui.");
+            return;
+        }
+
         const targetUser = users.find(u => u.id === userId);
         if (!targetUser) return;
 
         if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
-            alert("Você só pode excluir usuários da sua própria congregação.");
+            toast.error("Você só pode excluir usuários da sua própria congregação.");
             return;
         }
 
         if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
-            alert("Apenas Super Admins podem excluir outros Super Admins.");
+            toast.error("Apenas Super Admins podem excluir outros Super Admins.");
             return;
         }
 
-        if (!confirm('Excluir este usuário definitivamente?')) return;
-
         setUpdatingId(userId);
         try {
-            const { error } = await supabase
-                .from('users')
-                .delete()
-                .eq('id', userId);
-            if (error) throw error;
-        } catch (error) {
+            const response = await fetch('/api/admin/users/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId })
+            });
+
+            const resData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir usuário');
+            }
+
+            // Atualiza o estado local imediatamente
+            setUsers(prev => prev.filter(u => u.id !== userId));
+            toast.success("Usuário removido com sucesso!");
+        } catch (error: any) {
             console.error("Erro ao excluir usuário:", error);
-            alert("Erro ao excluir usuário.");
+            const msg = error.message || "";
+            if (msg.includes("foreign key") || (error.code && error.code === '23503')) {
+                toast.error("Não é possível excluir: este membro possui registros vinculados (endereços, designações ou histórico).");
+            } else {
+                toast.error(error.message || "Erro ao excluir usuário.");
+            }
         } finally {
             setUpdatingId(null);
+            setUserToDelete(null);
         }
     };
 
@@ -355,7 +402,7 @@ export default function SuperAdminUsersPage() {
                                             </button>
                                             <button
                                                 onClick={() => {
-                                                    handleDeleteUser(u.id);
+                                                    setUserToDelete(u);
                                                     setOpenMenuId(null);
                                                 }}
                                                 className="w-full px-4 py-2 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
@@ -484,27 +531,39 @@ export default function SuperAdminUsersPage() {
 
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nível de Acesso (Função)</label>
-                                <div className="flex flex-col gap-2">
-                                    {ROLE_DEFINITIONS.map(role => {
-                                        const isActive = editRoles.includes(role.value);
-                                        return (
-                                            <button
-                                                key={role.value}
-                                                onClick={() => setEditRoles([role.value])}
-                                                className={`p-4 rounded-lg border text-sm font-bold transition-all flex items-center justify-between
-                                                    ${isActive
-                                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
-                                                        : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100 hover:border-gray-200'
-                                                    }
-                                                `}
-                                            >
-                                                <span>{role.label}</span>
-                                                {isActive && <CheckCircle2 className="w-4 h-4" />}
-                                                {!isActive && <div className="w-4 h-4 rounded-full border-2 border-gray-200" />}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                {editingUser?.id === user?.id ? (
+                                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 flex flex-col gap-2">
+                                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs uppercase">
+                                            <AlertCircle className="w-4 h-4" />
+                                            Segurança de Acesso
+                                        </div>
+                                        <p className="text-[11px] text-amber-600 dark:text-amber-500 font-medium">
+                                            Por segurança, você não pode alterar seu próprio nível de acesso. Peça a outro administrador para realizar esta alteração se for necessário.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-2">
+                                        {ROLE_DEFINITIONS.map(role => {
+                                            const isActive = editRoles.includes(role.value);
+                                            return (
+                                                <button
+                                                    key={role.value}
+                                                    onClick={() => setEditRoles([role.value])}
+                                                    className={`p-4 rounded-lg border text-sm font-bold transition-all flex items-center justify-between
+                                                        ${isActive
+                                                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                                                            : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100 hover:border-gray-200'
+                                                        }
+                                                    `}
+                                                >
+                                                    <span>{role.label}</span>
+                                                    {isActive && <CheckCircle2 className="w-4 h-4" />}
+                                                    {!isActive && <div className="w-4 h-4 rounded-full border-2 border-gray-200" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             <button
@@ -514,6 +573,42 @@ export default function SuperAdminUsersPage() {
                             >
                                 {updatingId === editingUser.id ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar Alterações'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* CONFIRM DELETE MODAL */}
+            {userToDelete && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center text-red-600 mb-4">
+                                <Trash2 className="w-8 h-8" />
+                            </div>
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Excluir Membro?</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                                Tem certeza que deseja remover <span className="font-bold text-gray-900 dark:text-white">"{userToDelete.name || userToDelete.email}"</span>?
+                                <br />
+                                <span className="text-[10px] opacity-70">({userToDelete.email})</span>
+                                <br /> Esta ação não pode ser desfeita.
+                            </p>
+
+                            <div className="flex flex-col w-full gap-2">
+                                <button
+                                    onClick={() => handleDeleteUser(userToDelete.id)}
+                                    disabled={updatingId === userToDelete.id}
+                                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {updatingId === userToDelete.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sim, Excluir"}
+                                </button>
+                                <button
+                                    onClick={() => setUserToDelete(null)}
+                                    className="w-full py-3 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
