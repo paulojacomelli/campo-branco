@@ -12,7 +12,11 @@ import {
     Calendar,
     Map as MapIcon,
     CheckCircle2,
-    AlertCircle
+    AlertCircle,
+    Search,
+    User,
+    ChevronDown,
+    X
 } from 'lucide-react';
 import { useAuth } from '@/app/context/AuthContext';
 import { toast } from 'sonner';
@@ -20,7 +24,7 @@ import { toast } from 'sonner';
 function ShareSetupContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { user } = useAuth();
+    const { user, profileName, congregationId: authCongregationId, loading: authLoading } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [territories, setTerritories] = useState<any[]>([]);
@@ -30,11 +34,29 @@ function ShareSetupContent() {
     const [generating, setGenerating] = useState(false);
     const [error, setError] = useState('');
 
+    const [users, setUsers] = useState<any[]>([]);
+    const [searchUserTerm, setSearchUserTerm] = useState('');
+    const [selectedUser, setSelectedUser] = useState<{ id: string, name: string, avatar_url?: string } | null>(null);
+    const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+    const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
+
     const territoryIdsParam = searchParams.get('ids');
     const returnUrl = searchParams.get('returnUrl') || '/dashboard';
 
+    // Redirect if not logged in
+    useEffect(() => {
+        if (!authLoading && !user) {
+            console.log("Usuário não autenticado no ShareSetup, redirecionando...");
+            router.push('/login');
+        }
+    }, [user, authLoading, router]);
+
     useEffect(() => {
         const fetchTerritories = async () => {
+            // Wait for auth to be ready
+            if (authLoading) return;
+            if (!user) return; // Hook above handles redirect
+
             if (!territoryIdsParam) {
                 setError("Nenhum território selecionado.");
                 setLoading(false);
@@ -49,40 +71,106 @@ function ShareSetupContent() {
             }
 
             try {
-                const { data: fetched, error: fetchError } = await supabase
-                    .from('territories')
-                    .select('*')
-                    .in('id', ids);
+                console.log(`Buscando detalhes para ${ids.length} territórios via API...`);
+                const response = await fetch(`/api/territories/details?ids=${ids.join(',')}`);
+                const json = await response.json();
 
-                if (fetchError) throw fetchError;
-                setTerritories(fetched || []);
+                if (!response.ok) {
+                    throw new Error(json.error || 'Erro ao carregar territórios');
+                }
 
-                // Fetch City Name if possible
-                if (fetched && fetched.length > 0 && fetched[0].city_id) {
-                    const { data: cityData } = await supabase
-                        .from('cities')
-                        .select('name')
-                        .eq('id', fetched[0].city_id)
-                        .single();
+                const fetched = json.territories || [];
 
-                    if (cityData) {
-                        setCityName(cityData.name);
+                if (fetched.length === 0) {
+                    console.warn("Nenhum território retornado pela API para os IDs:", ids);
+                    setError("Territórios não encontrados ou você não tem permissão para acessá-los.");
+                } else {
+                    console.log(`${fetched.length} territórios carregados com sucesso.`);
+                    setTerritories(fetched);
+
+                    // Fetch City Name if possible
+                    if (fetched[0].city_id) {
+                        const { data: cityData } = await supabase
+                            .from('cities')
+                            .select('name')
+                            .eq('id', fetched[0].city_id)
+                            .single();
+
+                        if (cityData) {
+                            setCityName(cityData.name);
+                        }
                     }
                 }
-            } catch (err) {
-                console.error("Error fetching territories:", err);
-                setError("Erro ao carregar detalhes dos territórios.");
+            } catch (err: any) {
+                console.error("Erro ao carregar detalhes dos territórios:", err);
+                setError(err.message || "Erro ao carregar detalhes dos territórios.");
             } finally {
                 setLoading(false);
             }
         };
 
         fetchTerritories();
-    }, [territoryIdsParam]);
+    }, [territoryIdsParam, authLoading, user]);
+
+    useEffect(() => {
+        let ignore = false;
+        const fetchUsers = async () => {
+            let fetchedUsers: any[] = [];
+
+            // 1. Initial members list only with the current user
+            if (user) {
+                fetchedUsers.push({
+                    id: user.id,
+                    name: profileName || user.email || 'Eu mesmo',
+                    email: user.email,
+                    avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null
+                });
+            }
+
+            // 2. Fetch congregation members if possible
+            // Use AuthContext congregationId as primary since it's more stable on load
+            const congregationId = authCongregationId || (territories.length > 0 ? territories[0].congregation_id : null);
+
+            if (congregationId) {
+                try {
+                    const response = await fetch(`/api/users/list?congregationId=${congregationId}`, { cache: 'no-store' });
+                    const json = await response.json();
+
+                    if (!ignore && response.ok && json.users) {
+                        const countBefore = fetchedUsers.length;
+                        // Merge without duplicates
+                        json.users.forEach((apiUser: any) => {
+                            if (!fetchedUsers.find(u => u.id === apiUser.id)) {
+                                fetchedUsers.push(apiUser);
+                            }
+                        });
+
+                        const added = fetchedUsers.length - countBefore;
+                        if (added > 0) {
+                            console.log(`${added} novos membros encontrados para CID: ${congregationId}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch congregation users', e);
+                }
+            }
+
+            if (!ignore) {
+                setUsers(fetchedUsers);
+            }
+        };
+
+        fetchUsers();
+        return () => { ignore = true; };
+    }, [territories, user, profileName, authCongregationId]);
+
 
     const getOrCreateLink = async () => {
         if (generatedLink) return generatedLink;
-        if (territories.length === 0) return null;
+        if (territories.length === 0) {
+            toast.error("Nenhum território carregado para gerar o link.");
+            return null;
+        }
 
         setGenerating(true);
         try {
@@ -103,68 +191,40 @@ function ShareSetupContent() {
                 title = `${territories.length} Territórios - ${cityName || territories[0].city || 'Vários'}`;
             }
 
-            // Create shared list in Supabase
-            const { data: shareData, error: shareError } = await supabase
-                .from('shared_lists')
-                .insert({
-                    type: 'territory',
-                    items: territories.map(t => t.id),
-                    created_by: user?.id,
-                    congregation_id: territories[0].congregation_id,
-                    city_id: territories[0].city_id,
-                    expires_at: expiresAt ? expiresAt.toISOString() : null,
-                    status: 'active',
-                    title: title,
-                    context: territories.length === 1 ? {
-                        territoryId: territories[0].id,
-                        cityId: territories[0].city_id,
-                        territoryName: territories[0].name || '',
-                        cityName: cityName || territories[0].city || '',
-                        featuredDetails: cityName || territories[0].city || ''
-                    } : {}
-                })
-                .select()
-                .single();
+            // Create shared list in Supabase using the new secure API
+            const listData = {
+                type: 'territory',
+                items: territories.map(t => t.id),
+                created_by: user?.id,
+                congregation_id: territories[0].congregation_id,
+                city_id: territories[0].city_id,
+                expires_at: expiresAt ? expiresAt.toISOString() : null,
+                status: 'active',
+                title: title,
+                assigned_to: selectedUser ? selectedUser.id : null,
+                assigned_name: selectedUser ? selectedUser.name : null,
+                context: territories.length === 1 ? {
+                    territoryId: territories[0].id,
+                    cityId: territories[0].city_id,
+                    territoryName: territories[0].name || '',
+                    cityName: cityName || territories[0].city || '',
+                    featuredDetails: cityName || territories[0].city || ''
+                } : {}
+            };
 
-            if (shareError) throw shareError;
+            const response = await fetch('/api/shared_lists/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listData, territories })
+            });
 
-            // START SNAPSHOT LOGIC
-            const snapshotEntries = [];
-
-            // Snapshot Territories
-            for (const t of territories) {
-                snapshotEntries.push({
-                    shared_list_id: shareData.id,
-                    item_id: t.id,
-                    data: t
-                });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Erro ao criar a lista compartilhada na API');
             }
 
-            // Snapshot Addresses
-            const territoryIds = territories.map(t => t.id);
-            const { data: addresses, error: addrError } = await supabase
-                .from('addresses')
-                .select('*')
-                .in('territory_id', territoryIds);
-
-            if (addresses) {
-                for (const addr of addresses) {
-                    snapshotEntries.push({
-                        shared_list_id: shareData.id,
-                        item_id: addr.id,
-                        data: addr
-                    });
-                }
-            }
-
-            if (snapshotEntries.length > 0) {
-                const { error: snapError } = await supabase
-                    .from('shared_list_snapshots')
-                    .insert(snapshotEntries);
-
-                if (snapError) console.warn("[SNAPSHOT] Failed to save snapshots:", snapError);
-            }
-            // END SNAPSHOT LOGIC
+            const data = await response.json();
+            const shareData = data.shareData;
 
             const link = `${window.location.origin}/share?id=${shareData.id}`;
             setGeneratedLink(link);
@@ -190,8 +250,20 @@ function ShareSetupContent() {
                 await navigator.clipboard.writeText(link);
                 toast.success("Link copiado!");
             } catch (err) {
-                console.error(err);
-                toast.error("Erro ao copiar link.");
+                console.warn("Clipboard API failed, using fallback:", err);
+                // Fallback for non-secure contexts or old browsers
+                const input = document.createElement('input');
+                input.value = link;
+                document.body.appendChild(input);
+                input.select();
+                try {
+                    document.execCommand('copy');
+                    toast.success("Link copiado!");
+                } catch (copyErr) {
+                    console.error("Fallback copy failed:", copyErr);
+                    toast.error("Erro ao copiar link.");
+                }
+                document.body.removeChild(input);
             }
         }
     };
@@ -283,6 +355,120 @@ function ShareSetupContent() {
                             <option value="14d">14 Dias (Padrão)</option>
                             <option value="30d">30 Dias</option>
                         </select>
+                    </div>
+
+                    <div className="space-y-2 relative">
+                        <label className="text-sm font-bold text-muted uppercase tracking-wider flex items-center gap-2">
+                            <User className="w-4 h-4" /> Designar Para (Opcional)
+                        </label>
+                        <p className="text-xs text-muted">Selecione um membro da congregação para vincular a este link.</p>
+
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => !generatedLink && setIsUserDropdownOpen(!isUserDropdownOpen)}
+                                disabled={!!generatedLink}
+                                className="w-full bg-surface border border-surface-border rounded-xl p-4 text-left text-main font-semibold flex items-center justify-between focus:ring-2 focus:ring-primary-light/500/20 outline-none transition-all disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                            >
+                                {selectedUser ? (
+                                    <>
+                                        <div className="flex items-center gap-3">
+                                            {selectedUser.avatar_url && !brokenAvatars[selectedUser.id] ? (
+                                                <img
+                                                    src={selectedUser.avatar_url}
+                                                    alt=""
+                                                    referrerPolicy="no-referrer"
+                                                    className="w-6 h-6 rounded-full object-cover border border-surface-border shrink-0"
+                                                    onError={() => setBrokenAvatars(prev => ({ ...prev, [selectedUser.id]: true }))}
+                                                />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full bg-primary-light/50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                                                    <User className="w-3.5 h-3.5 text-primary dark:text-blue-400" />
+                                                </div>
+                                            )}
+                                            <span className="flex-1 text-sm font-bold text-main truncate">
+                                                {selectedUser.name}
+                                            </span>
+                                        </div>
+                                        {!generatedLink && (
+                                            <X
+                                                className="w-5 h-5 text-muted hover:text-red-500 transition-colors z-10"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedUser(null);
+                                                }}
+                                            />
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-muted">Nenhum membro selecionado</span>
+                                        <ChevronDown className={`w-5 h-5 text-muted transition-transform ${isUserDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </>
+                                )}
+                            </button>
+
+                            {isUserDropdownOpen && !generatedLink && (
+                                <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-surface-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="p-3 border-b border-surface-border sticky top-0 bg-surface">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar membro..."
+                                                value={searchUserTerm}
+                                                onChange={(e) => setSearchUserTerm(e.target.value)}
+                                                className="w-full bg-gray-50 dark:bg-gray-800 border-none rounded-lg py-2 pl-9 pr-4 text-sm font-medium text-main focus:ring-2 focus:ring-primary/20 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto">
+                                        {(() => {
+                                            const filtered = users.filter(u => {
+                                                const nameStr = (u.name || '').toLowerCase();
+                                                const emailStr = (u.email || '').toLowerCase();
+                                                const term = searchUserTerm.toLowerCase();
+                                                return nameStr.includes(term) || emailStr.includes(term);
+                                            });
+
+                                            if (filtered.length === 0) {
+                                                return <div className="p-4 text-center text-sm text-muted">Nenhum membro encontrado.</div>;
+                                            }
+
+                                            return filtered.slice(0, 5).map(u => (
+                                                <button
+                                                    key={u.id}
+                                                    onClick={() => {
+                                                        setSelectedUser({ id: u.id, name: u.name || 'Sem Nome', avatar_url: u.avatar_url });
+                                                        setIsUserDropdownOpen(false);
+                                                        setSearchUserTerm('');
+                                                    }}
+                                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 text-sm font-bold text-main transition-colors border-b border-transparent hover:border-surface-border last:border-none flex items-center gap-3"
+                                                >
+                                                    {u.avatar_url && !brokenAvatars[u.id] ? (
+                                                        <img
+                                                            src={u.avatar_url}
+                                                            alt=""
+                                                            referrerPolicy="no-referrer"
+                                                            className="w-6 h-6 rounded-full object-cover border border-surface-border shrink-0"
+                                                            onError={() => setBrokenAvatars(prev => ({ ...prev, [u.id]: true }))}
+                                                        />
+                                                    ) : (
+                                                        <div className="w-6 h-6 rounded-full bg-primary-light/50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                                                            <User className="w-3.5 h-3.5 text-primary dark:text-blue-400" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="truncate">{u.name}</span>
+                                                        {u.email && <span className="text-[10px] text-muted font-medium truncate">{u.email}</span>}
+                                                    </div>
+                                                </button>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="space-y-3 pt-2">

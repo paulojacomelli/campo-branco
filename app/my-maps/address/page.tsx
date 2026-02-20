@@ -58,6 +58,7 @@ interface Address {
     lng?: number;
     is_active?: boolean; // Changed from isActive
     google_maps_link?: string; // Changed from googleMapsLink
+    waze_link?: string;
     people_count?: number; // Changed from peopleCount
     resident_name?: string; // Changed from residentName
     is_deaf?: boolean; // Changed from isDeaf
@@ -102,7 +103,8 @@ function AddressListContent() {
     // New Fields
     const [isActive, setIsActive] = useState(true);
     const [googleMapsLink, setGoogleMapsLink] = useState('');
-    const [peopleCount, setPeopleCount] = useState('');
+    const [wazeLink, setWazeLink] = useState('');
+    const [peopleCount, setPeopleCount] = useState('1');
     // Gender Stats State: territoryId -> { men: number, women: number, couples: number }
     const [genderStats, setGenderStats] = useState<Record<string, { men: number, women: number, couples: number }>>({});
     const [residentName, setResidentName] = useState('');
@@ -163,27 +165,42 @@ function AddressListContent() {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const [congRes, cityRes, terrRes] = await Promise.all([
-                    supabase.from('congregations').select('name, term_type, category').eq('id', congregationId).single(),
-                    supabase.from('cities').select('name,parent_city').eq('id', cityId).single(),
-                    supabase.from('territories').select('name').eq('id', territoryId).single()
-                ]);
+                // Fetch context over bypass RLS API to avoid 404 block for cities and territories selection
+                const response = await fetch(`/api/maps/context?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
+                const resData = await response.json();
+
+                if (!resData.success) {
+                    throw new Error(resData.error || 'Erro ao buscar contexto superior');
+                }
+
+                const congResData = resData.congregation;
+                const cityResData = resData.city;
+                const terrResData = resData.territory;
+
+                // Concatenando o numero com descricao para exibir no cabeçalho
+                let territoryDisplayName = 'Não encontrada';
+                if (terrResData) {
+                    territoryDisplayName = terrResData.name;
+                    if (terrResData.notes) {
+                        territoryDisplayName += ` - ${terrResData.notes}`;
+                    }
+                }
 
                 setContextNames({
-                    congregation: congRes.data?.name || 'Não encontrada',
-                    city: cityRes.data?.name || 'Não encontrada',
-                    territory: terrRes.data?.name || 'Não encontrada'
+                    congregation: congResData?.name || 'Não encontrada',
+                    city: cityResData?.name || 'Não encontrada',
+                    territory: territoryDisplayName
                 });
 
-                if (congRes.data) {
-                    setLocalTermType(congRes.data.term_type as any || 'city');
-                    const cat = (congRes.data.category || '').toLowerCase();
+                if (congResData) {
+                    setLocalTermType(congResData.term_type as any || 'city');
+                    const cat = (congResData.category || '').toLowerCase();
                     if (cat.includes('sinais') || cat.includes('sign')) setLocalCongregationType('SIGN_LANGUAGE');
                     else if (cat.includes('estrangeir') || cat.includes('foreign')) setLocalCongregationType('FOREIGN_LANGUAGE');
                     else setLocalCongregationType('TRADITIONAL');
                 }
-                if (cityRes.data) {
-                    setParentCity(cityRes.data.parent_city || null);
+                if (cityResData) {
+                    setParentCity(cityResData.parent_city || null);
                 }
 
             } catch (error) {
@@ -202,14 +219,17 @@ function AddressListContent() {
         if (!congregationId || !territoryId) return;
 
         try {
-            const { data, error } = await supabase
-                .from('addresses')
-                .select('*')
-                .eq('congregation_id', congregationId)
-                .eq('territory_id', territoryId)
-                .order('sort_order', { ascending: true });
+            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&territoryId=${territoryId}`);
+            const resData = await response.json();
 
-            if (error) throw error;
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao buscar endereços');
+            }
+
+            const data = resData.addresses.map((addr: any) => ({
+                ...addr,
+                people_count: addr.phone ? parseInt(addr.phone) : 1
+            }));
 
             const sorted = (data || []).sort((a: any, b: any) => {
                 const orderA = a.sort_order ?? 999999;
@@ -297,10 +317,21 @@ function AddressListContent() {
         }
     };
 
+    const generateWazeLink = () => {
+        if (lat && lng) {
+            setWazeLink(`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`);
+        } else if (combinedAddress) {
+            setWazeLink(`https://waze.com/ul?q=${encodeURIComponent(combinedAddress)}&navigate=yes`);
+        }
+    };
+
     // Actions
     const handleCreateAddress = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!combinedAddress.trim()) return;
+        if (!combinedAddress.trim()) {
+            toast.error("Preencha o Endereço Completo para salvar.");
+            return;
+        }
 
         let finalNumber = 'S/N';
         const numberMatch = combinedAddress.match(/,\s*(\d+)/) || combinedAddress.match(/\s(\d+)(?:\s|$)/);
@@ -312,6 +343,7 @@ function AddressListContent() {
 
         try {
             const addressData = {
+                id: editingId || undefined,
                 street: finalStreet,
                 number: finalNumber,
                 complement: '',
@@ -322,7 +354,7 @@ function AddressListContent() {
                 lng: finalLng,
                 is_active: isActive,
                 google_maps_link: googleMapsLink,
-                people_count: peopleCount ? parseInt(peopleCount) : 0,
+                waze_link: wazeLink,
                 resident_name: residentName,
                 gender: gender || null,
                 is_deaf: isDeaf,
@@ -330,20 +362,23 @@ function AddressListContent() {
                 is_student: isStudent,
                 is_neurodivergent: isNeurodivergent,
                 observations,
-                updated_at: new Date().toISOString()
+                people_count: peopleCount ? parseInt(peopleCount) : 0
             };
 
-            if (editingId) {
-                const { error } = await supabase.from('addresses').update(addressData).eq('id', editingId);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase.from('addresses').insert({
-                    ...addressData,
-                    created_at: new Date().toISOString(),
-                    completed: false
-                });
-                if (error) throw error;
+            const response = await fetch('/api/addresses/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addressData)
+            });
+
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao salvar via API');
             }
+
+            toast.success(editingId ? "Endereço atualizado com sucesso!" : "Endereço cadastrado com sucesso!");
+
+            fetchAddresses();
 
             resetForm();
         } catch (error) {
@@ -358,7 +393,8 @@ function AddressListContent() {
         setLng('');
         setIsActive(true);
         setGoogleMapsLink('');
-        setPeopleCount('');
+        setWazeLink('');
+        setPeopleCount('1');
         setResidentName('');
         setGender('');
         setIsDeaf(false);
@@ -380,7 +416,8 @@ function AddressListContent() {
         setSelectedTerritoryId(addr.territory_id);
         setIsActive(addr.is_active ?? true);
         setGoogleMapsLink(addr.google_maps_link || '');
-        setPeopleCount(addr.people_count?.toString() || '');
+        setWazeLink(addr.waze_link || '');
+        setPeopleCount(addr.people_count?.toString() || (addr as any).phone || '1');
         setResidentName(addr.resident_name || '');
         setGender(addr.gender || '');
         setIsDeaf(addr.is_deaf || false);
@@ -979,38 +1016,19 @@ function AddressListContent() {
                                         </button>
                                     </div>
 
-                                    {/* Context Info (Editable) */}
-                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-2 border border-gray-100 dark:border-gray-700">
+                                    {/* Context Info (Read Only) */}
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3 border border-gray-100 dark:border-gray-700">
                                         <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
                                             <span className="text-xs font-bold text-muted uppercase tracking-wider">Congregação</span>
-                                            <select
-                                                className="text-sm font-bold text-main bg-transparent text-right focus:outline-none cursor-pointer max-w-[60%]"
-                                                value={selectedCongregationId}
-                                                onChange={(e) => setSelectedCongregationId(e.target.value)}
-                                                disabled
-                                            >
-                                                {availableCongregations.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
-                                            </select>
+                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.congregation}>{contextNames.congregation}</span>
                                         </div>
                                         <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
                                             <span className="text-xs font-bold text-muted uppercase tracking-wider">{localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'}</span>
-                                            <select
-                                                className="text-sm font-bold text-main bg-transparent text-right focus:outline-none cursor-pointer max-w-[60%]"
-                                                value={selectedCityId}
-                                                onChange={(e) => setSelectedCityId(e.target.value)}
-                                            >
-                                                {availableCities.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
-                                            </select>
+                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.city}>{contextNames.city}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-xs font-bold text-muted uppercase tracking-wider">Território</span>
-                                            <select
-                                                className="text-sm font-bold text-main bg-transparent text-right focus:outline-none cursor-pointer max-w-[60%]"
-                                                value={selectedTerritoryId}
-                                                onChange={(e) => setSelectedTerritoryId(e.target.value)}
-                                            >
-                                                {availableTerritories.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name}</option>)}
-                                            </select>
+                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.territory}>{contextNames.territory}</span>
                                         </div>
                                     </div>
 
@@ -1040,13 +1058,43 @@ function AddressListContent() {
                                                 <button
                                                     type="button"
                                                     onClick={generateMapsLink}
-                                                    className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-3 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                                                    className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-3 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors shrink-0"
                                                     title="Gerar Link Automático"
                                                 >
-                                                    <MapPin className="w-5 h-5" />
+                                                    <svg viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0">
+                                                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4285F4" />
+                                                        <circle cx="12" cy="9" r="2.5" fill="#fff" />
+                                                    </svg>
                                                 </button>
                                             </div>
-                                            <div className="flex flex-col gap-2 mt-2">
+
+                                            {/* Waze Link */}
+                                            <div className="mt-4">
+                                                <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Link Waze</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
+                                                        value={wazeLink}
+                                                        onChange={e => setWazeLink(e.target.value)}
+                                                        placeholder="https://waze.com/ul..."
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={generateWazeLink}
+                                                        className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-3 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors shrink-0"
+                                                        title="Gerar Link Waze"
+                                                    >
+                                                        <svg viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0">
+                                                            <path fill="#33CCFF" d="M19.333 11.667a6.666 6.666 0 0 0-13.333 0c0 .35.03.7.078 1.045a3.167 3.167 0 0 0-2.745 3.122 3.167 3.167 0 0 0 3.167 3.166h.165a2.833 2.833 0 0 0 5.667 0h1.333a2.833 2.833 0 0 0 5.667 0h.165a3.167 3.167 0 0 0 3.167-3.166 3.167 3.167 0 0 0-2.745-3.122 6.666 6.666 0 0 0 .078-1.045z" />
+                                                            <circle cx="15.5" cy="11.5" r="1" fill="#fff" />
+                                                            <circle cx="9.5" cy="11.5" r="1" fill="#fff" />
+                                                            <path d="M10 14.5s1 1 2 0" stroke="#fff" strokeWidth="1" fill="none" strokeLinecap="round" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col gap-2 mt-4">
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -1055,7 +1103,7 @@ function AddressListContent() {
                                                     }}
                                                     className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors flex items-center justify-center gap-2"
                                                 >
-                                                    <Navigation className="w-4 h-4" /> Selecionar Pino no Mapa
+                                                    <MapPin className="w-4 h-4" /> Selecionar Pino no Mapa
                                                 </button>
                                             </div>
                                             {/* Debug/Verify Coords */}
@@ -1072,9 +1120,13 @@ function AddressListContent() {
                                                     <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Residentes</label>
                                                     <input
                                                         type="number"
+                                                        min="1"
                                                         className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
                                                         value={peopleCount}
                                                         onChange={e => setPeopleCount(e.target.value)}
+                                                        onBlur={() => {
+                                                            if (!peopleCount || parseInt(peopleCount) < 1) setPeopleCount('1');
+                                                        }}
                                                         placeholder="Qtd."
                                                     />
                                                 </div>

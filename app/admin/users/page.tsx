@@ -146,25 +146,38 @@ export default function SuperAdminUsersPage() {
 
         setUpdatingId(editingUser.id);
         try {
+            // Calcula o 'role' legado com base no papel de maior hierarquia selecionado
+            // O banco Supabase possui apenas a coluna 'role' (string/enum),
+            // não existe coluna 'roles' (array) na tabela users
             const legacyRole = editRoles.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' :
                 editRoles.includes('ANCIAO') ? 'ANCIAO' :
                     editRoles.includes('SERVO') ? 'SERVO' : 'PUBLICADOR';
 
-            const { error } = await supabase
-                .from('users')
-                .update({
+            // Envia a requisição para a nova API de update (bypassa o RLS via backend)
+            const response = await fetch('/api/admin/users/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: editingUser.id,
                     name: editName.trim(),
                     role: legacyRole,
                     congregation_id: editCongId || null
                 })
-                .eq('id', editingUser.id);
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
 
-            // Atualiza o estado local para feedback imediato
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao atualizar usuário');
+            }
+
+            // CORREÇÃO DO FALSO POSITIVO:
+            // O estado local deve refletir exatamente o que o banco salvou.
+            // Zeramos 'roles' (undefined) para forçar o fallback para [u.role],
+            // garantindo consistência entre o estado local e o banco ao recarregar.
             setUsers(prev => prev.map(u =>
                 u.id === editingUser.id
-                    ? { ...u, name: editName.trim(), role: legacyRole, congregation_id: editCongId || null }
+                    ? { ...u, name: editName.trim(), role: legacyRole, roles: undefined, congregation_id: editCongId || null }
                     : u
             ));
 

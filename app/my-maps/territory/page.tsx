@@ -73,6 +73,9 @@ function TerritoryListContent() {
     const [editName, setEditName] = useState('');
     const [editDescription, setEditDescription] = useState('');
 
+    // Delete State
+    const [territoryToDelete, setTerritoryToDelete] = useState<{ id: string, name: string } | null>(null);
+
     // Multi-select state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -133,17 +136,15 @@ function TerritoryListContent() {
             return;
         }
         try {
-            const { data, error } = await supabase
-                .from('territories')
-                .select('*')
-                .eq('congregation_id', congregationId)
-                .eq('city_id', cityId)
-                .order('name'); // Basic sort, refinement needed for numeric strings
+            const response = await fetch(`/api/territories/list?cityId=${cityId}&congregationId=${congregationId}`);
+            const data = await response.json();
 
-            if (error) throw error;
+            if (!data.success) {
+                throw new Error(data.error || 'Erro ao buscar territórios');
+            }
 
             // Client-side numeric sort for names like "1", "2", "10"
-            const sorted = (data || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            const sorted = (data.territories || []).sort((a: Territory, b: Territory) => a.name.localeCompare(b.name, undefined, { numeric: true }));
             setTerritories(sorted);
         } catch (error) {
             console.error("Error fetching territories:", error);
@@ -156,6 +157,7 @@ function TerritoryListContent() {
         fetchTerritories();
 
         if (congregationId && cityId) {
+            // Realtime is still active, but when it triggers, fetch from backend to bypass RLS
             const subscription = supabase
                 .channel('territories_list')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'territories', filter: `city_id=eq.${cityId}` }, () => {
@@ -289,23 +291,32 @@ function TerritoryListContent() {
         if (!newTerritoryName.trim() || !cityId || !congregationId) return;
 
         try {
-            const { error } = await supabase.from('territories').insert({
-                name: newTerritoryName.trim(),
-                notes: newTerritoryDesc.trim(),
-                city_id: cityId,
-                congregation_id: congregationId,
-                lat: newTerritoryLat ? parseFloat(newTerritoryLat) : null,
-                lng: newTerritoryLng ? parseFloat(newTerritoryLng) : null,
-                status: 'LIVRE'
+            const response = await fetch('/api/territories/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newTerritoryName.trim(),
+                    notes: newTerritoryDesc.trim(),
+                    city_id: cityId,
+                    congregation_id: congregationId,
+                    lat: newTerritoryLat ? parseFloat(newTerritoryLat) : null,
+                    lng: newTerritoryLng ? parseFloat(newTerritoryLng) : null,
+                    status: 'LIVRE'
+                })
             });
 
-            if (error) throw error;
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao criar território');
+            }
 
             setNewTerritoryName('');
             setNewTerritoryDesc('');
             setNewTerritoryLat('');
             setNewTerritoryLng('');
             setIsCreateModalOpen(false);
+            fetchTerritories();
+            toast.success("Território criado com sucesso!");
         } catch (error) {
             console.error("Error creating territory:", error);
             toast.error("Erro ao criar território.");
@@ -317,15 +328,20 @@ function TerritoryListContent() {
         if (!editingTerritory || !editName.trim()) return;
 
         try {
-            const { error } = await supabase
-                .from('territories')
-                .update({
+            const response = await fetch('/api/territories/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: editingTerritory.id,
                     name: editName,
                     notes: editDescription
                 })
-                .eq('id', editingTerritory.id);
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao atualizar território');
+            }
 
             toast.success("Território atualizado com sucesso!");
             fetchTerritories();
@@ -337,11 +353,27 @@ function TerritoryListContent() {
         }
     };
 
-    const handleDeleteTerritory = async (id: string, name: string) => {
-        if (!confirm(`Tem certeza que deseja excluir o território ${name}?`)) return;
+    const handleDeleteTerritory = (id: string, name: string) => {
+        setTerritoryToDelete({ id, name });
+    };
+
+    const confirmDeleteTerritory = async () => {
+        if (!territoryToDelete) return;
+        const { id } = territoryToDelete;
+        setTerritoryToDelete(null); // Fecha o modal imediatamente
         try {
-            const { error } = await supabase.from('territories').delete().eq('id', id);
-            if (error) throw error;
+            const response = await fetch('/api/territories/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir território');
+            }
+            toast.success("Território excluído com sucesso!");
+            fetchTerritories();
         } catch (error) {
             console.error("Error deleting territory:", error);
             toast.error("Erro ao excluir território.");
@@ -806,6 +838,27 @@ function TerritoryListContent() {
                                     <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-lg font-bold shadow-lg shadow-emerald-500/20 hover:bg-primary-dark transition-colors">Salvar</button>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Delete Confirmation Modal */}
+            {
+                territoryToDelete && (
+                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-white dark:bg-slate-900 rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                <Trash2 className="w-6 h-6 text-red-500" />
+                                Excluir Território
+                            </h2>
+                            <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">
+                                Tem certeza que deseja excluir o território <span className="font-bold text-gray-900 dark:text-white">{territoryToDelete.name}</span>? Esta ação não pode ser desfeita.
+                            </p>
+                            <div className="flex gap-3 pt-2">
+                                <button type="button" onClick={() => setTerritoryToDelete(null)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
+                                <button type="button" onClick={confirmDeleteTerritory} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg shadow-red-500/20 hover:bg-red-700 transition-colors">Excluir</button>
+                            </div>
                         </div>
                     </div>
                 )

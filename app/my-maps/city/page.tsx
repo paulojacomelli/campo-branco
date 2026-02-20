@@ -104,13 +104,14 @@ function CityListContent() {
     const fetchCities = async () => {
         if (!congregationId) return;
         try {
-            const { data, error } = await supabase
-                .from('cities')
-                .select('*')
-                .eq('congregation_id', congregationId)
-                .order('name');
-            if (error) throw error;
-            setCities(data || []);
+            const response = await fetch(`/api/cities/list?congregationId=${congregationId}`);
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Erro ao buscar dados');
+            }
+
+            setCities(data.cities || []);
         } catch (error) {
             console.error("Error fetching cities:", error);
         } finally {
@@ -269,18 +270,24 @@ function CityListContent() {
         if (!newCityName.trim() || !congregationId) return;
 
         try {
-            const { error } = await supabase
-                .from('cities')
-                .insert([{
+            const response = await fetch('/api/cities/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     name: newCityName.trim(),
                     uf: newCityUF,
                     congregation_id: congregationId,
                     parent_city: localTermType === 'neighborhood' ? newParentCity.trim() : null,
                     lat: newCityLat ? parseFloat(newCityLat) : null,
                     lng: newCityLng ? parseFloat(newCityLng) : null
-                }]);
+                })
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(resData.error || `Erro ao atualizar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}`);
+            }
 
             setNewCityName('');
             setNewCityUF('SP');
@@ -301,18 +308,23 @@ function CityListContent() {
         if (!editingCity || !editingCity.name.trim()) return;
 
         try {
-            const { error } = await supabase
-                .from('cities')
-                .update({
+            const response = await fetch('/api/cities/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: editingCity.id,
                     name: editingCity.name,
                     uf: editingCity.uf,
                     parent_city: editingCity.parent_city,
                     lat: editingCity.lat ? parseFloat(editingCity.lat.toString()) : null,
                     lng: editingCity.lng ? parseFloat(editingCity.lng.toString()) : null
                 })
-                .eq('id', editingCity.id);
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || `Erro ao atualizar ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}`);
+            }
 
             toast.success(`${localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'} atualizado(a) com sucesso!`);
             fetchCities();
@@ -328,12 +340,16 @@ function CityListContent() {
         if (!confirm("Tem certeza que deseja excluir " + name + "?")) return;
 
         try {
-            const { error } = await supabase
-                .from('cities')
-                .delete()
-                .eq('id', id);
+            const response = await fetch('/api/cities/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
 
-            if (error) throw error;
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData.error || 'Erro ao excluir');
+            }
             setOpenMenuId(null);
         } catch (error) {
             console.error("Error deleting city:", error);

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
         }
 
         // 2. Verificar o usuário alvo
-        const { data: targetUser } = await supabase
+        const { data: targetUser } = await supabaseAdmin
             .from('users')
             .select('role, congregation_id')
             .eq('id', userId)

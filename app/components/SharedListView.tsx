@@ -90,28 +90,21 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
             }
 
             try {
-                // 1. Fetch List Metadata from Supabase
-                const { data: list, error: listError } = await supabase
-                    .from('shared_lists')
-                    .select('*')
-                    .eq('id', id)
-                    .single();
+                console.log(`Buscando detalhes do link ${id} via API...`);
+                // 1. Fetch Consolidated Data from Server-Side API
+                // This bypasses RLS and handles snapshots/metadata/visits in one go
+                const response = await fetch(`/api/shared_lists/get?id=${id}`, { cache: 'no-store' });
+                const json = await response.json();
 
-                if (listError || !list) {
-                    setError("Link não encontrado.");
+                if (!response.ok) {
+                    if (response.status === 404) setError("Link não encontrado.");
+                    else if (response.status === 410) setError("Link expirado.");
+                    else setError(json.error || "Erro ao carregar link.");
                     setLoading(false);
                     return;
                 }
 
-                if (list.expires_at) {
-                    const now = new Date();
-                    const expires = new Date(list.expires_at);
-                    if (now > expires) {
-                        setError("Link expirado.");
-                        setLoading(false);
-                        return;
-                    }
-                }
+                const { list, items: fetchedItems, visits } = json;
 
                 setListData({
                     ...list,
@@ -128,82 +121,44 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     setIsResponsibilityModalOpen(true);
                 }
 
-                // 2. Fetch Scoped Results (Visits) for this shared list
-                const { data: visits, error: visitsError } = await supabase
-                    .from('visits')
-                    .select('*')
-                    .eq('shared_list_id', id);
-
+                // 2. Process Results (Visits)
                 const linkResults: Record<string, any> = {};
                 if (visits) {
-                    visits.forEach(v => {
+                    visits.forEach((v: any) => {
                         linkResults[v.address_id] = v;
                     });
                 }
 
-                // 3. Fetch Items (Territories/Cities/Addresses)
-                let fetchedItems: any[] = [];
-                const itemIds = list.items || [];
-
-                if (itemIds.length > 0) {
-                    // Try to fetch from Snapshots first
-                    const { data: snapData } = await supabase
-                        .from('shared_list_snapshots')
-                        .select('data')
-                        .eq('shared_list_id', id)
-                        .in('item_id', itemIds);
-
-                    if (snapData && snapData.length > 0) {
-                        fetchedItems = snapData.map(s => ({ ...s.data, id: s.data.id }));
-                    } else {
-                        // Fallback to main tables
-                        let tableName = 'territories';
-                        if (list.type === 'city') tableName = 'cities';
-                        if (list.type === 'address') tableName = 'addresses';
-
-                        const { data: itemsData } = await supabase
-                            .from(tableName)
-                            .select('*')
-                            .in('id', itemIds);
-
-                        if (itemsData) fetchedItems = itemsData;
-                    }
-                }
-
-                // Merge Items with Results
-                const mergedItems = fetchedItems.map((item: any) => {
-                    const result = linkResults[item.id];
-                    return {
-                        ...item,
-                        completed: (result?.status || item.visit_status) === 'contacted',
-                        visitStatus: result?.status || item.visit_status || ''
-                    };
-                });
+                // 3. Merge Items with Results
+                // Note: items returned by the API include all snapshots (territories + addresses for stats)
+                // We must filter for only the "main items" listed in the shared_list metadata
+                const mainItemIds = list.items || [];
+                const mergedItems = (fetchedItems || [])
+                    .filter((item: any) => mainItemIds.includes(item.id))
+                    .map((item: any) => {
+                        const result = linkResults[item.id];
+                        return {
+                            ...item,
+                            completed: (result?.status || item.visit_status) === 'contacted',
+                            visitStatus: result?.status || item.visit_status || ''
+                        };
+                    });
 
                 setItems(mergedItems);
 
                 // 4. Calculate Counts and Stats (if Territory)
                 if (list.type === 'territory') {
-                    // We need ALL addresses of these territories
-                    // If we have snapshots, we can use them
-                    const { data: addrSnapshots } = await supabase
-                        .from('shared_list_snapshots')
-                        .select('data')
-                        .eq('shared_list_id', id);
-
+                    // Try to get all addresses related to these territories
+                    // These should be in the snapshots too
                     let allAddresses: any[] = [];
-                    if (addrSnapshots && addrSnapshots.length > fetchedItems.length) {
-                        // Filrando pelo que parece ser endereço (tem street ou territory_id)
-                        allAddresses = addrSnapshots
-                            .map(s => s.data)
-                            .filter(d => d.territory_id);
-                    } else if (list.items && list.items.length > 0) {
-                        // Fallback to main addresses table
-                        const { data: addrData } = await supabase
-                            .from('addresses')
-                            .select('*')
-                            .in('territory_id', list.items);
-                        if (addrData) allAddresses = addrData;
+
+                    if (fetchedItems && fetchedItems.length > 0) {
+                        // In snapshots, we store both territories and addresses
+                        // Addresses usually have territory_id pointing to one of the territories
+                        const territoryIds = (list.items || []);
+                        allAddresses = fetchedItems.filter((item: any) =>
+                            item.territory_id && (territoryIds.includes(item.territory_id) || item.territory_id === list.territory_id)
+                        );
                     }
 
                     const counts: Record<string, number> = {};
@@ -240,7 +195,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     setGlobalStats(stats);
                 }
             } catch (err) {
-                console.error(err);
+                console.error("Fetch Shared List Error:", err);
                 setError("Erro ao carregar lista compartilhada.");
             } finally {
                 setLoading(false);
@@ -414,49 +369,41 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
         try {
             const visit_date = new Date().toISOString();
 
-            // 1. Visit Log in Supabase
-            const { error: visitError } = await supabase.from('visits').insert({
+            // Prepare visit data
+            const visitData = {
                 address_id: savedItem.id,
-                shared_list_id: id,
-                status: data.status,
-                visit_date: visit_date,
+                territory_id: savedItem.territory_id || listData?.territoryId,
                 user_id: user?.id,
                 publisher_name: profileName || 'Publicador',
+                status: data.status,
                 notes: data.observations || '',
-                congregation_id: listData?.congregationId,
-                territory_id: savedItem.territory_id || listData?.territoryId,
+                visit_date: visit_date,
                 tags_snapshot: {
                     isDeaf: data.isDeaf || false,
                     isMinor: data.isMinor || false,
                     isStudent: data.isStudent || false,
                     isNeurodivergent: data.isNeurodivergent || false
                 }
+            };
+
+            // Send to Server-Side API Bridge
+            const response = await fetch('/api/visits/report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ visitData, shareId: id })
             });
 
-            if (visitError) throw visitError;
+            if (!response.ok) {
+                const errorJson = await response.json();
+                throw new Error(errorJson.error || 'Erro ao salvar visita');
+            }
 
-            // 2. Address Update in Supabase
-            const addressUpdates: any = {
-                visit_status: data.status,
-                last_visited_at: visit_date,
-                is_deaf: data.isDeaf || false,
-                is_minor: data.isMinor || false,
-                is_student: data.isStudent || false,
-                is_neurodivergent: data.isNeurodivergent || false,
-                observations: data.observations || ''
-            };
-            if (data.status === 'contacted') addressUpdates.completed = true;
+            // Optional: The API could handle address updates if we wanted, 
+            // but for now, we rely on the visit record being preserved for this shareId.
 
-            const { error: addrError } = await supabase
-                .from('addresses')
-                .update(addressUpdates)
-                .eq('id', savedItem.id);
-
-            if (addrError) console.warn("Address update skipped (permissions/schema):", addrError);
-
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error saving visit:", e);
-            alert("Erro ao salvar. Verifique sua conexão.");
+            alert(e.message || "Erro ao salvar. Verifique sua conexão.");
             // Revert Optimistic Update
             setItems(prev => prev.map(item =>
                 item.id === savedItem.id
@@ -705,8 +652,8 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                 {item.gender === 'MULHER' && <User className={`w-5 h-5 ${item.visitStatus ? 'text-white' : 'text-pink-500 fill-pink-500'}`} />}
                                                 {item.gender === 'CASAL' && (
                                                     <div className="flex items-center -space-x-1">
-                                                        <User className={`w-4 h-4 ${item.visitStatus ? 'text-white' : 'text-primary fill-primary'}`} />
-                                                        <User className={`w-4 h-4 ${item.visitStatus ? 'text-white' : 'text-pink-500 fill-pink-500'}`} />
+                                                        <User className={`w-4 h-4 ${item.visitStatus ? 'text-white' : 'text-purple-500 fill-purple-500'}`} />
+                                                        <User className={`w-4 h-4 ${item.visitStatus ? 'text-white' : 'text-purple-500 fill-purple-500'}`} />
                                                     </div>
                                                 )}
                                                 {!item.gender && <MapPin className={`w-6 h-6 ${item.visitStatus ? 'text-white' : 'text-primary'}`} />}
@@ -734,9 +681,9 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                     {item.residentName && <span className="font-semibold text-main">{item.residentName}</span>}
 
                                                     {item.gender && (
-                                                        <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${item.gender === 'HOMEM' ? 'bg-primary-light/50 text-primary-dark dark:bg-primary-dark/30 dark:text-primary-light' :
+                                                        <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${item.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
                                                             item.gender === 'MULHER' ? 'bg-pink-100/50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400' :
-                                                                'bg-primary-light/30 text-primary-dark dark:bg-primary-dark/20 dark:text-primary-light'
+                                                                'bg-purple-100/50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400'
                                                             }`}>
                                                             {item.gender === 'HOMEM' && <User className="w-3 h-3 fill-current" />}
                                                             {item.gender === 'MULHER' && <User className="w-3 h-3 fill-current" />}
@@ -814,6 +761,27 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                             Ver Histórico
                                                         </button>
 
+                                                        {item.waze_link && (
+                                                            <a
+                                                                href={item.waze_link}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setOpenMenuId(null);
+                                                                }}
+                                                                className="flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors w-full text-left"
+                                                            >
+                                                                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
+                                                                    <path fill="#33CCFF" d="M19.333 11.667a6.666 6.666 0 0 0-13.333 0c0 .35.03.7.078 1.045a3.167 3.167 0 0 0-2.745 3.122 3.167 3.167 0 0 0 3.167 3.166h.165a2.833 2.833 0 0 0 5.667 0h1.333a2.833 2.833 0 0 0 5.667 0h.165a3.167 3.167 0 0 0 3.167-3.166 3.167 3.167 0 0 0-2.745-3.122 6.666 6.666 0 0 0 .078-1.045z" />
+                                                                    <circle cx="15.5" cy="11.5" r="1" fill="#fff" />
+                                                                    <circle cx="9.5" cy="11.5" r="1" fill="#fff" />
+                                                                    <path d="M10 14.5s1 1 2 0" stroke="#fff" strokeWidth="1" fill="none" strokeLinecap="round" />
+                                                                </svg>
+                                                                Abrir no Waze
+                                                            </a>
+                                                        )}
+
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -822,7 +790,10 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                             }}
                                                             className="flex items-center gap-2 px-3 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-light/50 dark:hover:bg-primary-dark/30 text-primary dark:text-primary-light rounded-lg transition-colors w-full text-left"
                                                         >
-                                                            <Navigation className="w-4 h-4" />
+                                                            <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
+                                                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4285F4" />
+                                                                <circle cx="12" cy="9" r="2.5" fill="#fff" />
+                                                            </svg>
                                                             Abrir no Mapa
                                                         </button>
                                                     </div>

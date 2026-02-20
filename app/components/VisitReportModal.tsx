@@ -228,26 +228,35 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                         {(congregationType === 'SIGN_LANGUAGE' || congregationType === 'FOREIGN_LANGUAGE') && address.isActive !== false && (
                             <div className="flex gap-2">
                                 {[
-                                    { id: 'HOMEM', label: 'Homem' },
-                                    { id: 'MULHER', label: 'Mulher' },
-                                    { id: 'CASAL', label: 'Casal' }
-                                ].map(opt => (
-                                    <button
-                                        key={opt.id}
-                                        onClick={() => setGender(opt.id as any)}
-                                        className={`flex-1 py-3.5 rounded-lg text-xs font-bold uppercase transition-all border-2 flex flex-col items-center gap-1 ${gender === opt.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-gray-500 hover:border-gray-300 dark:hover:border-slate-600'}`}
-                                    >
-                                        {opt.id === 'HOMEM' && <User className="w-5 h-5 fill-current" />}
-                                        {opt.id === 'MULHER' && <User className="w-5 h-5 fill-current" />}
-                                        {opt.id === 'CASAL' && (
-                                            <div className="flex -space-x-1">
-                                                <User className="w-4 h-4 fill-current" />
-                                                <User className="w-4 h-4 fill-current" />
-                                            </div>
-                                        )}
-                                        {opt.label}
-                                    </button>
-                                ))}
+                                    { id: 'HOMEM', label: 'Homem', color: 'blue' },
+                                    { id: 'MULHER', label: 'Mulher', color: 'pink' },
+                                    { id: 'CASAL', label: 'Casal', color: 'purple' }
+                                ].map(opt => {
+                                    const isActive = gender === opt.id;
+                                    const colorStyles = {
+                                        blue: isActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : '',
+                                        pink: isActive ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400' : '',
+                                        purple: isActive ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : '',
+                                    } as Record<string, string>;
+
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => setGender(opt.id as any)}
+                                            className={`flex-1 py-3.5 rounded-lg text-xs font-bold uppercase transition-all border-2 flex flex-col items-center gap-1 ${isActive ? colorStyles[opt.color] : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-400 dark:text-gray-500 hover:border-gray-300 dark:hover:border-slate-600'}`}
+                                        >
+                                            {opt.id === 'HOMEM' && <User className={`w-5 h-5 ${isActive ? 'fill-current' : ''}`} />}
+                                            {opt.id === 'MULHER' && <User className={`w-5 h-5 ${isActive ? 'fill-current' : ''}`} />}
+                                            {opt.id === 'CASAL' && (
+                                                <div className="flex -space-x-1">
+                                                    <User className={`w-4 h-4 ${isActive ? 'fill-current' : ''}`} />
+                                                    <User className={`w-4 h-4 ${isActive ? 'fill-current' : ''}`} />
+                                                </div>
+                                            )}
+                                            {opt.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )}
 

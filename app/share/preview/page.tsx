@@ -45,6 +45,7 @@ interface PreviewItem {
     status?: string;
     residentName?: string;
     googleMapsLink?: string;
+    wazeLink?: string;
     lat?: number;
     lng?: number;
     completed?: boolean;
@@ -97,138 +98,69 @@ function SharedPreviewContent() {
         }
 
         try {
-            // 1. Fetch Shared List Metadata & Validation
-            const { data: listData, error: listError } = await supabase
-                .from('shared_lists')
-                .select('*')
-                .eq('id', shareId)
-                .single();
+            console.log(`Buscando detalhes do preview (${id}) via API...`);
+            // 1. Fetch Consolidated Data from Server-Side API
+            const response = await fetch(`/api/shared_lists/get?id=${shareId}`, { cache: 'no-store' });
+            const json = await response.json();
 
-            if (listError || !listData) {
-                setError("Lista compartilhada não encontrada.");
+            if (!response.ok) {
+                if (response.status === 404) setError("Lista compartilhada não encontrada.");
+                else if (response.status === 410) setError("Link expirado.");
+                else setError(json.error || "Erro ao carregar link.");
                 setLoading(false);
                 return;
             }
 
-            // Check Expiration
-            if (listData.expires_at) {
-                const now = new Date();
-                const expires = new Date(listData.expires_at);
-                if (now > expires) {
-                    setError("Link expirado.");
-                    setLoading(false);
-                    return;
-                }
-            }
+            const { list: listData, items: fetchedItems, visits: visitsData, congregationCategory } = json;
 
-            // 2. Fetch Item Data (Territory or City)
-            const table = type === 'city' ? 'cities' : 'territories';
-            const { data: mainData, error: mainError } = await supabase
-                .from(table)
-                .select('*')
-                .eq('id', id)
-                .single();
+            setPageCongregationId(listData.congregation_id || null);
+            setCongregationType(congregationCategory as any);
 
-            if (mainError || !mainData) {
+            // 2. Identify "Main Data" (The Territory or City being previewed)
+            // The items from the API contain all snapshots. One of them is our main territory/city.
+            const mainData = fetchedItems.find((item: any) => item.id === id);
+
+            if (!mainData) {
                 setError("Item não encontrado.");
                 setLoading(false);
                 return;
             }
 
-            const currentCongregationId = mainData.congregation_id || listData.congregation_id;
-            setPageCongregationId(currentCongregationId || null);
+            // 3. Process Addresses
+            // Filter snapshots to get only relevant addresses for this territory/city
+            // Addresses in snapshots usually have territory_id or city_id
+            const addressesData = fetchedItems.filter((item: any) =>
+                type === 'city' ? item.city_id === id : item.territory_id === id
+            );
 
-            // Fetch Congregation Category
-            if (currentCongregationId) {
-                const { data: congData } = await supabase
-                    .from('congregations')
-                    .select('category')
-                    .eq('id', currentCongregationId)
-                    .single();
-                if (congData) setCongregationType(congData.category as any);
-            }
+            const addresses: PreviewItem[] = addressesData.map((a: any) => ({
+                id: a.id,
+                street: a.street,
+                number: a.number,
+                complement: a.complement,
+                residentName: a.resident_name || a.residentName,
+                googleMapsLink: a.google_maps_link || a.googleMapsLink,
+                lat: a.lat,
+                lng: a.lng,
+                isActive: a.is_active !== false,
+                gender: a.gender,
+                isDeaf: a.is_deaf || a.isDeaf,
+                isMinor: a.is_minor || a.isMinor,
+                isStudent: a.is_student || a.isStudent,
+                isNeurodivergent: a.is_neurodivergent || a.isNeurodivergent,
+                observations: a.observations,
+                visitStatus: a.visit_status || a.visitStatus,
+                territoryId: a.territory_id || a.territoryId,
+                cityId: a.city_id || a.cityId
+            }));
 
-            // 3. Fetch Addresses (Try Snapshots first)
-            let addresses: PreviewItem[] = [];
-
-            // Try to get address snapshots for this list
-            const { data: addrSnapshots } = await supabase
-                .from('shared_list_snapshots')
-                .select('data')
-                .eq('shared_list_id', shareId);
-
-            if (addrSnapshots && addrSnapshots.length > 0) {
-                // Filter snapshots to get only relevant addresses for this territory/city
-                const allData = addrSnapshots.map(s => s.data);
-                const filteredData = type === 'city'
-                    ? allData.filter(d => d.city_id === id)
-                    : allData.filter(d => d.territory_id === id);
-
-                if (filteredData.length > 0) {
-                    addresses = filteredData.map(a => ({
-                        id: a.id,
-                        street: a.street,
-                        number: a.number,
-                        complement: a.complement,
-                        residentName: a.resident_name,
-                        googleMapsLink: a.google_maps_link,
-                        lat: a.lat,
-                        lng: a.lng,
-                        isActive: a.is_active,
-                        gender: a.gender,
-                        isDeaf: a.is_deaf,
-                        isMinor: a.is_minor,
-                        isStudent: a.is_student,
-                        isNeurodivergent: a.is_neurodivergent,
-                        observations: a.observations,
-                        visitStatus: a.visit_status,
-                        territoryId: a.territory_id,
-                        cityId: a.city_id
-                    }));
-                }
-            }
-
-            // Fallback to table if no snapshots found or empty
-            if (addresses.length === 0) {
-                const { data: addrData, error: addrError } = await supabase
-                    .from('addresses')
-                    .select('*')
-                    .eq(type === 'city' ? 'city_id' : 'territory_id', id);
-
-                if (!addrError && addrData) {
-                    addresses = addrData.map(a => ({
-                        id: a.id,
-                        street: a.street,
-                        number: a.number,
-                        complement: a.complement,
-                        residentName: a.resident_name,
-                        googleMapsLink: a.google_maps_link,
-                        lat: a.lat,
-                        lng: a.lng,
-                        isActive: a.is_active,
-                        gender: a.gender,
-                        isDeaf: a.is_deaf,
-                        isMinor: a.is_minor,
-                        isStudent: a.is_student,
-                        isNeurodivergent: a.is_neurodivergent,
-                        observations: a.observations,
-                        visitStatus: a.visit_status,
-                        territoryId: a.territory_id,
-                        cityId: a.city_id
-                    }));
-                }
-            }
-
-            // 4. Fetch Results (visits linked to this shared list)
-            const { data: visitsData } = await supabase
-                .from('visits')
-                .select('address_id, status')
-                .eq('shared_list_id', shareId);
-
+            // 4. Merge Results (Visits)
             const linkResults: Record<string, string> = {};
-            visitsData?.forEach(v => {
-                linkResults[v.address_id] = v.status;
-            });
+            if (visitsData) {
+                visitsData.forEach((v: any) => {
+                    linkResults[v.address_id] = v.status;
+                });
+            }
 
             // Merge
             const mergedItems = addresses.map(addr => {
@@ -258,7 +190,7 @@ function SharedPreviewContent() {
             setLoading(false);
 
         } catch (err) {
-            console.error(err);
+            console.error("Shared Preview API Error:", err);
             setError("Erro ao carregar dados.");
             setLoading(false);
         }
@@ -281,41 +213,44 @@ function SharedPreviewContent() {
         try {
             const visit_date = new Date().toISOString();
 
-            // Insert visit record into Supabase
-            const { error: visitError } = await supabase
-                .from('visits')
-                .insert({
-                    address_id: selectedAddressForReport.id,
-                    territory_id: selectedAddressForReport.territoryId,
-                    shared_list_id: shareId,
-                    congregation_id: pageCongregationId,
-                    user_id: user?.id || null,
-                    publisher_name: profileName || 'Publicador (Link)',
-                    status: data.status,
-                    notes: data.observations || '',
-                    visit_date: visit_date,
-                    tags_snapshot: {
-                        is_deaf: data.isDeaf,
-                        is_minor: data.isMinor,
-                        is_student: data.isStudent,
-                        is_neurodivergent: data.isNeurodivergent,
-                        gender: data.gender
-                    }
-                });
+            // Prepare visit data
+            const visitData = {
+                address_id: selectedAddressForReport.id,
+                territory_id: selectedAddressForReport.territoryId,
+                user_id: user?.id || null,
+                publisher_name: profileName || 'Publicador (Link)',
+                status: data.status,
+                notes: data.observations || '',
+                visit_date: visit_date,
+                tags_snapshot: {
+                    is_deaf: data.isDeaf,
+                    is_minor: data.isMinor,
+                    is_student: data.isStudent,
+                    is_neurodivergent: data.isNeurodivergent,
+                    gender: data.gender
+                }
+            };
 
-            if (visitError) throw visitError;
+            // Send to Server-Side API Bridge
+            const response = await fetch('/api/visits/report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ visitData, shareId })
+            });
 
-            // If it's a "contacted" status, we might want to update the address status too
-            // However, shared links usually don't have full permission to update 'addresses' table directly
-            // unless RLS allows it. Assuming the 'visits' record is enough for the shared view.
+            if (!response.ok) {
+                const errorJson = await response.json();
+                throw new Error(errorJson.error || 'Erro ao salvar visita');
+            }
 
             // Refresh Local State
             fetchData();
             setSelectedAddressForReport(null);
+            toast.success("Visita registrada com sucesso!");
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving visit:", error);
-            toast.error("Erro ao salvar visita. Tente novamente.");
+            toast.error(error.message || "Erro ao salvar visita. Tente novamente.");
         }
     };
     // The code uses `shareId || null`.
@@ -554,6 +489,27 @@ function SharedPreviewContent() {
                                     <div className="absolute right-0 top-10 bg-surface rounded-xl shadow-xl border border-surface-border p-1 z-20 min-w-[160px] animate-in fade-in zoom-in-95 duration-200">
 
                                         {/* Dropdown Options */}
+                                        {item.wazeLink && (
+                                            <a
+                                                href={item.wazeLink}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveDropdownId(null);
+                                                }}
+                                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors w-full text-left"
+                                            >
+                                                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
+                                                    <path fill="#33CCFF" d="M19.333 11.667a6.666 6.666 0 0 0-13.333 0c0 .35.03.7.078 1.045a3.167 3.167 0 0 0-2.745 3.122 3.167 3.167 0 0 0 3.167 3.166h.165a2.833 2.833 0 0 0 5.667 0h1.333a2.833 2.833 0 0 0 5.667 0h.165a3.167 3.167 0 0 0 3.167-3.166 3.167 3.167 0 0 0-2.745-3.122 6.666 6.666 0 0 0 .078-1.045z" />
+                                                    <circle cx="15.5" cy="11.5" r="1" fill="#fff" />
+                                                    <circle cx="9.5" cy="11.5" r="1" fill="#fff" />
+                                                    <path d="M10 14.5s1 1 2 0" stroke="#fff" strokeWidth="1" fill="none" strokeLinecap="round" />
+                                                </svg>
+                                                Abrir no Waze
+                                            </a>
+                                        )}
+
                                         {href !== '#' && (
                                             <a
                                                 href={href}
@@ -565,7 +521,10 @@ function SharedPreviewContent() {
                                                 }}
                                                 className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
                                             >
-                                                <Navigation className="w-4 h-4" />
+                                                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
+                                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4285F4" />
+                                                    <circle cx="12" cy="9" r="2.5" fill="#fff" />
+                                                </svg>
                                                 Abrir no Mapa
                                             </a>
                                         )}

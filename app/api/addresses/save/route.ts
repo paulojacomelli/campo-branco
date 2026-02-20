@@ -1,0 +1,73 @@
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { NextResponse } from 'next/server';
+import { createServerClient } from '@/lib/supabase-server';
+
+export async function POST(req: Request) {
+    try {
+        const supabase = await createServerClient();
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !currentUser) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        const body = await req.json();
+        const {
+            street, number, complement, territory_id, congregation_id, city_id, lat, lng,
+            is_active, google_maps_link, waze_link, resident_name, gender,
+            is_deaf, is_minor, is_student, is_neurodivergent, observations, id, people_count
+        } = body;
+
+        // Check if user belongs to the congregation
+        const { data: adminData } = await supabase
+            .from('users')
+            .select('role, congregation_id')
+            .eq('id', currentUser.id)
+            .single();
+
+        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregation_id)) {
+            return NextResponse.json({ error: 'Você não tem permissão nesta congregação.' }, { status: 403 });
+        }
+
+        const addressData = {
+            street,
+            number,
+            complement,
+            territory_id,
+            congregation_id,
+            city_id,
+            lat,
+            lng,
+            is_active,
+            google_maps_link,
+            waze_link,
+            resident_name,
+            gender,
+            is_deaf,
+            is_minor,
+            is_student,
+            is_neurodivergent,
+            observations,
+            phone: people_count ? people_count.toString() : '0'
+        };
+
+        if (id) {
+            // Update
+            const { error: updateError } = await supabaseAdmin.from('addresses').update(addressData).eq('id', id);
+            if (updateError) throw updateError;
+        } else {
+            // Insert
+            const { error: insertError } = await supabaseAdmin.from('addresses').insert({
+                ...addressData,
+                created_at: new Date().toISOString()
+            });
+            if (insertError) throw insertError;
+        }
+
+        return NextResponse.json({ success: true });
+
+    } catch (error: any) {
+        console.error("API Address Save Error:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
