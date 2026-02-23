@@ -22,20 +22,29 @@ export const metadata: Metadata = {
   icons: {
     icon: '/app-icon.svg',
     shortcut: '/app-icon.png',
-    apple: '/app-icon.png',
-    other: {
-      rel: 'apple-touch-icon-precomposed',
-      url: '/app-icon.png',
-    },
+    apple: '/apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'Campo Branco',
+    startupImage: [
+      {
+        url: '/icon-512x512.png',
+        media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)',
+      },
+    ],
   },
   formatDetection: {
     telephone: false,
   },
+  applicationName: 'Campo Branco',
+  other: {
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'Campo Branco',
+  }
 }
 
 export const viewport: Viewport = {
