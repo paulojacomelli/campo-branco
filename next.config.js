@@ -2,7 +2,7 @@ const pkg = require('./package.json');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    output: 'export', // Habilitado para deploy conforme solicitado.
+    // output: 'export', // Desabilitado para desenvolvimento. Habilitar apenas para geração de APK/build estático.
     // eslint config removed as it is not supported in next.config.js options
     typescript: {
         ignoreBuildErrors: true,
