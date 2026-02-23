@@ -212,8 +212,8 @@ export default function OrphanedDataPage() {
 
             setEditName(fixingItem.name || '');
             setEditDetails(fixingItem.details || '');
-            setEditNumber(fixingItem.data.number || '');
-            setEditBlock(fixingItem.data.block || '');
+            setEditNumber('');
+            setEditBlock('');
             setEditObservation(fixingItem.data.observation || fixingItem.data.notes || '');
             setEditSchedule(fixingItem.data.schedule || '');
             setEditState(fixingItem.data.state || 'SP');
@@ -294,12 +294,10 @@ export default function OrphanedDataPage() {
             // Common field updates based on type
             if (fixingItem.type === 'address') {
                 updates.street = editName;
-                updates.number = editNumber;
-                updates.block = editBlock;
-                updates.observation = editObservation;
+                updates.observations = editObservation;
             } else if (fixingItem.type === 'territory' || fixingItem.type === 'witnessing' || fixingItem.type === 'city') {
                 updates.name = editName;
-                if (fixingItem.type === 'territory') updates.description = editObservation;
+                if (fixingItem.type === 'territory') updates.notes = editObservation;
                 if (fixingItem.type === 'witnessing') {
                     updates.address = editDetails;
                     updates.schedule = editSchedule;
@@ -502,7 +500,7 @@ export default function OrphanedDataPage() {
 
                                 <div className="border-t border-surface-border pt-4 mt-4 space-y-4">
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-muted uppercase">
+                                        <label className="text-xs font-bold text-muted uppercase tracking-wider">
                                             {fixingItem.type === 'address' ? 'Rua / Logradouro' :
                                                 fixingItem.type === 'territory' ? 'Número do Mapa' : 'Nome'}
                                         </label>
@@ -513,42 +511,6 @@ export default function OrphanedDataPage() {
                                             onChange={(e) => setEditName(e.target.value)}
                                         />
                                     </div>
-
-                                    {fixingItem.type === 'city' && (
-                                        <div className="space-y-1">
-                                            <label className="text-xs font-bold text-muted uppercase">UF</label>
-                                            <input
-                                                type="text"
-                                                className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
-                                                value={editState}
-                                                onChange={(e) => setEditState(e.target.value.toUpperCase().slice(0, 2))}
-                                                placeholder="Ex: SP"
-                                            />
-                                        </div>
-                                    )}
-
-                                    {fixingItem.type === 'address' && (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="space-y-1">
-                                                <label className="text-xs font-bold text-muted uppercase">Número</label>
-                                                <input
-                                                    type="text"
-                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
-                                                    value={editNumber}
-                                                    onChange={(e) => setEditNumber(e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs font-bold text-muted uppercase">Bloco/Apt</label>
-                                                <input
-                                                    type="text"
-                                                    className="w-full bg-background border border-surface-border text-main rounded-md p-3 font-bold text-sm focus:border-primary-light/500 transition-colors"
-                                                    value={editBlock}
-                                                    onChange={(e) => setEditBlock(e.target.value)}
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
 
                                     {fixingItem.type === 'witnessing' && (
                                         <div className="space-y-4">

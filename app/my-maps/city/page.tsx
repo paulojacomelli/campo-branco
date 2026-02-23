@@ -31,6 +31,7 @@ import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from '@/lib/serviceYearUtils';
+import CSVActionButtons from '@/app/components/CSVActionButtons';
 
 interface City {
     id: string;
@@ -209,7 +210,7 @@ function CityListContent() {
                 // 3. Fetch Address Status for Breakdown
                 const { data: addresses } = await supabase
                     .from('addresses')
-                    .select('id, city_id, territory_id, status, last_visited_at')
+                    .select('id, city_id, territory_id, visit_status, last_visited_at')
                     .eq('congregation_id', congregationId)
                     .gte('last_visited_at', start.toISOString())
                     .lte('last_visited_at', end.toISOString());
@@ -223,10 +224,10 @@ function CityListContent() {
                     if (!statusByCity[cId]) statusByCity[cId] = { contacted: 0, not_contacted: 0, moved: 0, do_not_visit: 0, total_visits: 0 };
 
                     statusByCity[cId].total_visits++;
-                    if (a.status === 'contacted') statusByCity[cId].contacted++;
-                    else if (a.status === 'not_contacted') statusByCity[cId].not_contacted++;
-                    else if (a.status === 'moved') statusByCity[cId].moved++;
-                    else if (a.status === 'do_not_visit') statusByCity[cId].do_not_visit++;
+                    if (a.visit_status === 'contacted') statusByCity[cId].contacted++;
+                    else if (a.visit_status === 'not_contacted') statusByCity[cId].not_contacted++;
+                    else if (a.visit_status === 'moved') statusByCity[cId].moved++;
+                    else if (a.visit_status === 'do_not_visit') statusByCity[cId].do_not_visit++;
                 });
 
                 // 4. Compile Result
@@ -371,12 +372,18 @@ function CityListContent() {
         city.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (authLoading) {
+    if (authLoading || loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <Loader2 className="w-10 h-10 text-primary animate-spin" />
             </div>
         );
+    }
+
+    // Role Guard: Only Servants, Elders and SuperAdmins can see this page
+    if (user && !isServant) {
+        router.replace('/dashboard');
+        return null;
     }
 
     if (!congregationId) {
@@ -419,13 +426,19 @@ function CityListContent() {
                         <LogOut className="w-5 h-5" />
                     </button>
 
-                    {(isAdmin || isServant) && (
-                        <button
-                            onClick={() => setIsCreateModalOpen(true)}
-                            className="bg-gray-900 dark:bg-surface-highlight hover:bg-black dark:hover:bg-slate-800 text-white dark:text-main p-2 rounded-xl shadow-lg transition-all active:scale-95 border border-transparent dark:border-surface-border"
-                        >
-                            <Plus className="w-5 h-5" />
-                        </button>
+                    {(isAdmin || isServant || isElder || isSuperAdmin) && (
+                        <>
+                            <CSVActionButtons
+                                congregationId={congregationId}
+                                onImportSuccess={fetchCities}
+                            />
+                            <button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-gray-900 dark:bg-surface-highlight hover:bg-black dark:hover:bg-slate-800 text-white dark:text-main p-2 rounded-xl shadow-lg transition-all active:scale-95 border border-transparent dark:border-surface-border"
+                            >
+                                <Plus className="w-5 h-5" />
+                            </button>
+                        </>
                     )}
                 </div>
             </header>

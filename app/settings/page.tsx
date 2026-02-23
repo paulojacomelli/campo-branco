@@ -52,7 +52,7 @@ import { getConsoleLogs } from '@/lib/logger';
 
 
 export default function SettingsPage() {
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, notificationsEnabled, logout: authLogout } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, notificationsEnabled, logout: authLogout, canManageMembers, canInviteMembers } = useAuth();
     const router = useRouter();
     const { textSize, displayScale, themeMode, updatePreferences } = useTheme();
 
@@ -109,13 +109,13 @@ export default function SettingsPage() {
     }, [user, loading, congregationId, isSuperAdmin, router]);
 
     useEffect(() => {
-        if ((isElder || isServant) && congregationId) {
+        if ((canInviteMembers || canManageMembers) && congregationId) {
             const fetchCongregationAndMembers = async () => {
                 setMembersLoading(true);
                 try {
-                    // 1. Fetch Members
+                    // 1. Fetch Members (Only if canManageMembers)
                     let docs: any[] = [];
-                    if (isElder) {
+                    if (canManageMembers) {
                         const { data: memberData, error: memberError } = await supabase
                             .from("users")
                             .select("*")
@@ -130,28 +130,30 @@ export default function SettingsPage() {
                     }
                     setMembers(docs);
 
-                    // 2. Fetch Congregation for Token
-                    const { data: congData, error: congError } = await supabase
-                        .from("congregations")
-                        .select("invite_token")
-                        .eq("id", congregationId)
-                        .maybeSingle(); // Use maybeSingle to avoid crash if not found
+                    // 2. Fetch Congregation for Token (Only if canInviteMembers)
+                    if (canInviteMembers) {
+                        const { data: congData, error: congError } = await supabase
+                            .from("congregations")
+                            .select("invite_token")
+                            .eq("id", congregationId)
+                            .maybeSingle();
 
-                    if (congError) throw congError;
+                        if (congError) throw congError;
 
-                    if (congData) {
-                        let token = congData.invite_token;
+                        if (congData) {
+                            let token = congData.invite_token;
 
-                        // Se não existe token, gera um automaticamente
-                        if (!token) {
-                            token = crypto.randomUUID();
-                            await supabase.from("congregations").update({ invite_token: token }).eq("id", congregationId);
+                            // Se não existe token, gera um automaticamente (apenas Ancião pode regenerar na UI)
+                            if (!token && canManageMembers) {
+                                token = crypto.randomUUID();
+                                await supabase.from("congregations").update({ invite_token: token }).eq("id", congregationId);
+                            }
+
+                            if (token) {
+                                setInviteToken(token);
+                                setInviteLink(`${window.location.origin}/invite?token=${token}`);
+                            }
                         }
-
-                        setInviteToken(token);
-                        setInviteLink(`${window.location.origin}/invite?token=${token}`);
-                    } else {
-                        console.warn("Congregação não encontrada para o ID:", congregationId);
                     }
                 } catch (e: any) {
                     console.error("Error fetching settings data:", e.message || e);
@@ -161,7 +163,7 @@ export default function SettingsPage() {
             };
             fetchCongregationAndMembers();
         }
-    }, [isElder, isServant, congregationId, isSuperAdmin]);
+    }, [canInviteMembers, canManageMembers, congregationId, isSuperAdmin]);
 
     const handleGenerateNewToken = async () => {
         if (!confirm("Isso invalidará o link de convite anterior. Deseja continuar?")) return;
@@ -665,7 +667,7 @@ export default function SettingsPage() {
                 )}
 
                 {/* Servant Section (Invite & Registry) */}
-                {(isServant || isElder || isSuperAdmin) && (
+                {canInviteMembers && (
                     <>
                         <hr className="border-surface-border" />
                         <section className="space-y-4 animate-in slide-in-from-bottom-5 fade-in duration-500">
@@ -703,16 +705,18 @@ export default function SettingsPage() {
                                         Copiar
                                     </button>
                                 </div>
-                                <div className="mt-3 flex justify-end">
-                                    <button
-                                        onClick={handleGenerateNewToken}
-                                        disabled={generatingToken}
-                                        className="text-[10px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider flex items-center gap-1"
-                                    >
-                                        {generatingToken ? <Loader2 className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
-                                        Gerar Nova Chave
-                                    </button>
-                                </div>
+                                {canManageMembers && (
+                                    <div className="mt-3 flex justify-end">
+                                        <button
+                                            onClick={handleGenerateNewToken}
+                                            disabled={generatingToken}
+                                            className="text-[10px] text-red-500 hover:text-red-600 font-bold uppercase tracking-wider flex items-center gap-1"
+                                        >
+                                            {generatingToken ? <Loader2 className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />}
+                                            Gerar Nova Chave
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                         </section>
@@ -720,7 +724,7 @@ export default function SettingsPage() {
                 )}
 
                 {/* Admin Section (Elders only) */}
-                {isElder && (
+                {canManageMembers && (
                     <>
                         <hr className="border-surface-border" />
 

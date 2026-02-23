@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
+import CSVActionButtons from '@/app/components/CSVActionButtons';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
 import TerritoryHistoryModal from '@/app/components/TerritoryHistoryModal';
@@ -50,7 +51,7 @@ function TerritoryListContent() {
     const searchParams = useSearchParams();
     const congregationId = searchParams.get('congregationId');
     const cityId = searchParams.get('cityId');
-    const { user, isAdmin, isElder, isServant, loading: authLoading } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading } = useAuth();
     const router = useRouter();
 
     // State
@@ -181,7 +182,7 @@ function TerritoryListContent() {
         try {
             const { data, error } = await supabase
                 .from('addresses')
-                .select('id, territory_id, is_active, street, number, resident_name, notes, gender, is_deaf, is_neurodivergent, is_student, is_minor')
+                .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor')
                 .eq('congregation_id', congregationId)
                 .eq('city_id', cityId);
 
@@ -197,7 +198,7 @@ function TerritoryListContent() {
                 if (addr.territory_id && addr.is_active !== false) {
                     counts[addr.territory_id] = (counts[addr.territory_id] || 0) + 1;
 
-                    const searchString = `${addr.street || ''} ${addr.number || ''} ${addr.resident_name || ''} ${addr.notes || ''}`.toLowerCase();
+                    const searchString = `${addr.street || ''} ${addr.resident_name || ''} ${addr.observations || ''}`.toLowerCase();
                     searchIndex[addr.territory_id] = (searchIndex[addr.territory_id] || '') + ' ' + searchString;
 
                     if (!gStats[addr.territory_id]) gStats[addr.territory_id] = { men: 0, women: 0, couples: 0 };
@@ -413,7 +414,13 @@ function TerritoryListContent() {
         return matchesName;
     });
 
-    if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    if (authLoading || loading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-10 h-10 text-primary animate-spin" /></div>;
+
+    // Role Guard: Only Servants, Elders and SuperAdmins can see this page
+    if (user && !isServant) {
+        router.replace('/dashboard');
+        return null;
+    }
 
     if (!congregationId || !cityId) {
         return <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] text-muted">Informações incompletas.</div>;
@@ -437,13 +444,20 @@ function TerritoryListContent() {
                 </div>
                 <div className="flex items-center gap-2">
                     <RoleBasedSwitcher />
-                    {(isElder || isServant) && (
-                        <button
-                            onClick={() => setIsCreateModalOpen(true)}
-                            className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-lg shadow-lg transition-all active:scale-95"
-                        >
-                            <Plus className="w-5 h-5" />
-                        </button>
+                    {(isElder || isServant || isAdmin || isSuperAdmin) && (
+                        <>
+                            <CSVActionButtons
+                                congregationId={congregationId}
+                                cityId={cityId}
+                                onImportSuccess={fetchTerritories}
+                            />
+                            <button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-gray-900 border-gray-900 border hover:bg-black dark:bg-surface-highlight dark:hover:bg-slate-800 text-white dark:text-main dark:border-surface-border p-2 rounded-lg shadow-lg transition-all active:scale-95"
+                            >
+                                <Plus className="w-5 h-5" />
+                            </button>
+                        </>
                     )}
                 </div>
             </header>

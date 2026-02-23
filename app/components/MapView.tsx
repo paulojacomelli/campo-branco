@@ -569,12 +569,9 @@ export default function MapView({ items, center = defaultCenter, zoom = 15, onGe
                 </div>
             )}
 
-            {!isInteractionEnabled && (
-                <div
-                    className="absolute inset-0 z-10 cursor-default"
-                    title="Mapa travado. Clique no cadeado para liberar."
-                />
-            )}
+            {/* NOTA: O bloqueio de pan/zoom é feito pelo Leaflet (dragging.disable, scrollWheelZoom.disable)
+                 NÃO usamos overlay div aqui pois ele bloquearia cliques nos pinos/balões também.
+                 O hint é mostrado via onMouseDown no container pai (abaixo). */}
 
             {!isMapReady && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">

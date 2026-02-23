@@ -389,13 +389,21 @@ export default function DashboardPage() {
                     addressCount = addrC;
                     publicWitnessingCount = pwC;
                     visitCount = visitC;
-                } else {
+                } else if (isElder || isServant) {
                     congCount = 1;
                     cityCount = await countDistinctCitiesFromTerritories(congregationId || undefined);
                     mapsCount = await countTable('territories', { congregation_id: congregationId });
                     addressCount = await countTable('addresses', { congregation_id: congregationId });
                     publicWitnessingCount = await countTable('witnessing_points', { congregation_id: congregationId });
                     visitCount = await countTable('visits', { congregation_id: congregationId });
+                } else {
+                    // Publicador: Apenas dados pessoais no resumo (ou ocultar seção)
+                    congCount = 0;
+                    cityCount = 0;
+                    mapsCount = myAssignments.length;
+                    addressCount = 0; // Poderíamos contar os endereços dos mapas atribuídos se necessário
+                    publicWitnessingCount = 0;
+                    visitCount = await countTable('visits', { user_id: user?.id });
                 }
 
                 // 7. Action Center Logic 
@@ -929,69 +937,67 @@ export default function DashboardPage() {
                     </section>
                 )}
 
-                <section className="space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1 h-6 bg-emerald-600 rounded-full" />
-                            <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
-                        </div>
+                {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                    <section className="space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+                            <div className="flex items-center gap-2">
+                                <div className="w-1 h-6 bg-emerald-600 rounded-full" />
+                                <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
+                            </div>
 
-                        {role === 'SUPER_ADMIN' && congregations.length > 0 && (
-                            <div className="relative group min-w-[200px]">
-                                <select
-                                    value={selectedCongId}
-                                    onChange={(e) => setSelectedCongId(e.target.value)}
-                                    className="w-full appearance-none bg-surface border border-surface-border rounded-lg px-4 py-2 pr-10 text-xs font-bold text-main focus:outline-none focus:ring-2 focus:ring-primary/20 hover:border-primary/50 transition-all cursor-pointer shadow-sm"
-                                >
-                                    <option value="all">Todas as Congregações</option>
-                                    {congregations.map(cong => (
-                                        <option key={cong.id} value={cong.id}>{cong.name}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted group-hover:text-primary transition-colors">
-                                    <ChevronDown className="w-4 h-4" />
+                            {role === 'SUPER_ADMIN' && congregations.length > 0 && (
+                                <div className="relative group min-w-[200px]">
+                                    <select
+                                        value={selectedCongId}
+                                        onChange={(e) => setSelectedCongId(e.target.value)}
+                                        className="w-full appearance-none bg-surface border border-surface-border rounded-lg px-4 py-2 pr-10 text-xs font-bold text-main focus:outline-none focus:ring-2 focus:ring-primary/20 hover:border-primary/50 transition-all cursor-pointer shadow-sm"
+                                    >
+                                        <option value="all">Todas as Congregações</option>
+                                        {congregations.map(cong => (
+                                            <option key={cong.id} value={cong.id}>{cong.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted group-hover:text-primary transition-colors">
+                                        <ChevronDown className="w-4 h-4" />
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        {role === 'SUPER_ADMIN' && selectedCongId === 'all' && (
-                            <div className="col-span-2 bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
-                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
-                                <p className="text-2xl font-bold text-main">{stats.congregations}</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            {role === 'SUPER_ADMIN' && selectedCongId === 'all' && (
+                                <div className="col-span-2 bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
+                                    <p className="text-2xl font-bold text-main">{stats.congregations}</p>
+                                </div>
+                            )}
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">CIDADES</p>
+                                <p className="text-2xl font-bold text-main">{stats.cities}</p>
                             </div>
-                        )}
-                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">CIDADES</p>
-                            <p className="text-2xl font-bold text-main">{stats.cities}</p>
-                        </div>
-                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">MAPAS</p>
-                            <p className="text-2xl font-bold text-main">{stats.maps}</p>
-                        </div>
-                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">ENDEREÇOS</p>
-                            <p className="text-2xl font-bold text-main">{stats.addresses}</p>
-                        </div>
-                        {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">MAPAS</p>
+                                <p className="text-2xl font-bold text-main">{stats.maps}</p>
+                            </div>
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">ENDEREÇOS</p>
+                                <p className="text-2xl font-bold text-main">{stats.addresses}</p>
+                            </div>
                             <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest">VISITAS</p>
                                 <p className="text-2xl font-bold text-main">{stats.visits}</p>
                             </div>
-                        )}
-                        <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">T. PÚBLICO</p>
-                            <p className="text-2xl font-bold text-main">{stats.publicWitnessing || 0}</p>
-                        </div>
-                        {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                            <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
+                                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">T. PÚBLICO</p>
+                                <p className="text-2xl font-bold text-main">{stats.publicWitnessing || 0}</p>
+                            </div>
                             <div className="bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest leading-tight mb-1">COBERTURA</p>
                                 <p className="text-2xl font-bold text-main">{stats.coverage}%</p>
                             </div>
-                        )}
-                    </div>
-                </section>
+                        </div>
+                    </section>
+                )}
             </main>
 
             {confirmModal && (

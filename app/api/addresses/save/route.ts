@@ -2,6 +2,8 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
     try {
         const supabase = await createServerClient();
@@ -13,9 +15,9 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const {
-            street, number, complement, territory_id, congregation_id, city_id, lat, lng,
+            street, territory_id, congregation_id, city_id, lat, lng,
             is_active, google_maps_link, waze_link, resident_name, gender,
-            is_deaf, is_minor, is_student, is_neurodivergent, observations, id, people_count
+            is_deaf, is_minor, is_student, is_neurodivergent, observations, id
         } = body;
 
         // Check if user belongs to the congregation
@@ -31,8 +33,6 @@ export async function POST(req: Request) {
 
         const addressData = {
             street,
-            number,
-            complement,
             territory_id,
             congregation_id,
             city_id,
@@ -47,8 +47,7 @@ export async function POST(req: Request) {
             is_minor,
             is_student,
             is_neurodivergent,
-            observations,
-            phone: people_count ? people_count.toString() : '0'
+            observations
         };
 
         if (id) {

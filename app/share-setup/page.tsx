@@ -24,7 +24,14 @@ import { toast } from 'sonner';
 function ShareSetupContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { user, profileName, congregationId: authCongregationId, loading: authLoading } = useAuth();
+    const { user, profileName, congregationId: authCongregationId, loading: authLoading, isServant } = useAuth();
+
+    // Redirect if not Elder/Servant
+    useEffect(() => {
+        if (!authLoading && user && !isServant) {
+            router.replace('/dashboard');
+        }
+    }, [user, authLoading, isServant, router]);
 
     const [loading, setLoading] = useState(true);
     const [territories, setTerritories] = useState<any[]>([]);

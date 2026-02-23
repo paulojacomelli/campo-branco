@@ -43,33 +43,31 @@ import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { getServiceYear, getServiceYearRange } from '@/lib/serviceYearUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
+import CSVActionButtons from '@/app/components/CSVActionButtons';
 
 interface Address {
     id: string;
     street: string;
-    number: string;
-    complement?: string;
-    territory_id: string; // Changed from territoryId
-    congregation_id: string; // Changed from congregationId
-    city_id: string; // Changed from cityId
+    territory_id: string;
+    congregation_id: string;
+    city_id: string;
     completed?: boolean;
-    visited_at?: string; // Changed from visitedAt (Timestamp)
+    visited_at?: string;
     lat?: number;
     lng?: number;
-    is_active?: boolean; // Changed from isActive
-    google_maps_link?: string; // Changed from googleMapsLink
+    is_active?: boolean;
+    google_maps_link?: string;
     waze_link?: string;
-    people_count?: number; // Changed from peopleCount
-    resident_name?: string; // Changed from residentName
-    is_deaf?: boolean; // Changed from isDeaf
-    is_minor?: boolean; // Changed from isMinor
-    is_student?: boolean; // Changed from isStudent
+    resident_name?: string;
+    is_deaf?: boolean;
+    is_minor?: boolean;
+    is_student?: boolean;
     observations?: string;
     gender?: 'HOMEM' | 'MULHER' | 'CASAL';
-    is_neurodivergent?: boolean; // Changed from isNeurodivergent
-    visit_status?: 'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'none'; // Changed from visitStatus
-    last_visited_at?: string; // Changed from lastVisitedAt (Timestamp)
-    sort_order?: number; // Changed from sortOrder
+    is_neurodivergent?: boolean;
+    visit_status?: 'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'none';
+    last_visited_at?: string;
+    sort_order?: number;
 }
 
 function AddressListContent() {
@@ -80,7 +78,7 @@ function AddressListContent() {
     const territoryId = searchParams.get('territoryId') || '';
     const currentView = searchParams.get('view') || 'grid';
 
-    const { user, isAdmin, isElder, isServant, loading: authLoading, congregationType: authCongregationType, termType } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, congregationType: authCongregationType, termType } = useAuth();
     const [localCongregationType, setLocalCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
     const isTraditional = (localCongregationType || authCongregationType) === 'TRADITIONAL';
     const [addresses, setAddresses] = useState<Address[]>([]);
@@ -96,6 +94,29 @@ function AddressListContent() {
 
     const serviceYearRange = useState(() => getServiceYearRange(getServiceYear()))[0];
 
+    // Redirect Publishers from general Maps entry or unassigned territories
+    useEffect(() => {
+        if (!authLoading && user && !isServant && territoryId) {
+            const checkAssignment = async () => {
+                const { data, error } = await supabase
+                    .from('shared_lists')
+                    .select('id')
+                    .eq('territory_id', territoryId)
+                    .eq('assigned_to', user.id)
+                    .neq('status', 'completed')
+                    .maybeSingle();
+
+                if (error || !data) {
+                    toast.error("Você não tem permissão para acessar este mapa ou ele já foi devolvido.");
+                    router.replace('/dashboard');
+                }
+            };
+            checkAssignment();
+        } else if (!authLoading && user && !isServant && !territoryId) {
+            router.replace('/dashboard');
+        }
+    }, [user, authLoading, isServant, territoryId, router]);
+
     // Form State
     const [combinedAddress, setCombinedAddress] = useState(''); // Single input for "Street, Number"
     const [lat, setLat] = useState('');
@@ -104,7 +125,7 @@ function AddressListContent() {
     const [isActive, setIsActive] = useState(true);
     const [googleMapsLink, setGoogleMapsLink] = useState('');
     const [wazeLink, setWazeLink] = useState('');
-    const [peopleCount, setPeopleCount] = useState('1');
+    const [residentsCount, setResidentsCount] = useState('1'); // Quantidade de residentes no endereço
     // Gender Stats State: territoryId -> { men: number, women: number, couples: number }
     const [genderStats, setGenderStats] = useState<Record<string, { men: number, women: number, couples: number }>>({});
     const [residentName, setResidentName] = useState('');
@@ -333,36 +354,26 @@ function AddressListContent() {
             return;
         }
 
-        let finalNumber = 'S/N';
-        const numberMatch = combinedAddress.match(/,\s*(\d+)/) || combinedAddress.match(/\s(\d+)(?:\s|$)/);
-        if (numberMatch) finalNumber = numberMatch[1];
-
-        const finalStreet = combinedAddress.trim();
-        const finalLat = lat ? parseFloat(lat) : null;
-        const finalLng = lng ? parseFloat(lng) : null;
-
         try {
             const addressData = {
                 id: editingId || undefined,
-                street: finalStreet,
-                number: finalNumber,
-                complement: '',
+                street: combinedAddress.trim(),
                 territory_id: selectedTerritoryId,
                 congregation_id: selectedCongregationId,
                 city_id: selectedCityId,
-                lat: finalLat,
-                lng: finalLng,
+                lat: lat ? parseFloat(lat) : null,
+                lng: lng ? parseFloat(lng) : null,
                 is_active: isActive,
                 google_maps_link: googleMapsLink,
                 waze_link: wazeLink,
                 resident_name: residentName,
+                residents_count: residentsCount ? parseInt(residentsCount) : 1,
                 gender: gender || null,
                 is_deaf: isDeaf,
                 is_minor: isMinor,
                 is_student: isStudent,
                 is_neurodivergent: isNeurodivergent,
-                observations,
-                people_count: peopleCount ? parseInt(peopleCount) : 0
+                observations
             };
 
             const response = await fetch('/api/addresses/save', {
@@ -394,7 +405,7 @@ function AddressListContent() {
         setIsActive(true);
         setGoogleMapsLink('');
         setWazeLink('');
-        setPeopleCount('1');
+        setResidentsCount('1');
         setResidentName('');
         setGender('');
         setIsDeaf(false);
@@ -408,7 +419,8 @@ function AddressListContent() {
 
     const handleEditAddress = (addr: Address) => {
         setEditingId(addr.id);
-        setCombinedAddress(addr.street.includes(addr.number) ? addr.street : `${addr.street}, ${addr.number}`);
+        // Preenche o campo unificado com o endereço completo já salvo
+        setCombinedAddress(addr.street);
         setLat(addr.lat?.toString() || '');
         setLng(addr.lng?.toString() || '');
         setSelectedCongregationId(addr.congregation_id);
@@ -417,7 +429,6 @@ function AddressListContent() {
         setIsActive(addr.is_active ?? true);
         setGoogleMapsLink(addr.google_maps_link || '');
         setWazeLink(addr.waze_link || '');
-        setPeopleCount(addr.people_count?.toString() || (addr as any).phone || '1');
         setResidentName(addr.resident_name || '');
         setGender(addr.gender || '');
         setIsDeaf(addr.is_deaf || false);
@@ -485,8 +496,8 @@ function AddressListContent() {
     };
 
     const filteredAddresses = addresses.filter(a =>
-        a.street.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.number.toLowerCase().includes(searchTerm.toLowerCase())
+        // Pesquisa apenas pelo campo unificado de endereço
+        a.street.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const activeAddresses = filteredAddresses.filter(a => a.is_active !== false);
@@ -501,7 +512,8 @@ function AddressListContent() {
     };
 
     const handleOpenMap = (item: any) => {
-        const query = `${item.street}, ${item.number}`;
+        // Usa o endereço completo para abrir no mapa
+        const query = item.street;
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const isAndroid = /Android/i.test(navigator.userAgent);
         let url = '';
@@ -597,16 +609,9 @@ function AddressListContent() {
                     <div className="flex-1 min-w-0">
                         <h3 className="font-bold text-main text-base truncate">
                             {addr.street}
-                            {!isTraditional && !addr.street.includes(addr.number) && addr.number !== 'S/N' ? `, ${addr.number}` : ''}
                         </h3>
 
                         <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
-                            {addr.people_count ? (
-                                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md" title="Número de Pessoas">
-                                    <Users className="w-3 h-3" />
-                                    <span className="font-bold">{addr.people_count}</span>
-                                </div>
-                            ) : null}
                             {!isTraditional && addr.resident_name && <span className="font-semibold text-gray-700 dark:text-gray-300">{addr.resident_name}</span>}
 
                             {!isTraditional && (
@@ -775,8 +780,14 @@ function AddressListContent() {
 
                 <div className="flex items-center gap-2">
 
-                    {(isElder || isServant) && (
+                    {(isElder || isServant || isAdmin || isSuperAdmin) && (
                         <>
+                            <CSVActionButtons
+                                congregationId={congregationId}
+                                cityId={cityId}
+                                territoryId={territoryId}
+                                onImportSuccess={fetchAddresses}
+                            />
                             <button
                                 onClick={() => {
                                     const currentPath = window.location.pathname + window.location.search;
@@ -847,7 +858,7 @@ function AddressListContent() {
                                                 <tr key={addr.id} className="hover:bg-surface-highlight/50 transition-colors group">
                                                     <td className="px-4 py-4 text-center font-bold text-muted">{idx + 1}</td>
                                                     <td className="px-4 py-4">
-                                                        <div className="font-bold text-main">{addr.street}{!isTraditional && !addr.street.includes(addr.number) && addr.number !== 'S/N' ? `, ${addr.number}` : ''}</div>
+                                                        <div className="font-bold text-main">{addr.street}</div>
                                                         {addr.observations && <div className="text-[10px] text-muted truncate max-w-[150px]">{addr.observations}</div>}
                                                     </td>
                                                     <td className="px-4 py-4">
@@ -934,11 +945,11 @@ function AddressListContent() {
                                 id: a.id,
                                 lat: a.lat,
                                 lng: a.lng,
-                                title: `${a.street}, ${a.number}`,
-                                subtitle: a.complement || '',
+                                // Endereço unificado no campo street
+                                title: a.street,
+                                subtitle: a.observations || '',
                                 variant: 'numbered' as const,
                                 index: idx + 1,
-                                number: a.number,
                                 residentName: a.resident_name,
                                 gender: a.gender,
                                 status: ((a as any).visit_status === 'contacted' ? 'OCUPADO' :
@@ -955,11 +966,11 @@ function AddressListContent() {
                                 id: a.id,
                                 lat: a.lat,
                                 lng: a.lng,
-                                title: `${a.street}, ${a.number}`,
-                                subtitle: a.complement || '',
+                                // Endereço unificado no campo street
+                                title: a.street,
+                                subtitle: a.observations || '',
                                 variant: 'numbered' as const,
                                 index: activeAddresses.length + idx + 1,
-                                number: a.number,
                                 residentName: a.resident_name,
                                 gender: a.gender,
                                 status: ((a as any).visit_status === 'contacted' ? 'OCUPADO' :
@@ -986,8 +997,8 @@ function AddressListContent() {
                     address={(() => {
                         const addr = addresses.find(a => a.id === historyAddressId);
                         if (!addr) return '';
-                        if (addr.street.includes(addr.number)) return addr.street;
-                        return `${addr.street}, ${addr.number}`;
+                        // O endereço completo já está no campo street
+                        return addr.street;
                     })()}
                 />
             )}
@@ -1058,13 +1069,10 @@ function AddressListContent() {
                                                 <button
                                                     type="button"
                                                     onClick={generateMapsLink}
-                                                    className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-3 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors shrink-0"
+                                                    className="rounded-xl overflow-hidden shrink-0 hover:opacity-80 transition-opacity border border-gray-200 dark:border-gray-600"
                                                     title="Gerar Link Automático"
                                                 >
-                                                    <svg viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0">
-                                                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4285F4" />
-                                                        <circle cx="12" cy="9" r="2.5" fill="#fff" />
-                                                    </svg>
+                                                    <img src="/icons/google-maps.svg" alt="Google Maps" className="w-11 h-11 block object-cover" />
                                                 </button>
                                             </div>
 
@@ -1081,15 +1089,10 @@ function AddressListContent() {
                                                     <button
                                                         type="button"
                                                         onClick={generateWazeLink}
-                                                        className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-3 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors shrink-0"
+                                                        className="rounded-xl overflow-hidden shrink-0 hover:opacity-80 transition-opacity border border-gray-200 dark:border-gray-600"
                                                         title="Gerar Link Waze"
                                                     >
-                                                        <svg viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0">
-                                                            <path fill="#33CCFF" d="M19.333 11.667a6.666 6.666 0 0 0-13.333 0c0 .35.03.7.078 1.045a3.167 3.167 0 0 0-2.745 3.122 3.167 3.167 0 0 0 3.167 3.166h.165a2.833 2.833 0 0 0 5.667 0h1.333a2.833 2.833 0 0 0 5.667 0h.165a3.167 3.167 0 0 0 3.167-3.166 3.167 3.167 0 0 0-2.745-3.122 6.666 6.666 0 0 0 .078-1.045z" />
-                                                            <circle cx="15.5" cy="11.5" r="1" fill="#fff" />
-                                                            <circle cx="9.5" cy="11.5" r="1" fill="#fff" />
-                                                            <path d="M10 14.5s1 1 2 0" stroke="#fff" strokeWidth="1" fill="none" strokeLinecap="round" />
-                                                        </svg>
+                                                        <img src="/icons/waze.svg" alt="Waze" className="w-11 h-11 block object-cover" />
                                                     </button>
                                                 </div>
                                             </div>
@@ -1122,10 +1125,10 @@ function AddressListContent() {
                                                         type="number"
                                                         min="1"
                                                         className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
-                                                        value={peopleCount}
-                                                        onChange={e => setPeopleCount(e.target.value)}
+                                                        value={residentsCount}
+                                                        onChange={e => setResidentsCount(e.target.value)}
                                                         onBlur={() => {
-                                                            if (!peopleCount || parseInt(peopleCount) < 1) setPeopleCount('1');
+                                                            if (!residentsCount || parseInt(residentsCount) < 1) setResidentsCount('1');
                                                         }}
                                                         placeholder="Qtd."
                                                     />

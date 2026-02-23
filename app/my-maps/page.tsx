@@ -66,12 +66,19 @@ export default function CongregationListPage() {
         }
     }, [user, authLoading, congregationId, isSuperAdmin, router]);
 
+    // Redirect Publishers from Maps
+    useEffect(() => {
+        if (!authLoading && user && !isServant) {
+            router.replace('/dashboard');
+        }
+    }, [user, authLoading, isServant, router]);
+
     // Redirect Assigned Users (Non-Super Admin) to their city list
     useEffect(() => {
-        if (!authLoading && user && congregationId && !isSuperAdmin) {
+        if (!authLoading && user && congregationId && !isSuperAdmin && isServant) {
             router.replace(`/my-maps/city?congregationId=${congregationId}`);
         }
-    }, [user, authLoading, congregationId, isSuperAdmin, router]);
+    }, [user, authLoading, congregationId, isSuperAdmin, isServant, router]);
 
     const fetchCongregations = async () => {
         if (!isSuperAdmin) return;

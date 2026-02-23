@@ -24,6 +24,8 @@ interface AuthContextType {
     congregationType: 'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null;
     notificationsEnabled: boolean;
     setNotificationsEnabled: (enabled: boolean) => Promise<void>;
+    canManageMembers: boolean;
+    canInviteMembers: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -44,7 +46,9 @@ const AuthContext = createContext<AuthContextType>({
     termType: 'city',
     congregationType: null,
     notificationsEnabled: true,
-    setNotificationsEnabled: async () => { }
+    setNotificationsEnabled: async () => { },
+    canManageMembers: false,
+    canInviteMembers: false
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -236,7 +240,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isSuperAdmin = role === 'SUPER_ADMIN';
     const isElder = role === 'ANCIAO' || isSuperAdmin;
     const isServant = role === 'SERVO' || isElder;
-    const isAdmin = isSuperAdmin;
+    const isAdmin = isElder; // Ancião e Superadmin são considerados admins de congregação
+
+    const canManageMembers = isElder;
+    const canInviteMembers = isServant;
 
     return (
         <AuthContext.Provider value={{
@@ -257,7 +264,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             termType,
             congregationType,
             notificationsEnabled,
-            setNotificationsEnabled: updateNotificationsEnabled
+            setNotificationsEnabled: updateNotificationsEnabled,
+            canManageMembers,
+            canInviteMembers
         }}>
             {children}
         </AuthContext.Provider>

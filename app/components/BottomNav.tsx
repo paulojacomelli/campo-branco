@@ -33,11 +33,9 @@ export default function BottomNav() {
         { id: 'config', label: 'CONFIG', icon: Settings, path: '/settings' },
     ];
 
-    // Filter reports for pure Publishers (not Elder, not Servant, not SuperAdmin)
-    // isElder handles SuperAdmin too in AuthContext logic usually, but let's be safe:
-    // If we want to hide it for Publishers only:
-    if (!isElder && !isServant && !isSuperAdmin) {
-        menuItems = menuItems.filter(item => item.id !== 'reports');
+    // Filter reports and maps for pure Publishers (not Elder, not Servant, not SuperAdmin)
+    if (!isServant) {
+        menuItems = menuItems.filter(item => item.id !== 'reports' && item.id !== 'maps');
     }
 
     return (

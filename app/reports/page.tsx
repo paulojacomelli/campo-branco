@@ -24,10 +24,19 @@ import {
 } from "lucide-react";
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from "@/lib/serviceYearUtils";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 export default function ReportsPage() {
-    const { role, isElder, isServant, congregationId } = useAuth();
+    const router = useRouter();
+    const { user, role, isElder, isServant, congregationId, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
+
+    // Redirect if not Elder/Servant
+    useEffect(() => {
+        if (!authLoading && user && (!isElder && !isServant)) {
+            router.replace('/dashboard');
+        }
+    }, [user, authLoading, isElder, isServant, router]);
     const [selectedServiceYear, setSelectedServiceYear] = useState<number>(getServiceYear());
     const [error, setError] = useState<string | null>(null);
 
