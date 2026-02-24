@@ -111,7 +111,7 @@ Para validação completa antes de releases:
 ## �🤝 Contribuição e Suporte
 
 Desenvolvido por **Paulo Jacomelli**.
-- E-mail: `campobranco@paulojacomelli.com.br`
+- E-mail: `campobrancojw@gmail.com`
 - Contribuições são bem-vindas via Pull Requests.
 
 ## 📄 Licença
