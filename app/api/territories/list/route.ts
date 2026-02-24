@@ -24,10 +24,10 @@ export async function GET(req: Request) {
 
         // Permite visualizar quem é SUPER_ADMIN ou se a congregationId bate
         if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
-            return NextResponse.json({ error: 'Você não tem permissão para visualizar estes territórios.' }, { status: 403 });
+            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
-        // Usa o supabaseAdmin (Service Key) para forçar o bypass do RLS para Select
+        // 1. Busca os territórios
         const { data: territories, error: tErr } = await supabaseAdmin
             .from('territories')
             .select('*')
@@ -35,7 +35,50 @@ export async function GET(req: Request) {
             .eq('congregation_id', congregationId)
             .order('name');
 
-        return NextResponse.json({ success: true, territories, error: tErr });
+        if (tErr) throw tErr;
+
+        if (!territories || territories.length === 0) {
+            return NextResponse.json({ success: true, territories: [] });
+        }
+
+        const territoryIds = territories.map(t => t.id);
+
+        // 2. Busca todos os endereços ATIVOS para estes territórios para contar em memória
+        // Isso é mais robusto que tentar múltiplos filters em count agregados no PostgREST
+        const { data: addresses, error: aErr } = await supabaseAdmin
+            .from('addresses')
+            .select('territory_id, gender')
+            .in('territory_id', territoryIds)
+            .eq('is_active', true);
+
+        if (aErr) throw aErr;
+
+        // 3. Agrega as estatísticas
+        const statsMap: Record<string, { count: number, men: number, women: number, couples: number }> = {};
+
+        addresses?.forEach(addr => {
+            if (!statsMap[addr.territory_id]) {
+                statsMap[addr.territory_id] = { count: 0, men: 0, women: 0, couples: 0 };
+            }
+            statsMap[addr.territory_id].count++;
+            if (addr.gender === 'HOMEM') statsMap[addr.territory_id].men++;
+            else if (addr.gender === 'MULHER') statsMap[addr.territory_id].women++;
+            else if (addr.gender === 'CASAL') statsMap[addr.territory_id].couples++;
+        });
+
+        // 4. Formata o retorno
+        const formattedTerritories = territories.map(t => {
+            const stats = statsMap[t.id] || { count: 0, men: 0, women: 0, couples: 0 };
+            return {
+                ...t,
+                addressCount: stats.count,
+                menCount: stats.men,
+                womenCount: stats.women,
+                couplesCount: stats.couples
+            };
+        });
+
+        return NextResponse.json({ success: true, territories: formattedTerritories });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

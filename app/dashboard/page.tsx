@@ -493,6 +493,7 @@ export default function DashboardPage() {
                                     idleList.push({
                                         id: data.id,
                                         name: data.name || 'Sem Nome',
+                                        description: data.notes || '',
                                         city: cityName,
                                         city_id: data.city_id,
                                         congregation_id: data.congregation_id,
@@ -503,6 +504,7 @@ export default function DashboardPage() {
                                     idleList.push({
                                         id: data.id,
                                         name: data.name || 'Sem Nome',
+                                        description: data.notes || '',
                                         city: cityName,
                                         city_id: data.city_id,
                                         congregation_id: data.congregation_id,

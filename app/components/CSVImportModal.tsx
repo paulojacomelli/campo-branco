@@ -5,7 +5,7 @@ import { useState, useCallback } from 'react';
 import {
     X, Upload, CheckCircle2, AlertCircle, Info,
     Loader2, Download, ChevronDown, ChevronRight,
-    MapPin, Building2, Home, Eye
+    MapPin, Building2, Home, Eye, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -81,12 +81,12 @@ function buildPreview(text: string): { cities: Record<string, PreviewCity>; tota
     };
 
     const COLS = {
-        city: idx(['Nome da cidade (Cities name)', 'Nome da cidade']),
+        city: idx(['Cidade', 'Nome da cidade (Cities name)', 'Nome da cidade']),
         uf: idx(['UF (Cities uf)', 'UF']),
         mapNum: idx(['Número do Mapa (Territories name)', 'Número do Mapa']),
         mapDesc: idx(['Descrição (Territories notes)', 'Descrição']),
         street: idx(['Endereço (street)', 'Endereço']),
-        residents: idx(['Número de residentes (residents_count)', 'Número de residentes', 'Número de Residentes']),
+        residents: idx(['Quantidade de residentes', 'Número de residentes (residents_count)', 'Número de residentes', 'Número de Residentes']),
         name: idx(['Nome (resident_name)', 'Nome']),
         gender: idx(['Gênero (gender)', 'Gênero']),
         active: idx(['Status (is_active)', 'Status']),
@@ -235,13 +235,13 @@ export default function CSVImportModal({
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-surface rounded-[2rem] w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] border border-surface-border">
+            <div className="bg-surface rounded-2xl w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] border border-surface-border">
 
                 {/* Header */}
-                <div className="p-6 border-b border-surface-border flex justify-between items-center bg-surface sticky top-0 rounded-t-[2rem] z-10">
+                <div className="p-6 border-b border-surface-border flex justify-between items-center bg-surface sticky top-0 rounded-t-2xl z-10">
                     <div>
                         <h2 className="text-xl font-bold text-main tracking-tight">Importação de Dados</h2>
-                        <p className="text-xs text-muted font-bold uppercase tracking-widest mt-1">
+                        <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-1">
                             {preview ? `${Object.keys(preview.cities).length} cidades · ${Object.values(preview.cities).reduce((a, c) => a + Object.keys(c.territories).length, 0)} territórios · ${preview.totalAddresses} endereços` : 'Selecione o arquivo CSV'}
                         </p>
                     </div>
@@ -256,20 +256,20 @@ export default function CSVImportModal({
                     {/* Seleção de arquivo */}
                     {!preview && !results && (
                         <>
-                            <label className="group relative border-2 border-dashed border-gray-200 hover:border-primary rounded-3xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all bg-gray-50/50 hover:bg-primary/5">
+                            <label className="group relative border-2 border-dashed border-gray-200 hover:border-primary rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all bg-gray-50/50 hover:bg-primary/5">
                                 <input type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-                                <div className="bg-white p-4 rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                                <div className="bg-white dark:bg-surface p-4 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
                                     <Upload className="w-8 h-8 text-primary" />
                                 </div>
                                 <div className="text-center">
                                     <p className="font-bold text-main">{file ? file.name : 'Selecionar arquivo CSV'}</p>
-                                    <p className="text-xs text-muted mt-1 font-medium italic">Separador ponto e vírgula (;)</p>
+                                    <p className="text-[10px] text-muted mt-1 font-medium italic">Separador ponto e vírgula (;)</p>
                                 </div>
                             </label>
-                            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex gap-3">
-                                <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                                <p className="text-xs text-primary/80 font-medium leading-relaxed">
-                                    Após selecionar o arquivo, você verá um preview de todos os dados antes de confirmar.
+                            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 flex gap-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-800 font-bold leading-relaxed">
+                                    Atenção: Sempre revise manualmente tarefas realizadas em massa para evitar erros de importação.
                                 </p>
                             </div>
                         </>
@@ -288,7 +288,7 @@ export default function CSVImportModal({
                                 const cityOpen = expandedCities.has(cityKey);
                                 const terrCount = Object.keys(city.territories).length;
                                 return (
-                                    <div key={cityKey} className="border border-surface-border rounded-2xl overflow-hidden">
+                                    <div key={cityKey} className="border border-surface-border rounded-xl overflow-hidden">
                                         {/* Cidade */}
                                         <button
                                             onClick={() => toggleCity(cityKey)}
@@ -412,16 +412,16 @@ export default function CSVImportModal({
 
                 {/* Footer — botão de ação */}
                 {(preview || (!preview && !results && file)) && !results && (
-                    <div className="p-6 border-t border-surface-border bg-gray-50/30 rounded-b-[2rem] flex gap-3">
+                    <div className="p-6 border-t border-surface-border bg-gray-50/30 rounded-b-2xl flex gap-3">
                         {preview && (
-                            <button onClick={resetAll} className="flex-1 py-4 text-xs font-bold text-muted bg-gray-100 hover:bg-gray-200 rounded-2xl transition-all">
+                            <button onClick={resetAll} className="flex-1 py-4 text-xs font-bold text-muted bg-gray-100 hover:bg-gray-200 rounded-xl transition-all">
                                 TROCAR ARQUIVO
                             </button>
                         )}
                         <button
                             onClick={handleImport}
                             disabled={!file || loading}
-                            className="flex-[2] bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-primary-light/30 transition-all disabled:opacity-50 active:scale-95"
+                            className="flex-[2] bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-xl shadow-primary-light/30 transition-all disabled:opacity-50 active:scale-95"
                         >
                             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                             <span>{loading ? 'IMPORTANDO...' : 'CONFIRMAR IMPORTAÇÃO'}</span>

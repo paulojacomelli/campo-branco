@@ -12,7 +12,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { id } = body;
+        const { id, mode = 'cascade' } = body; // mode can be 'cascade' or 'orphan'
 
         if (!id) {
             return NextResponse.json({ error: 'ID é obrigatório.' }, { status: 400 });
@@ -43,6 +43,31 @@ export async function POST(req: Request) {
         // Se for Ancião/Servo, só pode deletar da própria congregação
         if (adminData.role !== 'SUPER_ADMIN' && territoryData.congregation_id !== adminData.congregation_id) {
             return NextResponse.json({ error: 'Você só pode excluir itens da sua congregação.' }, { status: 403 });
+        }
+
+        // Tratamento de endereços vinculados
+        if (mode === 'orphan') {
+            // Deixa os endereços "órfãos" (sem território vinculado)
+            const { error: orphanError } = await supabaseAdmin
+                .from('addresses')
+                .update({ territory_id: null })
+                .eq('territory_id', id);
+
+            if (orphanError) {
+                console.error('Territory Orphan API Error:', orphanError);
+                return NextResponse.json({ error: 'Erro ao desvincular endereços.' }, { status: 500 });
+            }
+        } else {
+            // Cascade: Deleta os endereços vinculados primeiro
+            const { error: cascadeError } = await supabaseAdmin
+                .from('addresses')
+                .delete()
+                .eq('territory_id', id);
+
+            if (cascadeError) {
+                console.error('Territory Cascade API Error:', cascadeError);
+                return NextResponse.json({ error: 'Erro ao excluir endereços vinculados.' }, { status: 500 });
+            }
         }
 
         const { error: publicDeleteError } = await supabaseAdmin

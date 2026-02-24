@@ -135,6 +135,7 @@ export default function NotificationsPage() {
                             idleList.push({
                                 id: t.id,
                                 name: t.name || 'Sem Nome',
+                                description: t.notes || '',
                                 city: cityName,
                                 cityId: t.city_id,
                                 congregationId: t.congregation_id,
@@ -145,6 +146,7 @@ export default function NotificationsPage() {
                             idleList.push({
                                 id: t.id,
                                 name: t.name || 'Sem Nome',
+                                description: t.notes || '',
                                 city: cityName,
                                 cityId: t.city_id,
                                 congregationId: t.congregation_id,

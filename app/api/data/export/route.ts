@@ -114,24 +114,24 @@ export async function GET(req: Request) {
 
         // Cabeçalho do CSV conforme formato padrão de importação
         const headers = [
-            'Nome da cidade (Cities name)',
-            'UF (Cities uf)',
-            'Número do Mapa (Territories name)',
-            'Descrição (Territories notes)',
-            'Endereço (street)',
-            'Número de residentes (residents_count)',
-            'Nome (resident_name)',
-            'Link do Maps (google_maps_link)',
-            'Link do Waze (waze_link)',
-            'Status (is_active)',
-            'Surdo (is_deaf)',
-            'Menor de idade (is_minor)',
-            'Estudante (is_student)',
-            'Neurodivergente (is_neurodivergent)',
-            'Gênero (gender)',
-            'Observação (observations)',
-            'visit_status',
-            'sort_order'
+            'Cidade',
+            'UF',
+            'Número do Mapa',
+            'Descrição',
+            'Endereço',
+            'Quantidade de residentes',
+            'Nome',
+            'Link do Maps',
+            'Link do Waze',
+            'Status',
+            'Surdo',
+            'Menor de idade',
+            'Estudante',
+            'Neurodivergente',
+            'Gênero',
+            'Observações',
+            'Resultado da ultima visita',
+            'Ordem na listagem'
         ];
 
         const rows = (addresses || []).map(addr => {

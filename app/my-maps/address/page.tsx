@@ -332,19 +332,6 @@ function AddressListContent() {
     }, [isCreateModalOpen, editingId, congregationId, cityId, territoryId]);
 
 
-    const generateMapsLink = () => {
-        if (combinedAddress) {
-            setGoogleMapsLink(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(combinedAddress)}`);
-        }
-    };
-
-    const generateWazeLink = () => {
-        if (lat && lng) {
-            setWazeLink(`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`);
-        } else if (combinedAddress) {
-            setWazeLink(`https://waze.com/ul?q=${encodeURIComponent(combinedAddress)}&navigate=yes`);
-        }
-    };
 
     // Actions
     const handleCreateAddress = async (e: React.FormEvent) => {
@@ -1066,14 +1053,6 @@ function AddressListContent() {
                                                     onChange={e => setGoogleMapsLink(e.target.value)}
                                                     placeholder="https://maps.google.com..."
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={generateMapsLink}
-                                                    className="rounded-xl overflow-hidden shrink-0 hover:opacity-80 transition-opacity border border-gray-200 dark:border-gray-600"
-                                                    title="Gerar Link Automático"
-                                                >
-                                                    <img src="/icons/google-maps.svg" alt="Google Maps" className="w-11 h-11 block object-cover" />
-                                                </button>
                                             </div>
 
                                             {/* Waze Link */}
@@ -1086,14 +1065,6 @@ function AddressListContent() {
                                                         onChange={e => setWazeLink(e.target.value)}
                                                         placeholder="https://waze.com/ul..."
                                                     />
-                                                    <button
-                                                        type="button"
-                                                        onClick={generateWazeLink}
-                                                        className="rounded-xl overflow-hidden shrink-0 hover:opacity-80 transition-opacity border border-gray-200 dark:border-gray-600"
-                                                        title="Gerar Link Waze"
-                                                    >
-                                                        <img src="/icons/waze.svg" alt="Waze" className="w-11 h-11 block object-cover" />
-                                                    </button>
                                                 </div>
                                             </div>
 

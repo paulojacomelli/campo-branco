@@ -49,8 +49,8 @@ export default function CSVActionButtons({
     };
 
     const downloadTemplate = () => {
-        const header = "Nome da cidade,UF,Número do Mapa,Descrição,Status,Endereço Completo,Link do Google Maps,Link do Waze,Número de Residentes,Nome,Gênero,Tags,Observação";
-        const example = "Catanduva,SP,01,Centro,Ativo,\"Rua Álamo, 225\",https://maps.google.com/...,https://waze.com/...,1,João Silva,Homem,Estudante,Exemplo de observação";
+        const header = "Cidade;UF;Número do Mapa;Descrição;Endereço;Quantidade de residentes;Nome;Link do Maps;Link do Waze;Status;Surdo;Menor de idade;Estudante;Neurodivergente;Gênero;Observações;Resultado da ultima visita;Ordem na listagem";
+        const example = "Catanduva;SP;01;Centro;Rua Álamo, 225;1;João Silva;https://maps.google.com/...;https://waze.com/...;true;false;false;false;false;Homem;Exemplo de observação;not_contacted;0";
         const csvContent = "\ufeff" + [header, example].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

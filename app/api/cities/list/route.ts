@@ -21,9 +21,17 @@ export async function GET(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        // Permite visualizar quem é SUPER_ADMIN ou se a congregationId bate
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
-            return NextResponse.json({ error: 'Você não tem permissão para visualizar estas cidades.' }, { status: 403 });
+        // Permite visualizar se for SUPER_ADMIN ou se a congregationId bater com o registro do usuário
+        // Se não houver adminData (usuário novo), mas ele tiver o role correto no token (podemos confiar no token se necessário, 
+        // mas aqui estamos usando a tabela users), vamos garantir que ele tenha acesso.
+        const isAllowed = adminData && (
+            adminData.role === 'SUPER_ADMIN' ||
+            (adminData.congregation_id === congregationId && (adminData.role === 'ELDER' || adminData.role === 'SERVANT' || adminData.role === 'ADMIN'))
+        );
+
+        if (!isAllowed) {
+            console.log("Permission denied for user:", currentUser.id, "Requested Cong:", congregationId, "User data:", adminData);
+            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
         // Usa o supabaseAdmin (Service Key) para forçar o bypass do RLS para Select

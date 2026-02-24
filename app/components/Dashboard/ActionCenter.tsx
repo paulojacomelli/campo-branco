@@ -15,6 +15,7 @@ import Link from 'next/link';
 export interface IdleTerritory {
     id: string;
     name: string;
+    description?: string;
     city: string;
     lastVisit?: any;
     cityId?: string;
@@ -197,7 +198,7 @@ export default function ActionCenter({
                         <div className="flex-1 md:hidden pt-0.5">
                             <h3 className={`font-bold ${titleColor} flex items-center gap-2 text-sm`}>
                                 <MapIcon className="w-3.5 h-3.5" />
-                                {territory.name} • {territory.city}
+                                {territory.name}{territory.description ? ` • ${territory.description}` : ''}
                             </h3>
                         </div>
                     </div>
@@ -205,7 +206,7 @@ export default function ActionCenter({
                     <div className="flex-1 -mt-1 md:mt-0 pl-9 md:pl-0">
                         <h3 className={`hidden md:flex font-bold ${titleColor} items-center gap-2 mb-1`}>
                             <MapIcon className="w-4 h-4" />
-                            {territory.name} • {territory.city}
+                            {territory.name}{territory.description ? ` • ${territory.description}` : ''}
                         </h3>
                         {/* Mobile Title Replacement for Desktop Context */}
                         <p className={`md:hidden text-[9px] font-bold uppercase tracking-wider opacity-60 mb-0.5 ${titleColor}`}>
@@ -213,10 +214,11 @@ export default function ActionCenter({
                         </p>
 
                         <p className={`${textColor} text-xs md:text-sm leading-tight md:leading-relaxed`}>
-                            {territory.lastVisit
-                                ? `Esta região não é visitada desde ${new Date(territory.lastVisit).toLocaleDateString()}.`
-                                : `Este território nunca recebeu uma visita registrada.`
-                            }
+                            {territory.lastVisit ? (
+                                <>Esta região de <span className="font-bold">{territory.city}</span> não é visitada desde {new Date(territory.lastVisit).toLocaleDateString()}.</>
+                            ) : (
+                                <>Este território de <span className="font-bold">{territory.city}</span> nunca recebeu uma visita registrada.</>
+                            )}
                         </p>
                     </div>
 

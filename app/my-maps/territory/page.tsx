@@ -18,7 +18,9 @@ import {
     History,
     MoreVertical,
     User,
-    Pencil
+    Pencil,
+    AlertCircle,
+    Users
 } from 'lucide-react';
 import { toast } from 'sonner';
 import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
@@ -53,6 +55,7 @@ function TerritoryListContent() {
     const cityId = searchParams.get('cityId');
     const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading } = useAuth();
     const router = useRouter();
+    const currentView = searchParams.get('view') || 'grid';
 
     // State
     const [territories, setTerritories] = useState<Territory[]>([]);
@@ -76,6 +79,8 @@ function TerritoryListContent() {
 
     // Delete State
     const [territoryToDelete, setTerritoryToDelete] = useState<{ id: string, name: string } | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [deleteMode, setDeleteMode] = useState<'cascade' | 'orphan'>('cascade');
 
     // Multi-select state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -145,8 +150,24 @@ function TerritoryListContent() {
             }
 
             // Client-side numeric sort for names like "1", "2", "10"
-            const sorted = (data.territories || []).sort((a: Territory, b: Territory) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            const sorted = (data.territories || []).sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }));
             setTerritories(sorted);
+
+            // Populate counts and stats immediately from API data
+            const counts: Record<string, number> = {};
+            const gStats: Record<string, { men: number, women: number, couples: number }> = {};
+
+            sorted.forEach((t: any) => {
+                counts[t.id] = t.addressCount || 0;
+                gStats[t.id] = {
+                    men: t.menCount || 0,
+                    women: t.womenCount || 0,
+                    couples: t.couplesCount || 0
+                };
+            });
+
+            setAddressCounts(prev => ({ ...prev, ...counts }));
+            setGenderStats(prev => ({ ...prev, ...gStats }));
         } catch (error) {
             console.error("Error fetching territories:", error);
         } finally {
@@ -182,7 +203,7 @@ function TerritoryListContent() {
         try {
             const { data, error } = await supabase
                 .from('addresses')
-                .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor')
+                .select('id, territory_id, is_active, street, number, resident_name, observations, notes, gender, is_deaf, is_neurodivergent, is_student, is_minor')
                 .eq('congregation_id', congregationId)
                 .eq('city_id', cityId);
 
@@ -220,22 +241,11 @@ function TerritoryListContent() {
     };
 
     useEffect(() => {
-        fetchAddresses();
-        // Realtime for addresses updates affecting counts
-        if (congregationId && cityId) {
-            const subscription = supabase
-                .channel('addresses_count')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'addresses', filter: `city_id=eq.${cityId}` }, () => {
-                    fetchAddresses();
-                })
-                .subscribe();
-            return () => {
-                setTimeout(() => {
-                    subscription.unsubscribe();
-                }, 100);
-            };
+        // Fetch addresses if searchInItems is used OR if we are in table view
+        if ((searchInItems && searchTerm) || currentView === 'table') {
+            fetchAddresses();
         }
-    }, [congregationId, cityId]);
+    }, [congregationId, cityId, searchInItems, searchTerm, currentView]);
 
     // Fetch Shared Lists (Assignments)
     // TODO: Migrate shared_lists logic fully. This is a placeholder for reading existing structure if migrated, 
@@ -356,28 +366,43 @@ function TerritoryListContent() {
 
     const handleDeleteTerritory = (id: string, name: string) => {
         setTerritoryToDelete({ id, name });
+        setIsDeleteDialogOpen(true);
     };
 
     const confirmDeleteTerritory = async () => {
         if (!territoryToDelete) return;
         const { id } = territoryToDelete;
-        setTerritoryToDelete(null); // Fecha o modal imediatamente
+        setIsDeleteDialogOpen(false);
+        setLoading(true);
         try {
             const response = await fetch('/api/territories/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
+                body: JSON.stringify({ id, mode: deleteMode })
             });
 
             const resData = await response.json();
             if (!response.ok) {
-                throw new Error(resData.error || 'Erro ao excluir território');
+                // Se o registro não existe, apenas consideramos sucesso na exclusão (limpeza de UI)
+                if (response.status === 404 || resData.error === 'Registro não encontrado.') {
+                    toast.info("O território já havia sido removido ou mesclado.");
+                } else {
+                    throw new Error(resData.error || 'Erro ao excluir território');
+                }
+            } else {
+                toast.success(deleteMode === 'cascade'
+                    ? "Território e endereços excluídos!"
+                    : "Território excluído e endereços mantidos!");
             }
-            toast.success("Território excluído com sucesso!");
+
             fetchTerritories();
-        } catch (error) {
+            fetchAddresses();
+        } catch (error: any) {
             console.error("Error deleting territory:", error);
-            toast.error("Erro ao excluir território.");
+            toast.error("Erro ao excluir: " + error.message);
+        } finally {
+            setLoading(false);
+            setTerritoryToDelete(null);
         }
     };
 
@@ -427,7 +452,6 @@ function TerritoryListContent() {
     }
 
     // View state
-    const currentView = searchParams.get('view') || 'grid';
 
     return (
         <div className="bg-background min-h-screen pb-24 font-sans text-main transition-colors duration-300">
@@ -680,14 +704,29 @@ function TerritoryListContent() {
 
                                             <div className="flex flex-wrap items-center gap-2 pl-0.5">
                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap ${!addressCounts[t.id] ? 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' : 'text-primary bg-primary-light/50 dark:bg-primary-dark/30 dark:text-primary-light'}`}>
-                                                    {addressCounts[t.id] || 0} Endereços
+                                                    {addressCounts[t.id] || 0} Ativos
                                                 </span>
 
                                                 {genderStats[t.id] && (genderStats[t.id].men > 0 || genderStats[t.id].women > 0 || genderStats[t.id].couples > 0) && (
-                                                    <div className="flex items-center gap-2 px-1 border-l border-gray-200 dark:border-gray-700">
-                                                        {genderStats[t.id].men > 0 && <div className="flex items-center gap-0.5 text-blue-500"><User className="w-3 h-3 fill-current" /><span className="text-[10px] font-black">{genderStats[t.id].men}</span></div>}
-                                                        {genderStats[t.id].women > 0 && <div className="flex items-center gap-0.5 text-pink-500"><User className="w-3 h-3 fill-current" /><span className="text-[10px] font-black">{genderStats[t.id].women}</span></div>}
-                                                        {genderStats[t.id].couples > 0 && <div className="flex items-center gap-0.5 text-purple-600"><div className="flex -space-x-1"><User className="w-2.5 h-2.5 fill-current" /><User className="w-2.5 h-2.5 fill-current" /></div><span className="text-[10px] font-black">{genderStats[t.id].couples}</span></div>}
+                                                    <div className="flex items-center gap-2 px-1.5 border-l border-gray-200 dark:border-gray-700">
+                                                        {genderStats[t.id].men > 0 && (
+                                                            <div className="flex items-center gap-0.5 text-blue-500" title="Homens">
+                                                                <User className="w-3.5 h-3.5 fill-current" />
+                                                                <span className="text-[10px] font-black">{genderStats[t.id].men}</span>
+                                                            </div>
+                                                        )}
+                                                        {genderStats[t.id].women > 0 && (
+                                                            <div className="flex items-center gap-0.5 text-pink-500" title="Mulheres">
+                                                                <User className="w-3.5 h-3.5 fill-current" />
+                                                                <span className="text-[10px] font-black">{genderStats[t.id].women}</span>
+                                                            </div>
+                                                        )}
+                                                        {genderStats[t.id].couples > 0 && (
+                                                            <div className="flex items-center gap-0.5 text-purple-600" title="Casais">
+                                                                <Users className="w-3.5 h-3.5 fill-current" />
+                                                                <span className="text-[10px] font-black">{genderStats[t.id].couples}</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -857,26 +896,71 @@ function TerritoryListContent() {
                 )
             }
 
-            {/* Delete Confirmation Modal */}
-            {
-                territoryToDelete && (
-                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="bg-white dark:bg-slate-900 rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800">
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                <Trash2 className="w-6 h-6 text-red-500" />
-                                Excluir Território
-                            </h2>
-                            <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm">
-                                Tem certeza que deseja excluir o território <span className="font-bold text-gray-900 dark:text-white">{territoryToDelete.name}</span>? Esta ação não pode ser desfeita.
-                            </p>
-                            <div className="flex gap-3 pt-2">
-                                <button type="button" onClick={() => setTerritoryToDelete(null)} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors">Cancelar</button>
-                                <button type="button" onClick={confirmDeleteTerritory} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg shadow-red-500/20 hover:bg-red-700 transition-colors">Excluir</button>
-                            </div>
+            {/* Custom Delete Confirmation Modal */}
+            {isDeleteDialogOpen && territoryToDelete && (
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
+                        <div className="mb-6">
+                            <h3 className="text-xl font-bold text-main tracking-tight">Excluir Território {territoryToDelete.name}</h3>
+                            <p className="text-sm text-muted mt-1">Este território possui endereços vinculados. O que deseja fazer com eles?</p>
+                        </div>
+
+                        <div className="space-y-3 mb-8">
+                            <button
+                                onClick={() => setDeleteMode('cascade')}
+                                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 ${deleteMode === 'cascade' ? 'border-red-50 bg-red-50/50 dark:bg-red-900/10' : 'border-surface-border'}`}
+                            >
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${deleteMode === 'cascade' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                                    <Trash2 className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <div className={`font-bold text-sm ${deleteMode === 'cascade' ? 'text-red-700 dark:text-red-400' : 'text-main'}`}>Apagar Tudo</div>
+                                    <div className="text-[10px] text-muted leading-tight">Remove o mapa e todos os endereços definitivamente.</div>
+                                </div>
+                                {deleteMode === 'cascade' && <div className="ml-auto w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />}
+                            </button>
+
+                            <button
+                                onClick={() => setDeleteMode('orphan')}
+                                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 ${deleteMode === 'orphan' ? 'border-amber-50 bg-amber-50/50 dark:bg-amber-900/10' : 'border-surface-border'}`}
+                            >
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${deleteMode === 'orphan' ? 'bg-amber-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                                    <LogOut className="w-5 h-5 -rotate-90" />
+                                </div>
+                                <div>
+                                    <div className={`font-bold text-sm ${deleteMode === 'orphan' ? 'text-amber-700 dark:text-amber-400' : 'text-main'}`}>Deixar Órfãos</div>
+                                    <div className="text-[10px] text-muted leading-tight">Apaga o mapa, mas mantém os endereços na lista de espera.</div>
+                                </div>
+                                {deleteMode === 'orphan' && <div className="ml-auto w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" />}
+                            </button>
+
+                            {deleteMode === 'orphan' && (
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30 flex gap-3 animate-in slide-in-from-top-2 duration-200">
+                                    <AlertCircle className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                                    <p className="text-[10px] text-blue-700 dark:text-blue-400 font-medium leading-relaxed">
+                                        Importante: Você precisará <span className="font-bold">entrar em contato com o Administrador do Sistema</span> para visualizar e reatribuir estes endereços órfãos posteriormente.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setIsDeleteDialogOpen(false)}
+                                className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-bold py-3.5 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={confirmDeleteTerritory}
+                                className={`flex-1 font-bold py-3.5 rounded-xl transition-all shadow-lg active:scale-95 text-sm text-white ${deleteMode === 'cascade' ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'}`}
+                            >
+                                Confirmar
+                            </button>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             <BottomNav />
 

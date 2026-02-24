@@ -25,6 +25,15 @@ function parseBool(val: string): boolean {
     return ['true', '1', 't', 'sim', 'yes'].includes((val || '').toLowerCase().trim());
 }
 
+// Normaliza nome do território: se for número de 1 a 9, adiciona zero à esquerda (ex: "1" -> "01")
+function normalizeTerritoryName(name: string): string {
+    const trimmed = (name || '').trim();
+    if (/^\d+$/.test(trimmed) && trimmed.length === 1) {
+        return trimmed.padStart(2, '0');
+    }
+    return trimmed;
+}
+
 // Parser de linha CSV com suporte a separador ponto e vírgula e aspas duplas
 function parseCSVLine(line: string, separator = ';'): string[] {
     const row: string[] = [];
@@ -104,12 +113,12 @@ export async function POST(req: Request) {
         // Mapeamento de colunas: índice de cada coluna pelo nome do cabeçalho
         // Suporta tanto o header técnico quanto o amigável
         const COL: Record<string, string[]> = {
-            cityName: ['Nome da cidade (Cities name)', 'Nome da cidade'],
+            cityName: ['Cidade', 'Nome da cidade (Cities name)', 'Nome da cidade'],
             uf: ['UF (Cities uf)', 'UF'],
             mapNum: ['Número do Mapa (Territories name)', 'Número do Mapa'],
             mapDesc: ['Descrição (Territories notes)', 'Descrição'],
             street: ['Endereço (street)', 'Endereço'],
-            residentsCount: ['Número de residentes (residents_count)', 'Número de residentes', 'Número de Residentes'],
+            residentsCount: ['Quantidade de residentes', 'Número de residentes (residents_count)', 'Número de residentes', 'Número de Residentes'],
             residentName: ['Nome (resident_name)', 'Nome'],
             googleMapsLink: ['Link do Maps (google_maps_link)', 'Link do Maps', 'Link do Google Maps'],
             wazeLink: ['Link do Waze (waze_link)', 'Link do Waze'],
@@ -119,9 +128,9 @@ export async function POST(req: Request) {
             isStudent: ['Estudante (is_student)', 'Estudante'],
             isNeurodivergent: ['Neurodivergente  (is_neurodivergent)', 'Neurodivergente (is_neurodivergent)', 'Neurodivergente'],
             gender: ['Gênero (gender)', 'Gênero'],
-            observations: ['Observação (observations)', 'Observação'],
-            visitStatus: ['visit_status'],
-            sortOrder: ['sort_order'],
+            observations: ['Observações', 'Observação (observations)', 'Observação'],
+            visitStatus: ['Resultado da ultima visita', 'visit_status'],
+            sortOrder: ['Ordem na listagem', 'sort_order'],
         };
 
         // Indexa as colunas do header por nome
@@ -165,7 +174,8 @@ export async function POST(req: Request) {
 
             const cityName = get('cityName');
             const uf = get('uf');
-            const mapNum = get('mapNum');
+            const mapNumRaw = get('mapNum');
+            const mapNum = normalizeTerritoryName(mapNumRaw);
 
             // Linhas sem cidade ou número do mapa são ignoradas
             if (!cityName || !mapNum) continue;

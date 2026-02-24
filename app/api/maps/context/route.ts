@@ -24,7 +24,7 @@ export async function GET(req: Request) {
             .single();
 
         if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
-            return NextResponse.json({ error: 'Você não tem permissão para visualizar.' }, { status: 403 });
+            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
         // Fetch using Admin to bypass RLS
