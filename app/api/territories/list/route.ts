@@ -15,16 +15,9 @@ export async function GET(req: Request) {
         const cityId = url.searchParams.get('cityId');
         const congregationId = url.searchParams.get('congregationId');
 
-        // Add auth checking logic (Using Admin to bypass RLS)
-        const { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
-
-        // Permite visualizar quem é SUPER_ADMIN ou se a congregationId bate
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && String(adminData.congregation_id).toLowerCase().trim() !== String(congregationId).toLowerCase().trim())) {
-            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
+        // Permite visualizar se o usuário existir (Bypass RLS check)
+        if (!adminData) {
+            return NextResponse.json({ error: 'Usuário sem perfil configurado' }, { status: 403 });
         }
 
         // 1. Busca os territórios

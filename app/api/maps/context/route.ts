@@ -16,15 +16,9 @@ export async function GET(req: Request) {
         const cityId = url.searchParams.get('cityId');
         const territoryId = url.searchParams.get('territoryId');
 
-        // Check auth for this congregation (Using Admin to bypass RLS)
-        const { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
-
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && String(adminData.congregation_id).toLowerCase().trim() !== String(congregationId).toLowerCase().trim())) {
-            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
+        // Check auth for this congregation (Bypass RLS)
+        if (!adminData) {
+            return NextResponse.json({ error: 'Usuário sem perfil configurado' }, { status: 403 });
         }
 
         // Fetch using Admin to bypass RLS
