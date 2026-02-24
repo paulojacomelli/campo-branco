@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <script>
+        if (window.location.hostname !== 'localhost' && window.location.hostname.endsWith('.web.app')) {
+            window.location.replace('https://campobranco.vercel.app' + window.location.pathname + window.location.search);
+        }
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termos de Uso | Campo Branco</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#16a34a',
+                        'primary-dark': '#15803d',
+                        'primary-light': '#dcfce7',
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/css">
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Replicando estilos de tipografia do app */
+        .legal-content h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #111827;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .legal-content h4 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #374151;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .legal-content p {
+            margin-bottom: 1.25rem;
+            line-height: 1.75;
+            color: #4b5563;
+        }
+
+        .legal-content ul {
+            list-style-type: disc;
+            padding-left: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .legal-content li {
+            margin-bottom: 0.5rem;
+            color: #4b5563;
+        }
+
+        .legal-content strong {
+            color: #111827;
+            font-weight: 700;
+        }
+
+        .legal-content .marker-blue li::marker {
+            color: #3b82f6;
+        }
+
+        /* text-blue-500 */
+    </style>
+</head>
+
+<body class="min-h-screen bg-gray-50 flex flex-col transition-colors">
+    <!-- Header replicado do app/legal/layout.tsx -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-30 h-16 transition-colors">
+        <div class="max-w-4xl mx-auto px-4 h-full flex items-center justify-between">
+            <a href="index.html" class="flex items-center gap-2 text-gray-600 hover:text-[#16a34a] transition-colors">
+                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                <span class="font-bold text-sm">Voltar</span>
+            </a>
+            <div class="flex items-center gap-2">
+                <!-- SVG Logo embutido para independência -->
+                <svg width="32" height="32" viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg"
+                    class="rounded-lg shadow-sm">
+                    <defs>
+                        <linearGradient id="logo-grad-mini" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#00db82" />
+                            <stop offset="100%" stop-color="#00a441" />
+                        </linearGradient>
+                    </defs>
+                    <path fill="url(#logo-grad-mini)"
+                        d="M552.87,64.05c-.82,2.69,26.49,1.6,35.36,2.18l19.19,1.27c59.89,3.96,119.01,11.9,174.08,35.02,53.33,22.39,93.57,62.64,115.97,115.95,23.18,55.17,31.09,114.11,35.03,174.09l1.27,19.33c.56,8.56-.5,36.13,2.18,35.23v105.56l-2.44,35.51-1,19.03c-1.34,25.53-4.32,50.08-8.07,75.31-13.93,93.69-50.27,175.33-141.78,214.26-71.52,30.43-153.29,35.41-230.43,38.19-35.21,1.27-69.05,1.28-104.27,0-80.04-2.92-172.2-8.39-244.65-44.95-40.89-20.63-72.69-52.45-93.33-93.35-36.61-72.53-42.01-164.5-44.96-244.65-1.29-35.22-1.28-69.05,0-104.27,2.79-77.3,7.72-158.78,38.19-230.43,50.48-118.68,171.19-141.72,287.88-149.74l20.65-1.42c12.28-.84,24.59.83,35.58-2.14h105.56v.02Z" />
+                    <path fill="white"
+                        d="M727.75,380.6c2.89,10.63,7.69,40.95,8.06,52.86,1.29,41.88-9.05,76.64-25.94,114.26-24.54,54.65-65.03,108.03-102.69,154.27l-5.86,7.19c-7.06,8.67-14.01,17.43-22.04,25.17-3.26,3.14-5.23,6.12-8.12,9.51-17.25,20.18-35.33,39.11-53.78,58.17-6.21,6.42-13.47,8.24-22.2,7.14-7.24-.92-12.12-5.35-17.46-11.6-11.74-13.72-26.83-25.05-33.41-39.36-13.85-30.16-16.82-54.1-13.83-87.74,1.47-16.6,5.62-31.77,12-46.75,5.46-12.81,14.19-22.26,25.04-30.46,22.55-17.05,36.86-5.83,66.62-7.37,17.91-.93,34.92-5.53,49.9-15.43,17.58-11.63,31.1-27.75,40.87-46.19,1.42-2.68.22-6-2.45-6.84-19.01-6.06-38.36-7.93-58.14-5.64-20.83,2.41-39,10.82-54.37,24.99-16.67,15.38-23.17,31.64-46.94,37.48,1.19-4.69,3.13-8.72,5.4-13.15l36.38-70.95,7.18-17.86c9.57-23.82,18.51-48.24,23.02-74.28,6.01-34.71,6.39-70.26-13.95-100.09-4.19-6.14-21.17-27.87-27.52-27.78-1.37.02-3.21,1.17-4.24,2.89-17.75,29.87-25.65,64.77-11.94,98.11,5.16,12.54,12.41,23.04,20.71,33.59,9.7,12.34,12.3,27.98,6.12,42.41-2.27,5.29-3.14,11.27-5.53,15.9-10.34,20.03-21.95,39.11-33.9,58.87l-28.39,46.96c-8.23-12.64-4.51-26.04-7.01-36.39.54-1.3-.06-3.33-.06-4.71,0-.78,0-1.58-.04-2.36-.02-.4-.26-.78-.33-1.18-1.36-7.64-3.2-15.11-5.82-22.4-4.57-12.73-11.19-25.22-21.03-35.46-14.83-15.43-33.61-25.67-53.96-32.05-2.1-.66-4.58.34-5.54,1.37-.68.73-1.53,2.21-1.73,3.98-4.85,42.16,4.63,75.77,37.95,103.23,9.57,7.89,27.47,16,31.45,21.41,15.92,21.67,7.51,51.1-4.32,73.38-5.93,11.18-17.37,18.02-29.19,18.61-12.12.61-24.61-5.4-31.2-15.41l-28.44-43.2c-26.72-40.59-52.53-102.8-52.98-152.48-.25-27.9,4.47-55.11,13.44-81.21,9.32-27.11,26.83-57.24,45.55-77.78,13.31-14.61,26.72-27.43,42.89-38.34,26.85-18.12,55.84-31.81,87.86-37.13l10.73-1.78c44.95-7.47,90.4-.62,132.17,17.99,54.35,24.22,97.19,68.85,120.2,123.87,4.28,10.23,8.11,19.74,10.83,29.75h-.02ZM559.35,403.18c44.29-1.14,75.95-27.96,79.68-70.93.87-10.06-32.51,1.85-37.34,3.92-12.56,5.4-22.12,14.11-30.05,25.03-5.51,7.59-15.34,31.18-12.29,41.97h0ZM467.12,478.83c8.04-20.25,6.88-51.1-1.97-68.15-4.89-19.78-34.67-43.62-53.68-48.68-5.12.28-5.45,8.85-5.86,12.39-3.09,26.92-.58,52.33,17.96,73.13,11.85,13.29,26.05,24.54,43.54,31.31h0ZM617.42,469.53c13.48-10.2,23.69-23.2,30.82-38.46.68-1.45.19-3.61-.41-4.53-.52-.78-1.71-1.79-3.41-2.12-30.78-6.04-55.07-6.42-81.38,13.38-12.79,9.62-22.51,22.09-29.46,36.46-1.28,2.66.3,5.54,3.13,6.23,28.17,6.87,56.63,7.25,80.71-10.96h0Z" />
+                </svg>
+                <span class="font-black text-lg text-gray-800 tracking-tight">Campo Branco</span>
+            </div>
+            <!-- Espaçador para centralizar o logo no mobile se necessário -->
+            <div class="w-12"></div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-4xl mx-auto px-4 py-8 md:py-12 w-full">
+        <!-- Card de conteúdo replicado do app/legal/layout.tsx -->
+        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 md:p-12 transition-colors">
+            <article class="legal-content">
+                <!-- Cabeçalho específico da página replicado de app/legal/terms/page.tsx -->
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
+                        <i data-lucide="file-text" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-black text-gray-900 m-0 leading-tight">Termos de Uso</h1>
+                        <p class="text-sm text-gray-500 m-0">Última atualização: 05/01/2026</p>
+                    </div>
+                </div>
+
+                <!-- Conteúdo textual idêntico ao app/legal/terms/page.tsx -->
+                <section class="space-y-6">
+                    <p>
+                        Bem-vindo ao <strong>Campo Branco</strong>.
+                        Ao acessar, cadastrar-se ou utilizar este aplicativo, você declara que <strong>leu, compreendeu
+                            e concorda integralmente</strong> com estes Termos de Uso. Caso não concorde com qualquer
+                        condição aqui descrita, <strong>não utilize o aplicativo</strong>.
+                    </p>
+
+                    <h3>1. DEFINIÇÃO DO SERVIÇO</h3>
+                    <p>
+                        O <strong>Campo Branco</strong> é uma ferramenta digital destinada
+                        <strong>exclusivamente</strong> ao apoio da <strong>organização e gestão de territórios,
+                            endereços e visitas religiosas/pastorais</strong> realizadas por congregações locais e seus
+                        membros, no contexto das atividades das Testemunhas de Jeová.
+                    </p>
+                    <p>
+                        O aplicativo não é operado, administrado, endossado nem representa oficialmente a organização
+                        religiosa das Testemunhas de Jeová, sendo utilizado de forma independente por congregações e
+                        usuários locais.
+                    </p>
+                    <p>É <strong>expressamente proibido</strong> o uso do aplicativo para:</p>
+                    <ul class="marker-blue">
+                        <li>fins comerciais ou publicitários</li>
+                        <li>marketing, vendas ou prospecção</li>
+                        <li>cobrança, assédio ou pressão indevida</li>
+                        <li>coleta de dados para finalidades externas à atividade religiosa</li>
+                    </ul>
+                    <p>O descumprimento poderá resultar em <strong>suspensão ou banimento imediato da conta</strong>,
+                        sem aviso prévio.</p>
+
+                    <h3>2. ELEGIBILIDADE E ACESSO</h3>
+                    <p>2.1. O uso do Campo Branco é restrito a:</p>
+                    <ul class="marker-blue">
+                        <li>usuários <strong>autorizados pela congregação local</strong> ou por administradores
+                            responsáveis</li>
+                        <li>maiores de 18 anos ou devidamente autorizados</li>
+                    </ul>
+                    <p>2.2. O acesso é <strong>individual e intransferível</strong>. O usuário é responsável por manter
+                        a confidencialidade de suas credenciais e por todas as ações realizadas em sua conta.</p>
+
+                    <h3>3. RESPONSABILIDADES DO USUÁRIO</h3>
+                    <p>Ao utilizar o Campo Branco, o usuário declara que:</p>
+                    <ul class="marker-blue">
+                        <li>As informações inseridas (endereços, nomes, observações, marcações) são de sua
+                            <strong>inteira responsabilidade</strong>
+                        </li>
+                        <li>Utilizará os dados <strong>apenas para fins religiosos/pastorais legítimos</strong></li>
+                        <li>Não compartilhará dados com terceiros não autorizados</li>
+                        <li>Agirá com <strong>respeito, ética e discrição</strong>, especialmente em visitas pessoais
+                        </li>
+                    </ul>
+
+                    <h4>3.1. Dados sensíveis</h4>
+                    <p>O usuário compromete-se a registrar <strong>dados sensíveis apenas quando estritamente
+                            necessário</strong> e tratar com cuidado especial marcações como menores de idade, condições
+                        de acessibilidade e preferências de abordagem.</p>
+
+                    <h3>4. USO DE DADOS E CONFORMIDADE LEGAL</h3>
+                    <p>4.1. O Campo Branco atua como <strong>OPERADOR de dados</strong>, nos termos da Lei Geral de
+                        Proteção de Dados (Lei nº 13.709/2018 – LGPD).</p>
+                    <p>4.2. O <strong>CONTROLADOR dos dados</strong> é a congregação local e/ou os usuários
+                        administradores responsáveis pelo cadastro, definição de finalidade, manutenção e exclusão das
+                        informações inseridas no sistema.</p>
+                    <p>4.3. O tratamento de dados ocorre com base em interesse legítimo, exercício regular de atividade
+                        religiosa, finalidade pastoral e organizacional, e observância dos princípios da LGPD.</p>
+                    <p>4.4. O aplicativo não utiliza rastreadores externos, não exibe anúncios, não comercializa dados e
+                        não compartilha dados com terceiros.</p>
+
+                    <h3>5. DADOS DE CRIANÇAS E ADOLESCENTES</h3>
+                    <p>
+                        Quando houver registro de dados relacionados a menores de idade, isso ocorrerá
+                        <strong>exclusivamente</strong> para alertar sobre a necessidade de abordagem responsável e
+                        incentivar boas práticas, como buscar autorização dos responsáveis.
+                        O tratamento será sempre feito <strong>no melhor interesse do menor</strong>, conforme o
+                        <strong>Art. 14 da LGPD</strong>.
+                    </p>
+
+                    <h3>6. RETENÇÃO E EXCLUSÃO DE DADOS</h3>
+                    <p>6.1. Os dados permanecem armazenados <strong>somente enquanto necessários</strong> para a
+                        finalidade religiosa.</p>
+                    <p>6.2. A exclusão de dados pode ser realizada manualmente por usuários autorizados, quando o dado
+                        deixar de ser necessário ou por solicitação interna da congregação ou do usuário controlador
+                        responsável.</p>
+                    <p>6.3. O Campo Branco não mantém backups históricos acessíveis ao usuário após exclusão definitiva.
+                    </p>
+
+                    <h3>7. SEGURANÇA DA INFORMAÇÃO</h3>
+                    <p>
+                        O Campo Branco adota medidas técnicas e organizacionais adequadas, incluindo isolamento de dados
+                        por congregação, controle rigoroso de acesso e regras de segurança no banco de dados.
+                        Apesar disso, nenhum sistema é absolutamente imune. O usuário reconhece os riscos inerentes ao
+                        uso de tecnologias digitais.
+                    </p>
+
+                    <h3>8. LICENÇA OPEN SOURCE, INFRAESTRUTURA E DADOS</h3>
+                    <p>8.1. O Campo Branco é um software de código aberto (open source), distribuído sob os termos da
+                        Licença MIT, aplicável exclusivamente ao código-fonte do software.</p>
+                    <p>8.2. A Licença MIT concede a qualquer pessoa que obtenha uma cópia do software os direitos de
+                        usar, copiar, modificar, mesclar, publicar e distribuir o software, inclusive para fins
+                        comerciais, desde que respeitados os termos da licença.</p>
+
+                    <p><strong>8.3. A licença open source NÃO se aplica:</strong></p>
+                    <ul class="marker-blue">
+                        <li>ao banco de dados oficial do Campo Branco</li>
+                        <li>à infraestrutura de produção</li>
+                        <li>aos dados armazenados por usuários ou organizações</li>
+                        <li>aos ambientes operacionais mantidos pelos desenvolvedores</li>
+                    </ul>
+                    <p>Esses elementos são privados, fechados e protegidos.</p>
+
+                    <p>8.4. Qualquer instalação própria, bifurcação (fork), cópia ou auto-hospedagem do software deverá
+                        operar com banco de dados próprio e independente, não terá acesso, integração ou sincronização
+                        com o banco de dados oficial do Campo Branco e será de inteira responsabilidade de quem a
+                        operar.</p>
+                    <p>8.5. Este Termo de Uso não substitui nem invalida a Licença MIT, mas regula especificamente o uso
+                        da aplicação oficial em produção, o acesso à infraestrutura e as responsabilidades dos usuários
+                        finais.</p>
+                    <p>8.6. O nome Campo Branco, sua identidade visual e documentação não estão cobertos pela Licença
+                        MIT, salvo indicação expressa.</p>
+
+                    <h3>9. LIMITAÇÃO DE RESPONSABILIDADE</h3>
+                    <p>
+                        O Campo Branco não garante resultados específicos, não se responsabiliza por uso indevido do
+                        aplicativo e não responde por informações inseridas pelos usuários.
+                        A responsabilidade pelo conteúdo cadastrado é <strong>exclusivamente do usuário e da organização
+                            controladora</strong>.
+                    </p>
+
+                    <h3>10. SUSPENSÃO E ENCERRAMENTO</h3>
+                    <p>
+                        O acesso poderá ser suspenso ou encerrado em caso de violação destes Termos, uso indevido ou
+                        ilegal, ou solicitação da organização religiosa.
+                        O encerramento ou suspensão de acesso não implica vínculo institucional, representação ou
+                        responsabilidade da organização religiosa das Testemunhas de Jeová sobre o uso do aplicativo.
+                    </p>
+
+                    <h3>11. ALTERAÇÕES DOS TERMOS</h3>
+                    <p>
+                        Estes Termos podem ser atualizados a qualquer momento. A versão mais recente estará sempre
+                        disponível no aplicativo. O uso continuado após alterações implica <strong>aceitação
+                            automática</strong> dos novos termos.
+                    </p>
+
+                    <h3>12. CONTATO</h3>
+                    <p>
+                        Para dúvidas, solicitações ou comunicações relacionadas a estes Termos, utilize o canal de
+                        suporte dentro do aplicativo ou o e-mail administrativo informado na plataforma.
+                    </p>
+
+                    <h3>13. DISPOSIÇÕES FINAIS</h3>
+                    <p>
+                        Estes Termos são regidos pelas leis da República Federativa do Brasil. Qualquer controvérsia
+                        será resolvida conforme a legislação aplicável.
+                    </p>
+
+                    <hr class="my-8 border-gray-100" />
+                    <!-- Citação replicada de app/legal/terms/page.tsx (embutida no layout ou rodapé geralmente) -->
+                    <p class="text-center text-xs text-gray-400 italic">
+                        "Mas que todas as coisas ocorram com decência e ordem."
+                    </p>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <!-- Footer replicado do app/legal/layout.tsx -->
+    <footer class="bg-white border-t border-gray-200 py-8 mt-auto transition-colors">
+        <div class="max-w-4xl mx-auto px-4">
+            <div class="flex flex-wrap justify-center gap-6 md:gap-8">
+                <a href="termos.html"
+                    class="text-sm font-medium text-gray-500 hover:text-[#16a34a] transition-colors flex items-center gap-1.5"><i
+                        data-lucide="file-text" class="w-4 h-4"></i>Termos de Uso</a>
+                <a href="privacidade.html"
+                    class="text-sm font-medium text-gray-500 hover:text-[#16a34a] transition-colors flex items-center gap-1.5"><i
+                        data-lucide="lock" class="w-4 h-4"></i>Política de Privacidade</a>
+                <a href="dados.html"
+                    class="text-sm font-medium text-gray-500 hover:text-[#16a34a] transition-colors flex items-center gap-1.5"><i
+                        data-lucide="shield" class="w-4 h-4"></i>Uso de Dados</a>
+                <a href="compromisso.html"
+                    class="text-sm font-medium text-gray-500 hover:text-[#16a34a] transition-colors flex items-center gap-1.5"><i
+                        data-lucide="user-check" class="w-4 h-4"></i>Compromisso</a>
+            </div>
+            <p class="text-center text-xs text-gray-400 mt-6">
+                © 2026 Campo Branco. Todos os direitos reservados.
+            </p>
+        </div>
+    </footer>
+    <!-- Widget VLibras -->
+    <div vw class="enabled">
+        <div vw-access-button class="active"></div>
+        <div vw-plugin-wrapper>
+            <div class="vw-plugin-top-wrapper"></div>
+        </div>
+    </div>
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+    <script>
+        new window.VLibras.Widget('https://vlibras.gov.br/app');
+    </script>
+
+    <script>lucide.createIcons();</script>
+</body>
+
+</html>
