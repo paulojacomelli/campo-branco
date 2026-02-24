@@ -11,7 +11,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import BottomNav from '@/app/components/BottomNav';
 
 interface City {
@@ -23,13 +23,28 @@ interface City {
 
 function WitnessingCityListContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const congregationId = searchParams.get('congregationId');
-    const { loading: authLoading } = useAuth();
+    const { congregationId: userCongregationId, loading: authLoading } = useAuth();
     const [cities, setCities] = useState<City[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
+        if (authLoading) return;
+
+        // Security Check: Ensure user is accessing their own congregation
+        if (userCongregationId && congregationId && congregationId !== userCongregationId) {
+            console.warn("Security Alert: User tried to access different congregation. Redirecting to authorized one.");
+            router.replace(`/witnessing/congregation?congregationId=${userCongregationId}`);
+            return;
+        }
+
+        if (!congregationId && userCongregationId) {
+            router.replace(`/witnessing/congregation?congregationId=${userCongregationId}`);
+            return;
+        }
+
         if (!congregationId) {
             setLoading(false);
             return;

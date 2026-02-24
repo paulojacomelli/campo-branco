@@ -86,7 +86,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
             case 'contacted': return <ThumbsUp className="w-4 h-4 text-green-600" />;
             case 'not_contacted': return <ThumbsDown className="w-4 h-4 text-red-600" />;
             case 'moved': return <Home className="w-4 h-4 text-orange-600" />;
-            case 'do_not_visit': return <Hand className="w-4 h-4 text-purple-600" />;
+            case 'do_not_visit': return <Hand className="w-4 h-4 text-red-600" />;
             default: return <div className="w-4 h-4 bg-gray-200 rounded-full" />;
         }
     };

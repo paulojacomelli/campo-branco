@@ -28,41 +28,16 @@ export default function WitnessingPage() {
             return;
         }
 
-        // If not super admin, redirect to their congregation
-        if (!isSuperAdmin && congregationId) {
+        // Always redirect to assigned congregation if it exists
+        if (congregationId) {
             router.push(`/witnessing/congregation?congregationId=${congregationId}`);
             return;
         }
 
-        // If Super Admin (or no congregation assigned), load list
-        if (isSuperAdmin) {
-            let isMounted = true;
-            const fetchCongregations = async () => {
-                try {
-                    const { data, error } = await supabase
-                        .from('congregations')
-                        .select('*')
-                        .order('name');
+        // If no congregation assigned, stop loading to show restricted view
+        setLoading(false);
 
-                    if (error) throw error;
-
-                    if (data && isMounted) {
-                        setCongregations(data);
-                    }
-                } catch (err) {
-                    console.error("Error fetching congregations:", err);
-                } finally {
-                    if (isMounted) setLoading(false);
-                }
-            };
-
-            fetchCongregations();
-            return () => { isMounted = false; };
-        } else {
-            setLoading(false);
-        }
-
-    }, [user, congregationId, isSuperAdmin, authLoading, router]);
+    }, [user, congregationId, authLoading, router]);
 
     const filteredCongregations = congregations.filter(c =>
         c.name.toLowerCase().includes(searchTerm.toLowerCase())

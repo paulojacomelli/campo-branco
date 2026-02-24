@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Bug, CheckCircle2, Clock, MapPin, Monitor } from 'lucide-react';
 import { useAuth } from '@/app/context/AuthContext';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 interface Report {
@@ -71,7 +72,7 @@ export default function AdminReportsPage() {
             setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'resolved' } : r));
         } catch (error) {
             console.error("Error resolving report:", error);
-            alert("Erro ao resolver relatório.");
+            toast.error("Erro ao resolver relatório.");
         }
     };
 

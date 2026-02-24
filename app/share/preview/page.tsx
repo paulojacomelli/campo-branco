@@ -11,6 +11,8 @@ import {
     Share2,
     ThumbsUp,
     ThumbsDown,
+    Home,
+    Hand,
     ArrowLeft,
     User,
     Users,
@@ -24,7 +26,8 @@ import {
     Brain,
     ChevronUp,
     ChevronDown,
-    MoreVertical
+    MoreVertical,
+    Calendar
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -62,6 +65,7 @@ interface PreviewItem {
     isActive?: boolean;
     observations?: string;
     lastVisitedAt?: any; // Firestore Timestamp or serialized object
+    inactivatedAt?: string;
 }
 
 function SharedPreviewContent() {
@@ -151,24 +155,26 @@ function SharedPreviewContent() {
                 observations: a.observations,
                 visitStatus: a.visit_status || a.visitStatus,
                 territoryId: a.territory_id || a.territoryId,
-                cityId: a.city_id || a.cityId
+                cityId: a.city_id || a.cityId,
+                inactivatedAt: a.inactivated_at
             }));
 
             // 4. Merge Results (Visits)
-            const linkResults: Record<string, string> = {};
+            const linkResults: Record<string, any> = {};
             if (visitsData) {
                 visitsData.forEach((v: any) => {
-                    linkResults[v.address_id] = v.status;
+                    linkResults[v.address_id] = v;
                 });
             }
 
             // Merge
             const mergedItems = addresses.map(addr => {
-                const statusFromVisit = linkResults[addr.id];
-                const finalStatus = statusFromVisit || addr.visitStatus;
+                const visitRecord = linkResults[addr.id];
+                const finalStatus = visitRecord?.status || 'none';
                 return {
                     ...addr,
                     visitStatus: finalStatus,
+                    visitNotes: visitRecord?.notes || '',
                     completed: finalStatus === 'contacted'
                 };
             });
@@ -185,7 +191,10 @@ function SharedPreviewContent() {
             });
 
             setTitle(mainData.name);
-            setSubtitle(mainData.description || (type === 'territory' ? "Território" : "Cidade"));
+            setSubtitle(type === 'territory'
+                ? `Território` + (mainData.notes ? ` - ${mainData.notes}` : '')
+                : (mainData.description || mainData.notes || "Cidade")
+            );
             setItems(mergedItems);
             setLoading(false);
 
@@ -218,7 +227,6 @@ function SharedPreviewContent() {
                 address_id: selectedAddressForReport.id,
                 territory_id: selectedAddressForReport.territoryId,
                 user_id: user?.id || null,
-                publisher_name: profileName || 'Publicador (Link)',
                 status: data.status,
                 notes: data.observations || '',
                 visit_date: visit_date,
@@ -243,7 +251,13 @@ function SharedPreviewContent() {
                 throw new Error(errorJson.error || 'Erro ao salvar visita');
             }
 
-            // Refresh Local State
+            // Refresh Local State (Optimistic + Server Fetch)
+            setItems(prev => prev.map(item =>
+                item.id === selectedAddressForReport.id
+                    ? { ...item, visitStatus: data.status, visitNotes: data.observations || '', completed: data.status === 'contacted' }
+                    : item
+            ));
+
             fetchData();
             setSelectedAddressForReport(null);
             toast.success("Visita registrada com sucesso!");
@@ -251,6 +265,38 @@ function SharedPreviewContent() {
         } catch (error: any) {
             console.error("Error saving visit:", error);
             toast.error(error.message || "Erro ao salvar visita. Tente novamente.");
+        }
+    };
+
+    const handleDeleteVisit = async () => {
+        if (!selectedAddressForReport || !shareId) return;
+
+        try {
+            const response = await fetch('/api/visits/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ addressId: selectedAddressForReport.id, shareId })
+            });
+
+            if (!response.ok) {
+                const errorJson = await response.json();
+                throw new Error(errorJson.error || 'Erro ao remover visita');
+            }
+
+            // Optimistic UI Update: Reset status to 'none' and clear visitNotes
+            setItems(prev => prev.map(item =>
+                item.id === selectedAddressForReport.id
+                    ? { ...item, visitStatus: 'none', visitNotes: '', completed: false }
+                    : item
+            ));
+
+            fetchData();
+            setSelectedAddressForReport(null);
+            toast.success("Resposta removida com sucesso!");
+
+        } catch (error: any) {
+            console.error("Error deleting visit:", error);
+            toast.error(error.message || "Erro ao remover visita");
         }
     };
     // The code uses `shareId || null`.
@@ -343,7 +389,18 @@ function SharedPreviewContent() {
         return (
             <Wrapper key={item.id} {...(wrapperProps as any)}>
                 {/* Main Card Container - Matching Address List padding and styles */}
-                <div className={`bg-surface rounded-2xl p-4 border border-surface-border shadow-sm hover:shadow-md transition-all relative ${item.isActive === false ? 'opacity-60 grayscale' : ''} ${activeDropdownId === item.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}>
+                <div className={`bg-surface rounded-2xl p-4 border-2 shadow-sm hover:shadow-md transition-all relative 
+                    ${item.isActive === false ? 'opacity-60 grayscale' : ''} 
+                    ${activeDropdownId === item.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}
+                    ${item.visitStatus && item.visitStatus !== 'none'
+                        ? item.visitStatus === 'contacted' || item.visitStatus === 'contested' ? 'border-green-500 bg-green-50/30 dark:bg-green-900/10'
+                            : item.visitStatus === 'not_contacted' ? 'border-orange-500 bg-orange-50/30 dark:bg-orange-900/10'
+                                : item.visitStatus === 'moved' ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
+                                    : item.visitStatus === 'do_not_visit' ? 'border-red-500 bg-red-50/30 dark:bg-red-900/10'
+                                        : 'border-surface-border'
+                        : 'border-surface-border'
+                    }
+                `}>
 
                     <div className="flex items-center gap-3">
 
@@ -355,7 +412,33 @@ function SharedPreviewContent() {
                         ) : (
                             // Address List Logic for Badge
                             (() => {
-                                // Gender Mode (Sign Language / Foreign)
+                                // 1. Priority: Visit Status Badge (if already visited)
+                                if (item.visitStatus && item.visitStatus !== 'none') {
+                                    let badgeStyles = "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+                                    let StatusIcon = User;
+
+                                    if (item.visitStatus === 'contacted' || item.visitStatus === 'contested') {
+                                        badgeStyles = "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800";
+                                        StatusIcon = ThumbsUp;
+                                    } else if (item.visitStatus === 'not_contacted') {
+                                        badgeStyles = "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-800";
+                                        StatusIcon = ThumbsDown;
+                                    } else if (item.visitStatus === 'moved') {
+                                        badgeStyles = "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-800";
+                                        StatusIcon = Home;
+                                    } else if (item.visitStatus === 'do_not_visit') {
+                                        badgeStyles = "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800";
+                                        StatusIcon = Hand;
+                                    }
+
+                                    return (
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border transition-colors ${badgeStyles}`}>
+                                            <StatusIcon className={`w-5 h-5 ${item.visitStatus === 'contacted' || item.visitStatus === 'contested' ? 'fill-current' : ''}`} />
+                                        </div>
+                                    );
+                                }
+
+                                // 2. Fallback: Gender Mode (Sign Language / Foreign)
                                 if (!isTraditional && item.gender) {
                                     let badgeStyles = "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
                                     if (item.gender === 'HOMEM') {
@@ -407,7 +490,7 @@ function SharedPreviewContent() {
                                         {!user && <Lock className="w-3 h-3 text-muted" />}
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
+                                    <div className={`flex flex-wrap items-center gap-2 mt-1 text-xs text-muted ${item.visitStatus && item.visitStatus !== 'none' ? 'grayscale opacity-70' : ''}`}>
                                         {item.peopleCount ? (
                                             <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md" title="Número de Pessoas">
                                                 <Users className="w-3 h-3" />
@@ -419,22 +502,6 @@ function SharedPreviewContent() {
 
                                         {!isTraditional && (
                                             <>
-                                                {item.gender && (
-                                                    <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${item.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                                        item.gender === 'MULHER' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400' :
-                                                            'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                                        }`}>
-                                                        {item.gender === 'HOMEM' && <User className="w-3 h-3 fill-current" />}
-                                                        {item.gender === 'MULHER' && <User className="w-3 h-3 fill-current" />}
-                                                        {item.gender === 'CASAL' && (
-                                                            <div className="flex -space-x-1">
-                                                                <User className="w-2.5 h-2.5 fill-current" />
-                                                                <User className="w-2.5 h-2.5 fill-current" />
-                                                            </div>
-                                                        )}
-                                                        {item.gender === 'HOMEM' ? 'Homem' : item.gender === 'MULHER' ? 'Mulher' : 'Casal'}
-                                                    </span>
-                                                )}
                                                 {item.isDeaf && (
                                                     <span className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                         <Ear className="w-3 h-3" /> Surdo
@@ -455,13 +522,14 @@ function SharedPreviewContent() {
                                                         <Brain className="w-3 h-3" /> Neurodivergente
                                                     </span>
                                                 )}
-                                            </>
-                                        )}
 
-                                        {item.visitStatus === 'moved' && (
-                                            <span className="flex items-center gap-1 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                                Mudou-se
-                                            </span>
+                                                {/* Deactivation Date */}
+                                                {item.isActive === false && item.inactivatedAt && (
+                                                    <span className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border border-red-100 dark:border-red-900/30">
+                                                        <Calendar className="w-3 h-3" /> Desativado em: {new Date(item.inactivatedAt).toLocaleDateString('pt-BR')}
+                                                    </span>
+                                                )}
+                                            </>
                                         )}
 
                                         {item.observations && (
@@ -658,6 +726,7 @@ function SharedPreviewContent() {
                     address={selectedAddressForReport}
                     onClose={() => setSelectedAddressForReport(null)}
                     onSave={handleSaveVisit}
+                    onDelete={handleDeleteVisit}
                     forcedCongregationType={congregationType || undefined}
                     onViewHistory={() => {
                         setSelectedAddressForReport(null);

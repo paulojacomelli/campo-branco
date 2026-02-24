@@ -15,6 +15,7 @@ import { useAuth } from '@/app/context/AuthContext';
 interface TerritoryHistoryModalProps {
     territoryId: string;
     territoryName: string;
+    congregationId: string | null;
     onClose: () => void;
 }
 
@@ -27,8 +28,9 @@ interface HistoryEntry {
     status: string;
 }
 
-export default function TerritoryHistoryModal({ territoryId, territoryName, onClose }: TerritoryHistoryModalProps) {
-    const { congregationId } = useAuth();
+export default function TerritoryHistoryModal({ territoryId, territoryName, congregationId: targetCongregationId, onClose }: TerritoryHistoryModalProps) {
+    const { congregationId: authCongregationId } = useAuth();
+    const congregationId = targetCongregationId || authCongregationId;
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
 
@@ -37,17 +39,12 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, onCl
             try {
                 if (!congregationId || !territoryId) return;
 
-                // Query shared_lists where the items array contains this territoryId
-                const { data, error } = await supabase
-                    .from('shared_lists')
-                    .select('*')
-                    .eq('congregation_id', congregationId)
-                    .contains('items', [territoryId])
-                    .order('created_at', { ascending: false });
+                const res = await fetch(`/api/territories/history?congregationId=${congregationId}&territoryId=${territoryId}`);
+                const result = await res.json();
 
-                if (error) throw error;
+                if (!res.ok) throw new Error(result.error || "Erro ao buscar histórico");
 
-                const entries: HistoryEntry[] = (data || []).map(item => ({
+                const entries: HistoryEntry[] = (result.data || []).map((item: any) => ({
                     id: item.id,
                     created_by: item.created_by,
                     user_name: item.assigned_name || 'Usuário',

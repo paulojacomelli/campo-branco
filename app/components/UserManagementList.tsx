@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, updateDoc, doc, query, orderBy, where } from 'firebase/firestore';
 import { Loader2, Shield, Save } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/app/context/AuthContext';
 
 interface UserProfile {
@@ -122,7 +123,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
 
         } catch (error) {
             console.error("Error updating roles:", error);
-            alert("Erro ao salvar permissões.");
+            toast.error("Erro ao salvar permissões.");
         } finally {
             setUpdatingId(null);
         }

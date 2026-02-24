@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import BottomNav from '@/app/components/BottomNav';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 import { toast } from 'sonner';
 
 interface UserProfile {
@@ -65,6 +66,8 @@ export default function SuperAdminUsersPage() {
     const [editCongId, setEditCongId] = useState<string>('');
     const [newUser, setNewUser] = useState({ name: '', email: '', congregationId: '' });
     const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const router = useRouter();
 
     const fetchInitialData = async () => {
@@ -231,17 +234,12 @@ export default function SuperAdminUsersPage() {
         }
     };
 
-    const handleDeleteUser = async (userId: string) => {
-        if (!isSuperAdmin && !isElder) return;
-
+    const handleDeleteUser = (targetUser: UserProfile) => {
         // Impede que o usuário exclua a própria conta
-        if (userId === user?.id) {
+        if (targetUser.id === user?.id) {
             toast.error("Você não pode excluir sua própria conta por aqui.");
             return;
         }
-
-        const targetUser = users.find(u => u.id === userId);
-        if (!targetUser) return;
 
         if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
             toast.error("Você só pode excluir usuários da sua própria congregação.");
@@ -253,12 +251,20 @@ export default function SuperAdminUsersPage() {
             return;
         }
 
-        setUpdatingId(userId);
+        setUserToDelete(targetUser);
+        setIsDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteUser = async () => {
+        if (!userToDelete) return;
+
+        setUpdatingId(userToDelete.id);
+        setIsDeleting(true);
         try {
             const response = await fetch('/api/admin/users/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
+                body: JSON.stringify({ userId: userToDelete.id })
             });
 
             const resData = await response.json();
@@ -268,19 +274,21 @@ export default function SuperAdminUsersPage() {
             }
 
             // Atualiza o estado local imediatamente
-            setUsers(prev => prev.filter(u => u.id !== userId));
+            setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
             toast.success("Usuário removido com sucesso!");
+            setIsDeleteDialogOpen(false);
+            setUserToDelete(null);
         } catch (error: any) {
             console.error("Erro ao excluir usuário:", error);
             const msg = error.message || "";
             if (msg.includes("foreign key") || (error.code && error.code === '23503')) {
-                toast.error("Não é possível excluir: este membro possui registros vinculados (endereços, designações ou histórico).");
+                toast.error("Não é possível excluir: este membro possui registros vinculados.");
             } else {
                 toast.error(error.message || "Erro ao excluir usuário.");
             }
         } finally {
             setUpdatingId(null);
-            setUserToDelete(null);
+            setIsDeleting(false);
         }
     };
 
@@ -415,7 +423,7 @@ export default function SuperAdminUsersPage() {
                                             </button>
                                             <button
                                                 onClick={() => {
-                                                    setUserToDelete(u);
+                                                    handleDeleteUser(u);
                                                     setOpenMenuId(null);
                                                 }}
                                                 className="w-full px-4 py-2 text-left text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
@@ -592,40 +600,19 @@ export default function SuperAdminUsersPage() {
             )}
 
             {/* CONFIRM DELETE MODAL */}
-            {userToDelete && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in-95 duration-300">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center text-red-600 mb-4">
-                                <Trash2 className="w-8 h-8" />
-                            </div>
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Excluir Membro?</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                                Tem certeza que deseja remover <span className="font-bold text-gray-900 dark:text-white">"{userToDelete.name || userToDelete.email}"</span>?
-                                <br />
-                                <span className="text-[10px] opacity-70">({userToDelete.email})</span>
-                                <br /> Esta ação não pode ser desfeita.
-                            </p>
-
-                            <div className="flex flex-col w-full gap-2">
-                                <button
-                                    onClick={() => handleDeleteUser(userToDelete.id)}
-                                    disabled={updatingId === userToDelete.id}
-                                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
-                                >
-                                    {updatingId === userToDelete.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sim, Excluir"}
-                                </button>
-                                <button
-                                    onClick={() => setUserToDelete(null)}
-                                    className="w-full py-3 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
-                                >
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationModal
+                isOpen={isDeleteDialogOpen}
+                onClose={() => {
+                    setIsDeleteDialogOpen(false);
+                    setUserToDelete(null);
+                }}
+                onConfirm={confirmDeleteUser}
+                title="Excluir Membro"
+                message={`Tem certeza que deseja remover "${userToDelete?.name || userToDelete?.email}"? Esta ação não pode ser desfeita.`}
+                confirmText="Excluir"
+                variant="danger"
+                isLoading={isDeleting}
+            />
 
             <BottomNav />
         </div>

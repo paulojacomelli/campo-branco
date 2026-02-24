@@ -186,7 +186,7 @@ DROP FUNCTION IF EXISTS public.get_auth_role() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS user_role AS $$
 BEGIN
-    RETURN (SELECT role FROM public.users WHERE id = auth.uid());
+    RETURN (SELECT role FROM public.users WHERE id = (select auth.uid()));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
@@ -194,7 +194,7 @@ DROP FUNCTION IF EXISTS public.get_auth_congregation() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_auth_congregation()
 RETURNS TEXT AS $$
 BEGIN
-    RETURN (SELECT congregation_id FROM public.users WHERE id = auth.uid());
+    RETURN (SELECT congregation_id FROM public.users WHERE id = (select auth.uid()));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
@@ -212,23 +212,35 @@ ALTER TABLE public.witnessing_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shared_lists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.visits ENABLE ROW LEVEL SECURITY;
 
+-- POLÍTICAS PARA 'SHARED_LISTS'
+DROP POLICY IF EXISTS "Ver listas compartilhadas" ON public.shared_lists;
+CREATE POLICY "Ver listas compartilhadas" ON public.shared_lists FOR SELECT TO authenticated USING (
+    congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'SUPER_ADMIN'
+);
+
+DROP POLICY IF EXISTS "Gerenciar listas compartilhadas" ON public.shared_lists;
+CREATE POLICY "Gerenciar listas compartilhadas" ON public.shared_lists FOR ALL TO authenticated USING (
+    (congregation_id = (select public.get_auth_congregation()) AND (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO')) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
+);
+
 -- POLÍTICAS PARA 'VISITS'
 DROP POLICY IF EXISTS "Ver visitas (Superadmin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits;
 CREATE POLICY "Ver visitas (Superadmin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits FOR SELECT TO authenticated USING (
-    get_auth_role() IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = get_auth_congregation() OR get_auth_role() = 'SUPER_ADMIN')
+    (select public.get_auth_role()) IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'SUPER_ADMIN')
     OR
-    user_id = auth.uid()
+    user_id = (select auth.uid())
 );
 
 DROP POLICY IF EXISTS "Inserir visitas (Todos authenticated)" ON public.visits;
 CREATE POLICY "Inserir visitas (Todos authenticated)" ON public.visits FOR INSERT TO authenticated WITH CHECK (
-    user_id = auth.uid()
+    user_id = (select auth.uid())
 );
 
 -- POLÍTICAS PARA 'CITIES'
 DROP POLICY IF EXISTS "SuperAdmins conseguem tudo em cidades" ON public.cities;
 CREATE POLICY "SuperAdmins conseguem tudo em cidades" ON public.cities FOR ALL TO authenticated USING (
-    get_auth_role() = 'SUPER_ADMIN'
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 DROP POLICY IF EXISTS "Qualquer autenticado lê cidades" ON public.cities;
 CREATE POLICY "Qualquer autenticado lê cidades" ON public.cities FOR SELECT TO authenticated USING (true);
@@ -236,69 +248,72 @@ CREATE POLICY "Qualquer autenticado lê cidades" ON public.cities FOR SELECT TO 
 -- POLÍTICAS PARA 'CONGREGATIONS'
 DROP POLICY IF EXISTS "SuperAdmins conseguem tudo em congregações" ON public.congregations;
 CREATE POLICY "SuperAdmins conseguem tudo em congregações" ON public.congregations FOR ALL TO authenticated USING (
-    get_auth_role() = 'SUPER_ADMIN'
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 DROP POLICY IF EXISTS "Membros leem sua própria congregação" ON public.congregations;
 CREATE POLICY "Membros leem sua própria congregação" ON public.congregations FOR SELECT TO authenticated USING (
-    id = get_auth_congregation()
+    id = (select public.get_auth_congregation())
 );
 
 -- POLÍTICAS PARA 'USERS'
 DROP POLICY IF EXISTS "Usuário vê seu próprio perfil" ON public.users;
-CREATE POLICY "Usuário vê seu próprio perfil" ON public.users FOR SELECT TO authenticated USING (id = auth.uid());
+CREATE POLICY "Usuário vê seu próprio perfil" ON public.users FOR SELECT TO authenticated USING (id = (select auth.uid()));
 DROP POLICY IF EXISTS "SuperAdmins veem todos os usuários" ON public.users;
 CREATE POLICY "SuperAdmins veem todos os usuários" ON public.users FOR SELECT TO authenticated USING (
-    get_auth_role() = 'SUPER_ADMIN'
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 DROP POLICY IF EXISTS "Anciãos e Servos veem usuários da congregação" ON public.users;
 CREATE POLICY "Anciãos e Servos veem usuários da congregação" ON public.users FOR SELECT TO authenticated USING (
-    congregation_id = get_auth_congregation() AND
-    get_auth_role() IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO')
+    congregation_id = (select public.get_auth_congregation()) AND
+    (select public.get_auth_role()) IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO')
 );
 
 -- POLÍTICAS PARA 'TERRITORIES'
 DROP POLICY IF EXISTS "Ver territórios da congregação" ON public.territories;
 CREATE POLICY "Ver territórios (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.territories FOR SELECT TO authenticated USING (
-    get_auth_role() IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = get_auth_congregation() OR get_auth_role() = 'SUPER_ADMIN')
+    (select public.get_auth_role()) IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'SUPER_ADMIN')
     OR
-    assigned_to = auth.uid()
+    assigned_to = (select auth.uid())
 );
 
 DROP POLICY IF EXISTS "Editar territórios (Anciãos/Servos/Admins)" ON public.territories;
 CREATE POLICY "Gerenciar territórios (Ancião/Servo/Superadmin)" ON public.territories FOR ALL TO authenticated USING (
-    ((congregation_id = get_auth_congregation() AND
-     get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
-    get_auth_role() = 'SUPER_ADMIN'
+    ((congregation_id = (select public.get_auth_congregation()) AND
+     (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 
 -- POLÍTICAS PARA 'ADDRESSES'
 DROP POLICY IF EXISTS "Ver endereços da congregação" ON public.addresses;
 CREATE POLICY "Ver endereços (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.addresses FOR SELECT TO authenticated USING (
-    get_auth_role() IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = get_auth_congregation() OR get_auth_role() = 'SUPER_ADMIN')
+    (select public.get_auth_role()) IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'SUPER_ADMIN')
     OR
-    territory_id IN (SELECT id FROM public.territories WHERE assigned_to = auth.uid())
+    territory_id IN (SELECT id FROM public.territories WHERE assigned_to = (select auth.uid()))
 );
 
 DROP POLICY IF EXISTS "Gerenciar endereços (Anciãos/Servos/Admins)" ON public.addresses;
 CREATE POLICY "Gerenciar endereços (Ancião/Servo/Superadmin)" ON public.addresses FOR ALL TO authenticated USING (
-    ((congregation_id = get_auth_congregation() AND
-     get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
-    get_auth_role() = 'SUPER_ADMIN'
+    ((congregation_id = (select public.get_auth_congregation()) AND
+     (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 
 -- POLÍTICAS PARA 'WITNESSING_POINTS' (Testemunho Público)
 DROP POLICY IF EXISTS "Ver pontos de testemunho" ON public.witnessing_points;
 CREATE POLICY "Ver pontos de testemunho" ON public.witnessing_points FOR SELECT TO authenticated USING (
-    congregation_id = get_auth_congregation() OR
-    get_auth_role() = 'SUPER_ADMIN'
+    congregation_id = (select public.get_auth_congregation()) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
-DROP POLICY IF EXISTS "Qualquer um pode fazer check-in/out (via updates controlados)" ON public.witnessing_points;
-CREATE POLICY "Qualquer um pode fazer check-in/out (via updates controlados)" ON public.witnessing_points FOR UPDATE TO authenticated USING (true);
+DROP POLICY IF EXISTS "Atualizar pontos de testemunho" ON public.witnessing_points;
+CREATE POLICY "Atualizar pontos de testemunho" ON public.witnessing_points FOR UPDATE TO authenticated USING (
+    congregation_id = (select public.get_auth_congregation()) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
+);
 DROP POLICY IF EXISTS "Admin total em pontos" ON public.witnessing_points;
 CREATE POLICY "Admin total em pontos" ON public.witnessing_points FOR ALL TO authenticated USING (
-    (congregation_id = get_auth_congregation() AND
-     get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO')) OR
-    get_auth_role() = 'SUPER_ADMIN'
+    (congregation_id = (select public.get_auth_congregation()) AND
+     (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO')) OR
+    (select public.get_auth_role()) = 'SUPER_ADMIN'
 );
 
 -- ##########################################################
@@ -312,7 +327,7 @@ BEGIN
     NEW.updated_at = now();
     RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql SET search_path = public;
 
 -- Aplicar o trigger em todas as tabelas relevantes
 DROP TRIGGER IF EXISTS update_cities_updated_at ON public.cities;
@@ -367,12 +382,12 @@ ALTER TABLE public.bug_reports ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Usuários criam seus próprios reports" ON public.bug_reports;
 CREATE POLICY "Usuários criam seus próprios reports" ON public.bug_reports 
-FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+FOR INSERT TO authenticated WITH CHECK ((select auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Usuários veem seus próprios reports" ON public.bug_reports;
 CREATE POLICY "Usuários veem seus próprios reports" ON public.bug_reports 
-FOR SELECT TO authenticated USING (auth.uid() = user_id);
+FOR SELECT TO authenticated USING ((select auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "SuperAdmins gerenciam tudo em bugs" ON public.bug_reports;
 CREATE POLICY "SuperAdmins gerenciam tudo em bugs" ON public.bug_reports 
-FOR ALL TO authenticated USING (get_auth_role() = 'SUPER_ADMIN');
+FOR ALL TO authenticated USING ((select public.get_auth_role()) = 'SUPER_ADMIN');

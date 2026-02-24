@@ -11,6 +11,7 @@ interface ConfirmationModalProps {
     description?: string; // Support both
     confirmText?: string;
     cancelText?: string;
+    onCancel?: () => void;
     variant?: 'danger' | 'info';
     isLoading?: boolean;
 }
@@ -24,6 +25,7 @@ export default function ConfirmationModal({
     description,
     confirmText = "Confirmar",
     cancelText = "Cancelar",
+    onCancel,
     variant = 'danger',
     isLoading = false
 }: ConfirmationModalProps) {
@@ -52,7 +54,7 @@ export default function ConfirmationModal({
 
                 <div className="flex gap-3">
                     <button
-                        onClick={onClose}
+                        onClick={onCancel || onClose}
                         disabled={isLoading}
                         className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3.5 rounded-lg font-bold text-sm transition-colors disabled:opacity-50"
                     >

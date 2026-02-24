@@ -30,7 +30,7 @@ import ConfirmationModal from '@/app/components/ConfirmationModal';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 interface WitnessingPoint {
@@ -50,9 +50,10 @@ interface WitnessingPoint {
 
 function WitnessingPointListContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const congregationId = searchParams.get('congregationId');
     const cityId = searchParams.get('cityId');
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, profileName } = useAuth();
+    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, profileName, congregationId: userCongregationId } = useAuth();
     const canEdit = isElder || isServant;
     const [points, setPoints] = useState<WitnessingPoint[]>([]);
 
@@ -69,6 +70,14 @@ function WitnessingPointListContent() {
     // Check-In Logic State
     const [pendingCheckInPoint, setPendingCheckInPoint] = useState<WitnessingPoint | null>(null);
     const [conflictingPoint, setConflictingPoint] = useState<WitnessingPoint | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
     // Fetch City Name
     useEffect(() => {
@@ -105,6 +114,19 @@ function WitnessingPointListContent() {
     }, [congregationId, cityId]);
 
     useEffect(() => {
+        if (authLoading) return;
+
+        // Security Check
+        if (userCongregationId && congregationId && congregationId !== userCongregationId) {
+            router.replace(`/witnessing/city?congregationId=${userCongregationId}&cityId=${cityId}`);
+            return;
+        }
+
+        if (!congregationId && userCongregationId) {
+            router.replace(`/witnessing/city?congregationId=${userCongregationId}&cityId=${cityId}`);
+            return;
+        }
+
         if (!congregationId || !cityId) {
             setLoading(false);
             return;
@@ -185,14 +207,23 @@ function WitnessingPointListContent() {
     }, [openMenuId]);
 
     const handleDeletePoint = async (id: string, name: string) => {
-        if (!confirm(`Tem certeza que deseja excluir o ponto "${name}"?`)) return;
-        try {
-            const { error } = await supabase.from('witnessing_points').delete().eq('id', id);
-            if (error) throw error;
-        } catch (error) {
-            console.error("Error deleting point:", error);
-            toast.error("Erro ao excluir ponto.");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Excluir Ponto",
+            message: `Tem certeza que deseja excluir o ponto "${name}"?`,
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const { error } = await supabase.from('witnessing_points').delete().eq('id', id);
+                    if (error) throw error;
+                    toast.success("Ponto excluído com sucesso.");
+                } catch (error) {
+                    console.error("Error deleting point:", error);
+                    toast.error("Erro ao excluir ponto.");
+                }
+            }
+        });
     };
 
     const handleOpenPointMap = (point: WitnessingPoint) => {
@@ -597,6 +628,15 @@ function WitnessingPointListContent() {
             />
 
 
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant}
+            />
         </div>
     );
 }

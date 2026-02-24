@@ -17,7 +17,8 @@ export async function POST(req: Request) {
         const {
             street, territory_id, congregation_id, city_id, lat, lng,
             is_active, google_maps_link, waze_link, resident_name, gender,
-            is_deaf, is_minor, is_student, is_neurodivergent, observations, id
+            is_deaf, is_minor, is_student, is_neurodivergent, observations, id,
+            inactivated_at
         } = body;
 
         // Check if user belongs to the congregation
@@ -47,7 +48,8 @@ export async function POST(req: Request) {
             is_minor,
             is_student,
             is_neurodivergent,
-            observations
+            observations,
+            inactivated_at
         };
 
         if (id) {

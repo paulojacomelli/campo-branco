@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ChevronLeft, ChevronRight, Plus, Save, X, Edit2, Trash2, Calendar, User, FileText, Download, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Save, X, Edit2, Trash2, Calendar, User, FileText, Download, Printer, Building2 } from "lucide-react";
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from '@/lib/serviceYearUtils';
@@ -47,6 +48,15 @@ export default function RegistryPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingAssignment, setEditingAssignment] = useState<Partial<Assignment> | null>(null);
     const [selectedTerritoryId, setSelectedTerritoryId] = useState<string | null>(null);
+    const [confirmModal, setConfirmModal] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant: 'danger' | 'info';
+    } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const [selectedCongregationId, setSelectedCongregationId] = useState<string | null>(null);
 
     // Legacy Date Modal State
     const [isLegacyModalOpen, setIsLegacyModalOpen] = useState(false);
@@ -57,6 +67,15 @@ export default function RegistryPage() {
             router.push('/dashboard');
         }
     }, [loading, isElder, isServant, isSuperAdmin, router]);
+
+    // Initialize selectedCongregationId
+    useEffect(() => {
+        if (!loading && congregationId && !selectedCongregationId) {
+            setSelectedCongregationId(congregationId);
+        }
+    }, [congregationId, loading]);
+
+
 
     // Print Settings State
     const [isPrintSettingsOpen, setIsPrintSettingsOpen] = useState(false);
@@ -79,27 +98,27 @@ export default function RegistryPage() {
 
 
     const fetchData = useCallback(async () => {
+        const targetCongId = selectedCongregationId || congregationId;
+        if (!targetCongId) return;
+
         setPageLoading(true);
         try {
             const { start, end } = getServiceYearRange(currentServiceYear);
 
-            // 1. Fetch Territories and Cities
-            const { data: terrData, error: terrError } = await supabase.from("territories").select("*").eq("congregation_id", congregationId);
-            const { data: cityData, error: cityError } = await supabase.from("cities").select("*").eq("congregation_id", congregationId);
+            // Fetch all data via Admin API to bypass RLS issues
+            const res = await fetch(`/api/reports/registry/fetch?congregationId=${targetCongId}`);
+            const data = await res.json();
 
-            if (terrError) {
-                console.error("Error fetching territories in registry:", terrError);
-                throw terrError;
-            }
-            if (cityError) {
-                console.error("Error fetching cities in registry:", cityError);
-                throw cityError;
-            }
+            if (!res.ok) throw new Error(data.error || "Erro ao buscar dados do servidor");
+
+            const terrData = data.territories;
+            const cityData = data.cities;
+            const listData = data.sharedLists;
 
             const cityMap = new Map<string, string>();
-            cityData?.forEach(d => cityMap.set(d.id, d.name));
+            cityData?.forEach((d: any) => cityMap.set(d.id, d.name));
 
-            const terrs: Territory[] = terrData?.map(d => ({
+            const terrs: Territory[] = terrData?.map((d: any) => ({
                 id: d.id,
                 name: d.name,
                 cityId: d.city_id,
@@ -114,14 +133,6 @@ export default function RegistryPage() {
             });
 
             setTerritories(terrs);
-
-            // 2. Fetch Shared Lists (Assignments) within range
-            const { data: listData, error: listError } = await supabase.from("shared_lists").select("*").eq("congregation_id", congregationId);
-
-            if (listError) {
-                console.error("Error fetching history in registry:", listError);
-                throw listError;
-            }
 
             const assignmentsMap: Record<string, Assignment[]> = {};
             const completedDatesMap: Record<string, Date> = {}; // For the "Last completed" column
@@ -157,7 +168,7 @@ export default function RegistryPage() {
                             publisherId: data.assigned_to,
                             assignedDate: createdDate,
                             completedDate: returnDate,
-                            isManual: data.is_manual_registry // Flag if created manually via this page
+                            isManual: data.title === 'Registro Manual' // Use title as marker instead
                         });
                     }
                 });
@@ -188,27 +199,39 @@ export default function RegistryPage() {
         } finally {
             setPageLoading(false);
         }
-    }, [congregationId, currentServiceYear]);
+    }, [selectedCongregationId, congregationId, currentServiceYear]);
 
     useEffect(() => {
-        if (!congregationId) return;
         fetchData();
-    }, [congregationId, currentServiceYear, fetchData]);
+    }, [fetchData]);
 
     const handleSaveAssignment = async () => {
-        if (!selectedTerritoryId || !editingAssignment?.publisherName || !editingAssignment.assignedDate) return;
+        if (!selectedTerritoryId) {
+            toast.error("Território não selecionado.");
+            return;
+        }
+        if (!editingAssignment?.publisherName?.trim()) {
+            toast.error("O nome do publicador é obrigatório.");
+            return;
+        }
+        if (!editingAssignment.assignedDate) {
+            toast.error("A data da designação é obrigatória.");
+            return;
+        }
 
         try {
+            const targetCongId = selectedCongregationId || congregationId;
+            if (!targetCongId) throw new Error("Congregação não identificada.");
+
             const payload: any = {
                 type: 'territory',
                 items: [selectedTerritoryId],
-                congregation_id: congregationId,
+                congregation_id: targetCongId,
                 assigned_name: editingAssignment.publisherName,
                 assigned_to: editingAssignment.publisherId || null,
                 created_at: new Date(editingAssignment.assignedDate).toISOString(),
                 status: editingAssignment.completedDate ? 'completed' : 'active',
-                title: 'Registro Manual', // metadata
-                is_manual_registry: true // marker
+                title: 'Registro Manual' // metadata marker
             };
 
             if (editingAssignment.completedDate) {
@@ -221,22 +244,29 @@ export default function RegistryPage() {
                 payload.expires_at = exp.toISOString();
             }
 
-            if (editingAssignment.id) {
-                // Update
-                const { error } = await supabase.from("shared_lists").update(payload).eq("id", editingAssignment.id);
-                if (error) throw error;
-            } else {
-                // Create
-                const { error } = await supabase.from("shared_lists").insert([payload]);
-                if (error) throw error;
+            const response = await fetch('/api/shared_lists/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    payload,
+                    id: editingAssignment.id
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || "Falha na resposta do servidor");
             }
 
             setIsModalOpen(false);
             setEditingAssignment(null);
             fetchData();
-        } catch (e) {
-            console.error(e);
-            toast.error("Erro ao salvar registro.");
+            toast.success(editingAssignment.id ? "Registro atualizado!" : "Registro salvo!");
+        } catch (e: any) {
+            console.error("Save Assignment Error:", e);
+            const msg = e.message || (typeof e === 'string' ? e : JSON.stringify(e));
+            toast.error(`Erro ao salvar registro: ${msg}`);
         }
     };
 
@@ -261,15 +291,33 @@ export default function RegistryPage() {
     };
 
     const handleDeleteAssignment = async (id: string) => {
-        if (!confirm("Tem certeza que deseja remover este registro?")) return;
-        try {
-            const { error } = await supabase.from("shared_lists").delete().eq("id", id);
-            if (error) throw error;
-            fetchData();
-        } catch (e) {
-            console.error(e);
-            toast.error("Erro ao excluir registro.");
-        }
+        setConfirmModal({
+            title: "Remover Registro?",
+            message: "Esta ação não pode ser desfeita. O registro será excluído permanentemente do histórico.",
+            variant: 'danger',
+            onConfirm: async () => {
+                setIsDeleting(true);
+                try {
+                    const response = await fetch('/api/shared_lists/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || "Falha ao excluir");
+
+                    toast.success("Registro removido.");
+                    fetchData();
+                } catch (e: any) {
+                    console.error(e);
+                    toast.error("Erro ao excluir registro.");
+                } finally {
+                    setIsDeleting(false);
+                    setConfirmModal(null);
+                }
+            }
+        });
     };
 
     const formatDate = (date?: Date) => {
@@ -318,6 +366,8 @@ export default function RegistryPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
+
+
                     <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-transparent dark:border-gray-800">
                         <button
                             onClick={() => setCurrentServiceYear(prev => prev - 1)}
@@ -347,6 +397,8 @@ export default function RegistryPage() {
                     </div>
                 </div>
             </header>
+
+
 
             <main className="max-w-[1200px] mx-auto p-8 overflow-x-auto print-container">
                 <div className="text-center mb-6 hidden print:block">
@@ -783,6 +835,17 @@ export default function RegistryPage() {
                     </div>
                 </div>
             )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={!!confirmModal}
+                onClose={() => setConfirmModal(null)}
+                onConfirm={confirmModal?.onConfirm || (() => { })}
+                title={confirmModal?.title || ''}
+                message={confirmModal?.message || ''}
+                variant={confirmModal?.variant || 'info'}
+                isLoading={isDeleting}
+            />
 
             {/* Print Styles */}
             <style jsx global>{`

@@ -12,26 +12,36 @@ export async function GET(req: Request) {
         }
 
         const url = new URL(req.url);
-        const congregationId = url.searchParams.get('congregationId');
+        let congregationId = url.searchParams.get('congregationId');
 
-        // Add auth checking logic (Using Admin to bypass RLS on users table)
-        const { data: adminData } = await supabaseAdmin
+        // Tenta buscar o perfil do usuário
+        let { data: adminData } = await supabaseAdmin
             .from('users')
-            .select('role, congregation_id')
+            .select('role, congregation_id, email')
             .eq('id', currentUser.id)
             .single();
 
-        // Permite visualizar se for SUPER_ADMIN ou se a congregationId bater com o registro do usuário
-        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
-        const reqCong = String(congregationId || '').toLowerCase().trim();
+        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
+            const { data: fallbackData } = await supabaseAdmin
+                .from('users')
+                .select('role, congregation_id, email')
+                .eq('email', currentUser.email)
+                .single();
+            if (fallbackData) adminData = fallbackData;
+        }
+
+        // Security: Force congregationId to be the user's congregation for operational views
+        // Superadmins can no longer jump between congregations in these views.
+        if (adminData?.role !== 'SUPER_ADMIN' || !congregationId) {
+            congregationId = adminData?.congregation_id || null;
+        }
 
         const isAllowed = adminData && (
             adminData.role === 'SUPER_ADMIN' ||
-            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN'].includes(adminData.role || '')))
+            (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
         );
 
-        if (!isAllowed) {
-            console.log("Permission denied for user:", currentUser.id, "Requested Cong:", congregationId, "User data:", adminData);
+        if (!isAllowed || !congregationId) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
@@ -42,7 +52,9 @@ export async function GET(req: Request) {
             .eq('congregation_id', congregationId)
             .order('name');
 
-        return NextResponse.json({ success: true, cities, error: tErr });
+        if (tErr) throw tErr;
+
+        return NextResponse.json({ success: true, cities });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

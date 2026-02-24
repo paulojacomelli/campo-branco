@@ -27,7 +27,10 @@ export async function POST(req: Request) {
                 snapshotEntries.push({
                     shared_list_id: shareData.id,
                     item_id: t.id,
-                    data: t
+                    data: {
+                        ...t,
+                        visit_status: 'none'
+                    }
                 });
             }
 
@@ -43,7 +46,10 @@ export async function POST(req: Request) {
                     snapshotEntries.push({
                         shared_list_id: shareData.id,
                         item_id: addr.id,
-                        data: addr
+                        data: {
+                            ...addr,
+                            visit_status: 'none'
+                        }
                     });
                 }
             }

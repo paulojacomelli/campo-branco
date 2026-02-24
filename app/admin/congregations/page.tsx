@@ -23,6 +23,7 @@ import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import BottomNav from '@/app/components/BottomNav';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 interface Congregation {
     id: string;
@@ -47,8 +48,9 @@ export default function CongregationsPage() {
         title: string;
         message: string;
         onConfirm: () => void;
-        variant: 'danger' | 'warning';
+        variant: 'danger' | 'info';
     } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const router = useRouter();
     const [congregations, setCongregations] = useState<Congregation[]>([]);
     const [loading, setLoading] = useState(true);
@@ -134,7 +136,7 @@ export default function CongregationsPage() {
                     setConfirmModal({
                         title: 'Mudança de ID Detectada',
                         message: 'O sistema irá migrar AUTOMATICAMENTE todos os dados vinculados para o novo ID. Deseja continuar?',
-                        variant: 'warning',
+                        variant: 'info',
                         onConfirm: async () => {
                             setConfirmModal(null);
                             setLoading(true);
@@ -488,33 +490,16 @@ export default function CongregationsPage() {
                 </div>
             )}
 
-            {confirmModal && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-surface rounded-xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-surface-border">
-                        <div className="flex flex-col items-center text-center">
-                            <div className={`w-16 h-16 ${confirmModal.variant === 'danger' ? 'bg-red-100 dark:bg-red-900/20 text-red-600' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-600'} rounded-full flex items-center justify-center mb-4`}>
-                                {confirmModal.variant === 'danger' ? <Trash2 className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
-                            </div>
-                            <h2 className="text-lg font-bold text-main mb-2">{confirmModal.title}</h2>
-                            <p className="text-sm text-muted mb-6">{confirmModal.message}</p>
-                            <div className="flex flex-col w-full gap-2">
-                                <button
-                                    onClick={confirmModal.onConfirm}
-                                    className={`w-full py-3 ${confirmModal.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'} text-white rounded-lg font-bold text-sm transition-colors`}
-                                >
-                                    Confirmar
-                                </button>
-                                <button
-                                    onClick={() => setConfirmModal(null)}
-                                    className="w-full py-3 bg-background text-muted rounded-lg font-bold text-sm hover:bg-surface-highlight border border-surface-border transition-colors"
-                                >
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationModal
+                isOpen={!!confirmModal}
+                onClose={() => setConfirmModal(null)}
+                onConfirm={() => confirmModal?.onConfirm()}
+                title={confirmModal?.title || ''}
+                message={confirmModal?.message || ''}
+                confirmText="Confirmar"
+                variant={confirmModal?.variant || 'danger'}
+                isLoading={loading}
+            />
             <BottomNav />
         </div>
     );

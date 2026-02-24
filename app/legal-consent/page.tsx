@@ -5,6 +5,7 @@ import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Shield, Check, Loader2, FileText, Lock, UserCheck, AlertOctagon } from 'lucide-react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 export default function LegalConsentPage() {
@@ -46,7 +47,7 @@ export default function LegalConsentPage() {
             window.location.href = '/dashboard';
         } catch (error) {
             console.error("Error updating consent:", error);
-            alert("Erro ao salvar confirmação. Tente novamente.");
+            toast.error("Erro ao salvar confirmação. Tente novamente.");
             setSubmitting(false);
         }
     };

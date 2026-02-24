@@ -26,6 +26,7 @@ import MapView from '@/app/components/MapView';
 import { geocodeAddress } from '@/app/actions/geocoding';
 import CongregationSelector from '@/app/components/CongregationSelector';
 import BottomNav from '@/app/components/BottomNav';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
@@ -78,6 +79,9 @@ function CityListContent() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingCity, setEditingCity] = useState<City | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [cityToDelete, setCityToDelete] = useState<{ id: string, name: string } | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const handleSearchAddress = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -168,35 +172,29 @@ function CityListContent() {
                 const currentYear = getServiceYear();
                 const { start, end } = getServiceYearRange(currentYear);
 
-                // 1. Fetch all territories for this congregation
-                const { data: territories } = await supabase
-                    .from('territories')
-                    .select('id, city_id')
-                    .eq('congregation_id', congregationId);
+                const res = await fetch(`/api/cities/stats?congregationId=${congregationId}&startDate=${start.toISOString()}&endDate=${end.toISOString()}`);
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error || 'Erro ao buscar estatísticas');
+
+                const territories = data.territories || [];
+                const history = data.history || [];
+                const addresses = data.addresses || [];
 
                 const cityTotals: Record<string, number> = {};
                 const territoryCityMap: Record<string, string> = {};
 
-                territories?.forEach(t => {
+                territories.forEach((t: any) => {
                     if (t.city_id) {
                         cityTotals[t.city_id] = (cityTotals[t.city_id] || 0) + 1;
                         territoryCityMap[t.id] = t.city_id;
                     }
                 });
 
-                // 2. Fetch completed assignments
-                const { data: history } = await supabase
-                    .from('shared_lists')
-                    .select('*')
-                    .eq('congregation_id', congregationId)
-                    .eq('status', 'completed')
-                    .gte('returned_at', start.toISOString())
-                    .lte('returned_at', end.toISOString());
-
                 const completedUniqueByCity: Record<string, Set<string>> = {};
                 const completedVolumeByCity: Record<string, number> = {};
 
-                history?.forEach(h => {
+                history.forEach((h: any) => {
                     if (h.territory_id) {
                         const cId = territoryCityMap[h.territory_id];
                         if (cId) {
@@ -204,20 +202,21 @@ function CityListContent() {
                             completedUniqueByCity[cId].add(h.territory_id);
                             completedVolumeByCity[cId] = (completedVolumeByCity[cId] || 0) + 1;
                         }
+                    } else if (h.items && h.items.length > 0) {
+                        h.items.forEach((tId: string) => {
+                            const cId = territoryCityMap[tId];
+                            if (cId) {
+                                if (!completedUniqueByCity[cId]) completedUniqueByCity[cId] = new Set();
+                                completedUniqueByCity[cId].add(tId);
+                                completedVolumeByCity[cId] = (completedVolumeByCity[cId] || 0) + 1;
+                            }
+                        });
                     }
                 });
 
-                // 3. Fetch Address Status for Breakdown
-                const { data: addresses } = await supabase
-                    .from('addresses')
-                    .select('id, city_id, territory_id, visit_status, last_visited_at')
-                    .eq('congregation_id', congregationId)
-                    .gte('last_visited_at', start.toISOString())
-                    .lte('last_visited_at', end.toISOString());
-
                 const statusByCity: Record<string, { contacted: number, not_contacted: number, moved: number, do_not_visit: number, total_visits: number }> = {};
 
-                addresses?.forEach(a => {
+                addresses.forEach((a: any) => {
                     const cId = a.city_id || (a.territory_id ? territoryCityMap[a.territory_id] : null);
                     if (!cId) return;
 
@@ -230,7 +229,6 @@ function CityListContent() {
                     else if (a.visit_status === 'do_not_visit') statusByCity[cId].do_not_visit++;
                 });
 
-                // 4. Compile Result
                 const stats: Record<string, {
                     total: number,
                     completedUnique: number,
@@ -337,24 +335,35 @@ function CityListContent() {
         }
     };
 
-    const handleDeleteCity = async (id: string, name: string) => {
-        if (!confirm("Tem certeza que deseja excluir " + name + "?")) return;
+    const handleDeleteCity = (id: string, name: string) => {
+        setCityToDelete({ id, name });
+        setIsDeleteDialogOpen(true);
+    };
 
+    const confirmDeleteCity = async () => {
+        if (!cityToDelete) return;
+        setIsDeleting(true);
         try {
             const response = await fetch('/api/cities/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
+                body: JSON.stringify({ id: cityToDelete.id })
             });
 
             const resData = await response.json();
             if (!response.ok) {
                 throw new Error(resData.error || 'Erro ao excluir');
             }
+            toast.success(`${localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'} excluído(a) com sucesso!`);
+            fetchCities();
+            setIsDeleteDialogOpen(false);
+            setCityToDelete(null);
             setOpenMenuId(null);
         } catch (error) {
             console.error("Error deleting city:", error);
             toast.error(`Erro ao excluir ${localTermType === 'neighborhood' ? 'bairro' : 'cidade'}.`);
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -410,12 +419,7 @@ function CityListContent() {
                     </div>
                 </div>
 
-                {/* Center - Congregation Selector (Visible ONLY for Super Admin) */}
-                {isSuperAdmin && (
-                    <div className="flex-1 max-w-xs mx-4">
-                        <CongregationSelector currentId={congregationId} />
-                    </div>
-                )}
+
 
                 <div className="flex items-center gap-2">
                     <button
@@ -667,6 +671,36 @@ function CityListContent() {
             </div>
 
 
+
+            {/* Confirmation Modal for Deletion */}
+            <ConfirmationModal
+                isOpen={isDeleteDialogOpen}
+                onClose={() => {
+                    setIsDeleteDialogOpen(false);
+                    setCityToDelete(null);
+                }}
+                onConfirm={confirmDeleteCity}
+                title={localTermType === 'neighborhood' ? 'Excluir Bairro' : 'Excluir Cidade'}
+                message={`Tem certeza que deseja excluir ${cityToDelete?.name}? Todos os territórios e endereços vinculados serão afetados.`}
+                confirmText="Excluir"
+                variant="danger"
+                isLoading={isDeleting}
+            />
+
+            {/* Confirmation Modal for Deletion */}
+            <ConfirmationModal
+                isOpen={isDeleteDialogOpen}
+                onClose={() => {
+                    setIsDeleteDialogOpen(false);
+                    setCityToDelete(null);
+                }}
+                onConfirm={confirmDeleteCity}
+                title={localTermType === 'neighborhood' ? 'Excluir Bairro' : 'Excluir Cidade'}
+                message={`Tem certeza que deseja excluir ${cityToDelete?.name}? Todos os territórios e endereços vinculados serão afetados.`}
+                confirmText="Excluir"
+                variant="danger"
+                isLoading={isDeleting}
+            />
 
             {/* Bottom Nav */}
             <BottomNav />

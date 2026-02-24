@@ -29,25 +29,56 @@ import {
     UserMinus,
     Bell,
     CheckCircle2,
-    ChevronDown
+    ChevronDown,
+    History as HistoryIcon,
+    CheckCircle as CheckCircleIcon
 } from "lucide-react";
 import { toast } from 'sonner';
 import { getServiceYear, getServiceYearRange } from "@/lib/serviceYearUtils";
-import { useRouter } from 'next/navigation'; // Added useRouter
+import { useRouter } from 'next/navigation';
 import Link from "next/link";
 import BottomNav from "@/app/components/BottomNav";
 import ActionCenter, { IdleTerritory } from "@/app/components/Dashboard/ActionCenter";
 import VisitsHistory from "@/app/components/Dashboard/VisitsHistory";
-// import NotificationPromptBanner from "@/app/components/NotificationPromptBanner"; // Removed
-// import NotificationOnboardingModal from "@/app/components/NotificationOnboardingModal"; // Removed
 
+// --- UTILS ---
+
+const formatDate = (dateString: any) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+};
+
+const formatExpirationTime = (expiresAtString: any) => {
+    if (!expiresAtString) return "Por tempo indeterminado";
+
+    const expiresAt = new Date(expiresAtString);
+    const now = new Date();
+    const diffMs = expiresAt.getTime() - now.getTime();
+
+    if (diffMs <= 0) return "Vencido";
+
+    const diffHours = diffMs / (1000 * 60 * 60);
+    const diffDays = Math.ceil(diffHours / 24);
+
+    if (diffDays > 1000) return "Por tempo indeterminado";
+
+    if (diffHours < 1) {
+        return "Vence em menos de uma hora";
+    } else if (diffHours < 24) {
+        return `Vence em ${Math.floor(diffHours)} horas`;
+    } else {
+        return `Faltam ${diffDays} dias`;
+    }
+};
 
 export default function DashboardPage() {
     const { user, role, isElder, isServant, congregationId, loading, profileName, isSuperAdmin } = useAuth();
-    const router = useRouter(); // Added router
+    const router = useRouter();
     const [sharedHistory, setSharedHistory] = useState<any[]>([]);
-    const [myAssignments, setMyAssignments] = useState<any[]>([]); // New dedicated state
+    const [myAssignments, setMyAssignments] = useState<any[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [hasError, setHasError] = useState(false);
     const [stats, setStats] = useState({
         congregations: 0,
         cities: 0,
@@ -60,11 +91,8 @@ export default function DashboardPage() {
         coverage: 0
     });
 
-    const [congregations, setCongregations] = useState<{ id: string, name: string }[]>([]);
-    const [selectedCongId, setSelectedCongId] = useState<string>('all');
-
     const [pendingMapsCount, setPendingMapsCount] = useState(0);
-    const [idleTerritories, setIdleTerritories] = useState<{ id: string; name: string; city: string; lastVisit?: any }[]>([]);
+    const [idleTerritories, setIdleTerritories] = useState<any[]>([]);
     const [cityCompletion, setCityCompletion] = useState<{ cityName: string; percentage: number } | undefined>();
     const [expiringMaps, setExpiringMaps] = useState<{ id: string, title: string, daysLeft: number }[]>([]);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -86,17 +114,16 @@ export default function DashboardPage() {
         }
     }, [user, loading, congregationId, isSuperAdmin, router]);
 
-    // Fetch user's assigned maps (Dedicated Query)
+    // Fetch user's assigned maps
     useEffect(() => {
         if (!user) return;
 
         const fetchMyAssignments = async () => {
             try {
-                // Query by UID (Robust) instead of Name
-                // We fetch ALL assigned cards to the user, then filter/sort client-side
+                // Colunas confirmadas no schema — exclui context (jsonb pesado) e city_id que não são usados aqui
                 const { data: lists, error } = await supabase
                     .from('shared_lists')
-                    .select('*')
+                    .select('id, title, name, status, assigned_to, assigned_name, created_at, expires_at, congregation_id, territory_id, type')
                     .eq('assigned_to', user.id);
 
                 if (error) {
@@ -148,12 +175,7 @@ export default function DashboardPage() {
         };
 
         fetchMyAssignments();
-        if (isSuperAdmin) {
-            supabase.from('congregations').select('id, name').order('name')
-                .then(({ data }) => {
-                    if (data) setCongregations(data);
-                });
-        }
+
     }, [user, isSuperAdmin]);
 
     // Close menu on click outside
@@ -165,37 +187,36 @@ export default function DashboardPage() {
         return () => window.removeEventListener('click', handleClickOutside);
     }, [openMenuId]);
 
-    // Determine specific role label
     const roleLabel = role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' :
         role === 'ANCIAO' ? 'Superintendente de Serviço' :
             role === 'SERVO' ? 'Servo de Territórios' :
                 'Publicador';
 
     const fetchSharedHistory = useCallback(async () => {
-        if (!congregationId && role !== 'SUPER_ADMIN') {
-            return;
-        }
+        if (!congregationId && role !== 'SUPER_ADMIN') return;
 
         setHistoryLoading(true);
         try {
-            let query = supabase.from('shared_lists').select('*');
+            // Colunas confirmadas no schema — exclui context (jsonb) e city_id que não são usados na listagem
+            let query = supabase.from('shared_lists').select('id, title, name, status, assigned_to, assigned_name, created_at, returned_at, expires_at, congregation_id, territory_id, items, type');
 
-            if (role !== 'SUPER_ADMIN') {
+            if (congregationId) {
                 query = query.eq('congregation_id', congregationId);
-            } else if (selectedCongId !== 'all') {
-                query = query.eq('congregation_id', selectedCongId);
+            } else if (role !== 'SUPER_ADMIN') {
+                return; // Protection for normal users
             } else {
-                query = query.limit(50);
+                // Superadmin without congregation: force empty results
+                query = query.eq('id', '00000000-0000-0000-0000-000000000000');
             }
 
             const usersMap: Record<string, string> = {};
             try {
                 let uQuery = supabase.from('users').select('id, name');
-                if (congregationId && role !== 'SUPER_ADMIN') {
+                if (congregationId) {
                     uQuery = uQuery.eq('congregation_id', congregationId);
-                } else if (role === 'SUPER_ADMIN' && selectedCongId !== 'all') {
-                    uQuery = uQuery.eq('congregation_id', selectedCongId);
-                } else if (role === 'SUPER_ADMIN') {
+                } else if (role !== 'SUPER_ADMIN') {
+                    // Skip
+                } else {
                     uQuery = uQuery.limit(500);
                 }
 
@@ -229,13 +250,11 @@ export default function DashboardPage() {
                 }
             }
 
-            // Filter for Publisher: only show their own cards
             let filteredLists = [...processedLists];
             if (!isElder && !isServant && role !== 'SUPER_ADMIN') {
                 filteredLists = processedLists.filter(l => l.assigned_to === user?.id);
             }
 
-            // Custom sort: active (not completed) first
             filteredLists.sort((a, b) => {
                 const isAActive = a.status !== 'completed';
                 const isBActive = b.status !== 'completed';
@@ -250,21 +269,37 @@ export default function DashboardPage() {
             setSharedHistory(filteredLists);
         } catch (err) {
             console.error("Error fetching shared history:", err);
+            setHasError(true);
         } finally {
             setHistoryLoading(false);
         }
-    }, [congregationId, role, isElder, isServant, profileName, user, selectedCongId]);
+    }, [congregationId, role, isElder, isServant, profileName, user]);
 
-    // --- NOTIFICATION & ENCOURAGEMENT LOGIC ---
+    // Safety Timeout for Dashboard
+    useEffect(() => {
+        if (!historyLoading) return;
+
+        const timer = setTimeout(() => {
+            if (historyLoading) {
+                console.warn("Dashboard fetch timed out");
+                setHasError(true);
+                setHistoryLoading(false);
+            }
+        }, 15000); // 15 seconds for dashboard (more complex)
+
+        return () => clearTimeout(timer);
+    }, [historyLoading]);
+
     useEffect(() => {
         if (!user || sharedHistory.length === 0) return;
 
         const checkNotifications = async () => {
             try {
-                // 1. Fetch Active Templates (System Only)
+                // Colunas confirmadas: id, slug, title, body, is_active, created_at
+                // Usamos apenas slug, title e body — id e created_at não são necessários aqui
                 const { data: templatesData } = await supabase
                     .from('notification_templates')
-                    .select('*')
+                    .select('slug, title, body')
                     .eq('is_active', true);
 
                 const templates: Record<string, any> = {};
@@ -277,12 +312,9 @@ export default function DashboardPage() {
                 }
 
                 const now = new Date();
-                const notifiedKeys: string[] = [];
-
-                // Helper to trigger and mark
                 const trigger = (slug: string, uniqueKey: string) => {
                     const storageKey = `notified_${slug}_${uniqueKey}`;
-                    if (localStorage.getItem(storageKey)) return; // Already verified per user/list
+                    if (localStorage.getItem(storageKey)) return;
 
                     const tpl = templates[slug];
                     if (tpl && Notification.permission === 'granted') {
@@ -291,7 +323,6 @@ export default function DashboardPage() {
                             icon: "/app-icon.png"
                         });
                         localStorage.setItem(storageKey, new Date().toISOString());
-                        notifiedKeys.push(storageKey);
                     }
                 };
 
@@ -348,7 +379,6 @@ export default function DashboardPage() {
                 let publicWitnessingCount = 0;
                 let coverageVal = 0;
 
-                // Helper for Supabase count
                 const countTable = async (table: string, filters: any = {}) => {
                     let q = supabase.from(table).select('*', { count: 'exact', head: true });
                     Object.entries(filters).forEach(([col, val]) => {
@@ -361,21 +391,19 @@ export default function DashboardPage() {
                     return count || 0;
                 };
 
-                // Função auxiliar para contar cidades distintas com base nos territórios da congregação
                 const countDistinctCitiesFromTerritories = async (congId?: string) => {
                     let q = supabase.from('territories').select('city_id');
                     if (congId) q = q.eq('congregation_id', congId);
                     const { data, error } = await q;
                     if (error) { console.error('Error counting cities:', error); return 0; }
-                    // Conta UUIDs únicos de cidades
                     const unique = new Set((data || []).map((r: any) => r.city_id).filter(Boolean));
                     return unique.size;
                 };
 
-                if (role === 'SUPER_ADMIN') {
-                    const targetCong = selectedCongId === 'all' ? undefined : selectedCongId;
+                if (role === 'SUPER_ADMIN' || isElder || isServant) {
+                    const targetCong = congregationId || '00000000-0000-0000-0000-000000000000';
                     const [congC, cityC, mapC, addrC, pwC, visitC] = await Promise.all([
-                        countTable('congregations'),
+                        role === 'SUPER_ADMIN' ? countTable('congregations') : Promise.resolve(1),
                         countDistinctCitiesFromTerritories(targetCong),
                         countTable('territories', { congregation_id: targetCong }),
                         countTable('addresses', { congregation_id: targetCong }),
@@ -389,38 +417,31 @@ export default function DashboardPage() {
                     addressCount = addrC;
                     publicWitnessingCount = pwC;
                     visitCount = visitC;
-                } else if (isElder || isServant) {
-                    congCount = 1;
-                    cityCount = await countDistinctCitiesFromTerritories(congregationId || undefined);
-                    mapsCount = await countTable('territories', { congregation_id: congregationId });
-                    addressCount = await countTable('addresses', { congregation_id: congregationId });
-                    publicWitnessingCount = await countTable('witnessing_points', { congregation_id: congregationId });
-                    visitCount = await countTable('visits', { congregation_id: congregationId });
                 } else {
-                    // Publicador: Apenas dados pessoais no resumo (ou ocultar seção)
                     congCount = 0;
                     cityCount = 0;
                     mapsCount = myAssignments.length;
-                    addressCount = 0; // Poderíamos contar os endereços dos mapas atribuídos se necessário
+                    addressCount = 0;
                     publicWitnessingCount = 0;
                     visitCount = await countTable('visits', { user_id: user?.id });
                 }
 
-                // 7. Action Center Logic 
                 if (mapsCount > 0) {
                     try {
-                        let mapsQuery = supabase.from('territories').select('*');
-                        let citiesQuery = supabase.from('cities').select('*');
-                        let historyQuery = supabase.from('shared_lists').select('*');
+                        let mapsQuery = supabase.from('territories').select('id, name, notes, city_id, congregation_id, manual_last_completed_date, last_visit, status, assigned_to');
+                        let citiesQuery = supabase.from('cities').select('id, name');
+                        let historyQuery = supabase.from('shared_lists').select('id, territory_id, created_at, completed_at, returned_at, status');
 
-                        if (role !== 'SUPER_ADMIN') {
+                        if (congregationId) {
                             mapsQuery = mapsQuery.eq('congregation_id', congregationId);
                             citiesQuery = citiesQuery.eq('congregation_id', congregationId);
                             historyQuery = historyQuery.eq('congregation_id', congregationId);
-                        } else if (selectedCongId !== 'all') {
-                            mapsQuery = mapsQuery.eq('congregation_id', selectedCongId);
-                            citiesQuery = citiesQuery.eq('congregation_id', selectedCongId);
-                            historyQuery = historyQuery.eq('congregation_id', selectedCongId);
+                        } else if (role !== 'SUPER_ADMIN') {
+                            throw new Error("CongregationId missing");
+                        } else {
+                            mapsQuery = mapsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+                            citiesQuery = citiesQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+                            historyQuery = historyQuery.eq('id', '00000000-0000-0000-0000-000000000000');
                         }
 
                         const [
@@ -431,7 +452,6 @@ export default function DashboardPage() {
 
                         const latestWorkMap = new Map<string, number>();
                         const latestAnyActivityMap = new Map<string, number>();
-
                         if (historyData) {
                             historyData.forEach((data: any) => {
                                 const processDate = (id: string) => {
@@ -445,9 +465,7 @@ export default function DashboardPage() {
                                     if (returned > (latestWorkMap.get(id) || 0)) latestWorkMap.set(id, returned);
                                     if (returned > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, returned);
                                 };
-
                                 if (data.territory_id) processDate(data.territory_id);
-                                // Check if items is array?
                             });
                         }
 
@@ -487,7 +505,7 @@ export default function DashboardPage() {
                                 if (data.assigned_to || data.status === 'OCUPADO') return;
 
                                 const rollingYearAgo = new Date();
-                                rollingYearAgo.setFullYear(rollingYearAgo.getFullYear() - 1);
+                                rollingYearAgo.setDate(rollingYearAgo.getDate() - 180);
 
                                 if (!lastAnyDate) {
                                     idleList.push({
@@ -555,7 +573,7 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory, selectedCongId]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory, myAssignments.length]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;
@@ -621,21 +639,15 @@ export default function DashboardPage() {
         }
     };
 
-    const handleQuickAssign = async (territory: IdleTerritory) => {
+    const handleQuickAssign = async (territory: any) => {
         router.push(`/share-setup?ids=${territory.id}&returnUrl=/dashboard`);
     };
 
-    // ------------------------------------------------------------
-    // Dynamic Views
-    // ------------------------------------------------------------
-
-
     // --- HELPER COMPONENTS ---
 
-    const SharedHistoryListComponent = ({ title, items, icon: Icon = History }: { title: string, items: any[], icon?: any }) => {
+    const SharedHistoryListComponent = ({ title, items, icon: Icon = HistoryIcon }: { title: string, items: any[], icon?: any }) => {
         const isMine = title === 'Meus Cartões';
         const targetLink = `/dashboard/cards?scope=${isMine ? 'mine' : 'managed'}`;
-
         const limit = 4;
         const visibleItems = items.slice(0, limit);
         const hasMore = items.length > limit;
@@ -659,6 +671,21 @@ export default function DashboardPage() {
 
                 {historyLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                ) : hasError ? (
+                    <div className="text-center py-6 flex flex-col items-center">
+                        <AlertCircle className="w-8 h-8 text-orange-400 mb-2" />
+                        <p className="text-sm font-bold text-main">Falha ao carregar.</p>
+                        <button
+                            onClick={() => {
+                                setHasError(false);
+                                setHistoryLoading(true);
+                                fetchSharedHistory();
+                            }}
+                            className="mt-2 text-[10px] font-bold text-primary uppercase tracking-widest bg-primary-light/50 px-3 py-1.5 rounded-full"
+                        >
+                            Tentar Novamente
+                        </button>
+                    </div>
                 ) : items.length === 0 ? (
                     <div className="text-center py-6 opacity-50">
                         <p className="text-sm text-muted">Nenhum cartão encontrado.</p>
@@ -694,12 +721,12 @@ export default function DashboardPage() {
                                         </div>
                                         {list.status === 'completed' && list.returned_at ? (
                                             <div className="flex items-center gap-1">
-                                                <CheckCircle className="w-3 h-3 text-green-600" />
+                                                <CheckCircleIcon className="w-3 h-3 text-green-600" />
                                                 <span className="text-[10px] text-muted font-medium">Conclusão: {formatDate(list.returned_at)}</span>
                                             </div>
                                         ) : (
                                             list.status !== 'completed' && list.expires_at && formatExpirationTime(list.expires_at) && (
-                                                <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-1" title="Data de expiração">
                                                     <Clock className="w-3 h-3 text-orange-400" />
                                                     <span className={`text-[10px] font-bold ${(list.expires_at && (new Date(list.expires_at).getTime() - Date.now()) < 5 * 24 * 60 * 60 * 1000)
                                                         ? 'text-red-500 dark:text-red-400'
@@ -799,38 +826,6 @@ export default function DashboardPage() {
         );
     };
 
-
-
-
-    const formatDate = (dateString: any) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    };
-
-    const formatExpirationTime = (expiresAtString: any) => {
-        if (!expiresAtString) return "Por tempo indeterminado";
-
-        const expiresAt = new Date(expiresAtString);
-        const now = new Date();
-        const diffMs = expiresAt.getTime() - now.getTime();
-
-        if (diffMs <= 0) return "Vencido";
-
-        const diffHours = diffMs / (1000 * 60 * 60);
-        const diffDays = Math.ceil(diffHours / 24);
-
-        if (diffDays > 1000) return "Por tempo indeterminado"; // Handle dates set far in future
-
-        if (diffHours < 1) {
-            return "Vence em menos de uma hora";
-        } else if (diffHours < 24) {
-            return `Vence em ${Math.floor(diffHours)} horas`;
-        } else {
-            return `Faltam ${diffDays} dias`;
-        }
-    };
-
     if (loading) return null;
 
     return (
@@ -870,15 +865,10 @@ export default function DashboardPage() {
                             </span>
                         )}
                     </Link>
-
                 </div>
             </header>
 
-
             <main className="px-6 py-6 max-w-xl mx-auto space-y-10">
-
-                {/* <NotificationPromptBanner /> Removed */}
-
                 {/* Greeting */}
                 <div>
                     <h1 className="text-2xl font-bold text-main tracking-tight">
@@ -889,7 +879,7 @@ export default function DashboardPage() {
                     </p>
                 </div>
 
-                {/* SECTION 1: MINISTÉRIO (Todos) */}
+                {/* SECTION 1: MINISTÉRIO */}
                 <section className="space-y-6">
                     <div className="flex items-center gap-2 px-1">
                         <div className="w-1 h-6 bg-primary rounded-full" />
@@ -909,18 +899,16 @@ export default function DashboardPage() {
                         />
                     )}
 
-                    {/* My Cards Section */}
                     <SharedHistoryListComponent
                         title="Meus Cartões"
                         items={myAssignments}
                         icon={User}
                     />
 
-                    {/* My Personal History */}
                     <VisitsHistory scope="mine" />
                 </section>
 
-                {/* SECTION 2: GESTÃO DE TERRITÓRIOS (Servos e Anciãos) */}
+                {/* SECTION 2: GESTÃO DE TERRITÓRIOS */}
                 {(isElder || isServant || role === 'SUPER_ADMIN') && (
                     <section className="space-y-6">
                         <div className="flex items-center gap-2 px-1">
@@ -928,17 +916,16 @@ export default function DashboardPage() {
                             <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">Gestão de Territórios</h2>
                         </div>
 
-                        {/* All Sent Cards */}
                         <SharedHistoryListComponent
                             title="Cartões Enviados"
                             items={sharedHistory.filter(l => l.status !== 'completed' || isElder || isServant).slice(0, 15)}
                         />
 
-                        {/* General History */}
                         <VisitsHistory scope="all" />
                     </section>
                 )}
 
+                {/* SECTION 3: A CONGREGAÇÃO */}
                 {(isElder || isServant || role === 'SUPER_ADMIN') && (
                     <section className="space-y-6">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
@@ -946,28 +933,10 @@ export default function DashboardPage() {
                                 <div className="w-1 h-6 bg-emerald-600 rounded-full" />
                                 <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">A Congregação</h2>
                             </div>
-
-                            {role === 'SUPER_ADMIN' && congregations.length > 0 && (
-                                <div className="relative group min-w-[200px]">
-                                    <select
-                                        value={selectedCongId}
-                                        onChange={(e) => setSelectedCongId(e.target.value)}
-                                        className="w-full appearance-none bg-surface border border-surface-border rounded-lg px-4 py-2 pr-10 text-xs font-bold text-main focus:outline-none focus:ring-2 focus:ring-primary/20 hover:border-primary/50 transition-all cursor-pointer shadow-sm"
-                                    >
-                                        <option value="all">Todas as Congregações</option>
-                                        {congregations.map(cong => (
-                                            <option key={cong.id} value={cong.id}>{cong.name}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted group-hover:text-primary transition-colors">
-                                        <ChevronDown className="w-4 h-4" />
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                            {role === 'SUPER_ADMIN' && selectedCongId === 'all' && (
+                            {role === 'SUPER_ADMIN' && !congregationId && (
                                 <div className="col-span-2 bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                     <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
                                     <p className="text-2xl font-bold text-main">{stats.congregations}</p>

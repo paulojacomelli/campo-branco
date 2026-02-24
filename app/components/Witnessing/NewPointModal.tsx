@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 
 interface NewPointModalProps {
     isOpen: boolean;
@@ -22,7 +23,7 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
 
     const handleSearchLocation = async () => {
         if (!address.trim()) {
-            alert("Digite um endereço para buscar.");
+            toast.error("Digite um endereço para buscar.");
             return;
         }
 
@@ -39,14 +40,14 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
                     setLat(data[0].lat);
                     setLng(data[0].lon);
                 } else {
-                    alert("Endereço não encontrado no mapa.");
+                    toast.error("Endereço não encontrado no mapa.");
                 }
             } else {
-                alert("Erro ao buscar endereço.");
+                toast.error("Erro ao buscar endereço.");
             }
         } catch (error) {
             console.error("Error fetching location:", error);
-            alert("Erro de conexão.");
+            toast.error("Erro de conexão.");
         } finally {
             setLoading(false);
         }
@@ -80,7 +81,7 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
             onClose();
         } catch (error) {
             console.error("Error creating point:", error);
-            alert("Erro ao criar ponto.");
+            toast.error("Erro ao criar ponto.");
         } finally {
             setLoading(false);
         }

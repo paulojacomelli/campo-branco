@@ -48,6 +48,9 @@ export async function POST(req: Request) {
             throw insertError;
         }
 
+        // 3. (Removido) Inativação automática revertida em favor de aprovação manual por admins
+
+
         return NextResponse.json({ success: true, visit: insertedVisit });
 
     } catch (error: any) {

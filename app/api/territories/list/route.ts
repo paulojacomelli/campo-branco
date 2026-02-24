@@ -13,11 +13,37 @@ export async function GET(req: Request) {
 
         const url = new URL(req.url);
         const cityId = url.searchParams.get('cityId');
-        const congregationId = url.searchParams.get('congregationId');
+        let congregationId = url.searchParams.get('congregationId');
 
-        // Permite visualizar se o usuário existir (Bypass RLS check)
-        if (!adminData) {
-            return NextResponse.json({ error: 'Usuário sem perfil configurado' }, { status: 403 });
+        // Add auth checking logic
+        let { data: adminData } = await supabaseAdmin
+            .from('users')
+            .select('role, congregation_id, email')
+            .eq('id', currentUser.id)
+            .single();
+
+        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
+            const { data: fallbackData } = await supabaseAdmin
+                .from('users')
+                .select('role, congregation_id, email')
+                .eq('email', currentUser.email)
+                .single();
+            if (fallbackData) adminData = fallbackData;
+        }
+
+        // Security: Force congregationId to be the user's congregation for operational views
+        // Superadmins can no longer jump between congregations in these views.
+        if (adminData?.role !== 'SUPER_ADMIN' || !congregationId) {
+            congregationId = adminData?.congregation_id || null;
+        }
+
+        const isAllowed = adminData && (
+            adminData.role === 'SUPER_ADMIN' ||
+            (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
+        );
+
+        if (!isAllowed || !congregationId) {
+            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
         // 1. Busca os territórios
@@ -37,7 +63,6 @@ export async function GET(req: Request) {
         const territoryIds = territories.map(t => t.id);
 
         // 2. Busca todos os endereços ATIVOS para estes territórios para contar em memória
-        // Isso é mais robusto que tentar múltiplos filters em count agregados no PostgREST
         const { data: addresses, error: aErr } = await supabaseAdmin
             .from('addresses')
             .select('territory_id, gender')

@@ -21,6 +21,8 @@ import {
     Building2,
     AlertCircle,
     Lightbulb,
+    X,
+    Plus,
 } from "lucide-react";
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from "@/lib/serviceYearUtils";
 import { supabase } from "@/lib/supabase";
@@ -28,8 +30,9 @@ import { useRouter } from "next/navigation";
 
 export default function ReportsPage() {
     const router = useRouter();
-    const { user, role, isElder, isServant, congregationId, loading: authLoading } = useAuth();
+    const { user, role, isElder, isServant, isSuperAdmin, congregationId: userCongregationId, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
+    const [selectedCongregationId, setSelectedCongregationId] = useState<string | null>(null);
 
     // Redirect if not Elder/Servant
     useEffect(() => {
@@ -51,6 +54,7 @@ export default function ReportsPage() {
     const [chartData, setChartData] = useState<{ month: string, count: number, height: number }[]>([]);
     const [insights, setInsights] = useState<{ type: 'warning' | 'info' | 'success', message: string, detail?: string }[]>([]);
     const [stuckMapsList, setStuckMapsList] = useState<any[]>([]);
+    const [isStuckMapsModalOpen, setIsStuckMapsModalOpen] = useState(false);
 
     // Visit Periods State
     const [visitPeriods, setVisitPeriods] = useState({
@@ -59,36 +63,35 @@ export default function ReportsPage() {
         night: { total: 0, found: 0 }
     });
 
+    // Initialize selectedCongregationId
     useEffect(() => {
-        if (!congregationId || (!isElder && !isServant)) {
+        if (!authLoading && userCongregationId && !selectedCongregationId) {
+            setSelectedCongregationId(userCongregationId);
+        }
+    }, [userCongregationId, authLoading]);
+
+
+
+    useEffect(() => {
+        const targetCongId = selectedCongregationId || userCongregationId;
+        if (!targetCongId || (!isElder && !isServant && !isSuperAdmin)) {
             setLoading(false);
             return;
         }
 
         const fetchData = async () => {
             setError(null);
+            setLoading(true);
             try {
-                // 1. Fetch Territories (Maps)
-                const { data: territories, error: mapsError } = await supabase
-                    .from('territories')
-                    .select('*')
-                    .eq('congregation_id', congregationId);
+                // Fetch all data via Admin API to bypass RLS issues (consistent with registry page)
+                const res = await fetch(`/api/reports/registry/fetch?congregationId=${targetCongId}`);
+                const data = await res.json();
 
-                if (mapsError) {
-                    console.error("Error fetching maps:", JSON.stringify(mapsError, null, 2));
-                    throw mapsError;
-                }
+                if (!res.ok) throw new Error(data.error || "Erro ao buscar dados do servidor");
 
-                // 2. Fetch Shared History (Completed Maps)
-                const { data: history, error: historyError } = await supabase
-                    .from('shared_lists')
-                    .select('*')
-                    .eq('congregation_id', congregationId);
+                const territories = data.territories || [];
+                const history = data.sharedLists || [];
 
-                if (historyError) {
-                    console.error("Error fetching history:", JSON.stringify(historyError, null, 2));
-                    throw historyError;
-                }
 
                 // --- CALCULATE KPIS ---
 
@@ -142,8 +145,7 @@ export default function ReportsPage() {
                 const chartLabels: string[] = [];
                 const monthCounts: Record<string, number> = {};
 
-                const syStart = new Date(selectedServiceYear, 8, 1);
-                const syEnd = new Date(selectedServiceYear + 1, 7, 31);
+                const { start: syStart, end: syEnd } = getServiceYearRange(selectedServiceYear);
                 const now = new Date();
 
                 let current = new Date(syStart);
@@ -174,34 +176,51 @@ export default function ReportsPage() {
                     height: Math.round((monthCounts[month] / maxVal) * 100)
                 }));
 
-                // --- INSIGHTS ---
+                // --- INSIGHTS (Comprehensive Stuck Maps Check) ---
                 const newInsights: any[] = [];
                 const stuckMaps: any[] = [];
-                const activeAssignments = history.filter((h: any) => h.status !== 'completed');
 
-                activeAssignments.forEach((h: any) => {
-                    if (h.created_at) {
-                        const start = new Date(h.created_at);
-                        const diffTime = Math.abs(new Date().getTime() - start.getTime());
-                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                territories.forEach((t: any) => {
+                    // 1. Get last completion date (manual or history)
+                    let lastTouch = t.manual_last_completed_date ? new Date(t.manual_last_completed_date) : new Date(0);
 
-                        if (diffDays > 120) {
-                            stuckMaps.push({
-                                name: h.title || 'Mapa Sem Nome',
-                                days: diffDays,
-                                assignee: h.assigned_name || 'Desconhecido'
-                            });
+                    // 2. Find relevant history for this territory
+                    const tHistory = history.filter((h: any) => h.territory_id === t.id || (h.items && h.items.includes(t.id)));
+
+                    let activeAssign: any = null;
+                    tHistory.forEach((h: any) => {
+                        const d = h.returned_at ? new Date(h.returned_at) : (h.completed_at ? new Date(h.completed_at) : null);
+                        if (d && d > lastTouch) lastTouch = d;
+
+                        if (h.status !== 'completed' && h.status !== 'expired') {
+                            if (!activeAssign || new Date(h.created_at) > new Date(activeAssign.created_at)) {
+                                activeAssign = h;
+                            }
                         }
+                    });
+
+                    // The reference date is the assignment date if it's out, or the last completion if it's in
+                    const referenceDate = activeAssign ? new Date(activeAssign.created_at) : lastTouch;
+                    const diffTime = Math.abs(new Date().getTime() - referenceDate.getTime());
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (diffDays > 180) {
+                        stuckMaps.push({
+                            name: t.name,
+                            description: t.notes || '',
+                            days: diffDays,
+                            assignee: activeAssign ? (activeAssign.assigned_name || 'Publicador') : 'Disponível'
+                        });
                     }
                 });
 
                 if (stuckMaps.length > 0) {
                     newInsights.push({
                         type: 'warning',
-                        message: `${stuckMaps.length} mapas parados há mais de 4 meses`,
-                        detail: 'Verifique a lista abaixo e considere redesignar.'
+                        message: `${stuckMaps.length} mapas sem trabalho há mais de 6 meses`,
+                        detail: 'Verifique a lista abaixo e considere designar ou cobrar a devolução.'
                     });
-                } else if (activeAssignments.length > 0) {
+                } else if (territories.length > 0) {
                     newInsights.push({
                         type: 'success',
                         message: 'Nenhum mapa parado!',
@@ -224,7 +243,7 @@ export default function ReportsPage() {
                 const { data: visits, error: visitsError } = await supabase
                     .from('visits')
                     .select('*')
-                    .eq('congregation_id', congregationId)
+                    .eq('congregation_id', targetCongId)
                     .gte('date', syStart.toISOString())
                     .lte('date', syEnd.toISOString());
 
@@ -270,7 +289,7 @@ export default function ReportsPage() {
         };
 
         fetchData();
-    }, [congregationId, isElder, isServant, selectedServiceYear]);
+    }, [selectedCongregationId, userCongregationId, isElder, isServant, isSuperAdmin, selectedServiceYear]);
 
     // Role Guard
     if (!loading && !isElder && !isServant && role !== 'SUPER_ADMIN') {
@@ -301,6 +320,8 @@ export default function ReportsPage() {
                     </div>
                 </div>
 
+
+
                 <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-transparent dark:border-gray-800">
                     <button
                         onClick={() => setSelectedServiceYear(prev => prev - 1)}
@@ -319,6 +340,8 @@ export default function ReportsPage() {
                     </button>
                 </div>
             </header>
+
+
 
             <main className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {error && (
@@ -490,7 +513,9 @@ export default function ReportsPage() {
                                             {stuckMapsList.slice(0, 5).map((map, idx) => (
                                                 <div key={idx} className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                                     <div>
-                                                        <p className="font-bold text-main text-sm">{map.name}</p>
+                                                        <p className="font-bold text-main text-sm">
+                                                            {map.name}{map.description ? ` - ${map.description}` : ''}
+                                                        </p>
                                                         <p className="text-xs text-muted mt-0.5">Com: {map.assignee}</p>
                                                     </div>
                                                     <div className="text-right">
@@ -501,7 +526,10 @@ export default function ReportsPage() {
                                             ))}
                                             {stuckMapsList.length > 5 && (
                                                 <div className="p-3 text-center border-t border-gray-50 dark:border-gray-800">
-                                                    <button className="text-xs font-bold text-primary dark:text-primary-light hover:text-primary-dark flex items-center justify-center gap-1 mx-auto">
+                                                    <button
+                                                        onClick={() => setIsStuckMapsModalOpen(true)}
+                                                        className="text-xs font-bold text-primary dark:text-primary-light hover:text-primary-dark flex items-center justify-center gap-1 mx-auto"
+                                                    >
                                                         Ver Todos <ArrowRight className="w-3 h-3" />
                                                     </button>
                                                 </div>
@@ -536,6 +564,52 @@ export default function ReportsPage() {
                 )}
             </main>
             <BottomNav />
+
+            {/* Stuck Maps Full List Modal */}
+            {isStuckMapsModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-surface rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 border border-surface-border">
+                        <div className="px-6 py-4 border-b border-surface-border flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-2xl">
+                            <div>
+                                <h2 className="font-bold text-main">Lista Completa de Mapas Parados</h2>
+                                <p className="text-[10px] text-muted font-bold uppercase tracking-widest">{stuckMapsList.length} Territórios Identificados</p>
+                            </div>
+                            <button
+                                onClick={() => setIsStuckMapsModalOpen(false)}
+                                className="p-2 text-muted hover:text-main hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2">
+                            <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                                {stuckMapsList.map((map, idx) => (
+                                    <div key={idx} className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                        <div>
+                                            <p className="font-bold text-main text-sm">
+                                                {map.name}{map.description ? ` - ${map.description}` : ''}
+                                            </p>
+                                            <p className="text-xs text-muted mt-0.5">Com: {map.assignee}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-bold text-red-600 dark:text-red-400 text-sm">{map.days} dias</p>
+                                            <p className="text-[10px] text-muted font-bold uppercase">Sem trabalho</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-surface-border bg-gray-50 dark:bg-gray-900 rounded-b-2xl">
+                            <button
+                                onClick={() => setIsStuckMapsModalOpen(false)}
+                                className="w-full bg-primary py-3 rounded-xl text-white font-bold text-sm shadow-md active:scale-95 transition-transform"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

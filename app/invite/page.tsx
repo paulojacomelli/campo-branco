@@ -5,6 +5,8 @@ import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Users, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 function InviteContent() {
     const searchParams = useSearchParams();
@@ -29,6 +31,14 @@ function InviteContent() {
     const [congregationName, setCongregationName] = useState('Carregando...');
     const [congregationId, setCongregationId] = useState<string | null>(null);
     const [accepting, setAccepting] = useState(false);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
     useEffect(() => {
         const checkInvite = async () => {
@@ -86,7 +96,7 @@ function InviteContent() {
         }
 
         if (!congregationId) {
-            alert("Congregação não identificada.");
+            toast.error("Congregação não identificada.");
             return;
         }
 
@@ -107,13 +117,35 @@ function InviteContent() {
                     setTimeout(() => window.location.href = '/dashboard', 2000);
                     return;
                 } else {
-                    if (!confirm("Você já pertence a outra congregação. Deseja mudar para esta?")) {
-                        setAccepting(false);
-                        return;
-                    }
+                    setConfirmModal({
+                        isOpen: true,
+                        title: "Mudar de Congregação",
+                        message: "Você já pertence a outra congregação. Deseja mudar para esta?",
+                        variant: 'info',
+                        onConfirm: () => {
+                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                            proceedWithAccept();
+                        }
+                    });
+                    setAccepting(false); // Stop loader while waiting for confirmation
+                    return;
                 }
             }
 
+            // Normal case
+            proceedWithAccept();
+
+        } catch (e) {
+            console.error("Error checking user congregation:", e);
+            toast.error("Erro ao verificar dados do usuário.");
+            setAccepting(false);
+        }
+    };
+
+    const proceedWithAccept = async () => {
+        if (!congregationId || !user) return;
+        setAccepting(true);
+        try {
             // Update User
             const { error: updateError } = await supabase
                 .from("users")
@@ -134,7 +166,7 @@ function InviteContent() {
 
         } catch (e) {
             console.error("Error accepting invite:", e);
-            alert("Erro ao aceitar convite.");
+            toast.error("Erro ao aceitar convite.");
             setAccepting(false);
         }
     };
@@ -189,6 +221,16 @@ function InviteContent() {
                     )}
                 </div>
             )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant}
+            />
         </div>
     );
 }

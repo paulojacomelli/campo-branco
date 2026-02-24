@@ -53,8 +53,14 @@ export default function TerritoryAssignmentsModal({ territoryName, assignments, 
                                         <div className="flex items-center gap-1.5 text-[9px] text-muted font-bold px-1 uppercase tracking-tight">
                                             <Calendar className="w-3 h-3 text-primary-light/500" />
                                             Início: {(() => {
-                                                const d = assign.assignedAt.toDate ? assign.assignedAt.toDate() : new Date(assign.assignedAt.seconds * 1000);
-                                                return d.toLocaleDateString('pt-BR');
+                                                try {
+                                                    const d = typeof assign.assignedAt === 'string'
+                                                        ? new Date(assign.assignedAt)
+                                                        : (assign.assignedAt.toDate ? assign.assignedAt.toDate() : new Date(assign.assignedAt.seconds ? assign.assignedAt.seconds * 1000 : assign.assignedAt));
+                                                    return d.toLocaleDateString('pt-BR');
+                                                } catch (e) {
+                                                    return 'Data inválida';
+                                                }
                                             })()}
                                         </div>
                                     )}

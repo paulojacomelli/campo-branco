@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import html2canvas from 'html2canvas';
+
 import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -48,7 +48,8 @@ import { toast } from 'sonner';
 
 import BottomNav from '@/app/components/BottomNav';
 import { APP_VERSION } from '@/lib/version';
-import { getConsoleLogs } from '@/lib/logger';
+
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 
 export default function SettingsPage() {
@@ -84,13 +85,17 @@ export default function SettingsPage() {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [showDangerZone, setShowDangerZone] = useState(false);
 
-    // Bug Report State
-    const [showBugModal, setShowBugModal] = useState(false);
-    const [bugTitle, setBugTitle] = useState('');
-    const [bugDescription, setBugDescription] = useState('');
-    const [bugScreenshot, setBugScreenshot] = useState<string | null>(null);
-    const [sendingBug, setSendingBug] = useState(false);
-    const [capturingScreen, setCapturingScreen] = useState(false);
+
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+        confirmText?: string;
+        cancelText?: string;
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
     // Close menu on click outside
     useEffect(() => {
@@ -166,70 +171,102 @@ export default function SettingsPage() {
     }, [canInviteMembers, canManageMembers, congregationId, isSuperAdmin]);
 
     const handleGenerateNewToken = async () => {
-        if (!confirm("Isso invalidará o link de convite anterior. Deseja continuar?")) return;
+        setConfirmModal({
+            isOpen: true,
+            title: "Gerar Novo Link",
+            message: "Isso invalidará o link de convite anterior. Deseja continuar?",
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                setGeneratingToken(true);
+                try {
+                    const newToken = crypto.randomUUID();
 
-        setGeneratingToken(true);
-        try {
-            const newToken = crypto.randomUUID();
+                    const { error } = await supabase.from("congregations").update({
+                        invite_token: newToken
+                    }).eq("id", congregationId!);
 
-            const { error } = await supabase.from("congregations").update({
-                invite_token: newToken
-            }).eq("id", congregationId!);
+                    if (error) throw error;
 
-            if (error) throw error;
-
-            setInviteToken(newToken);
-            setInviteLink(`${window.location.origin}/invite?token=${newToken}`);
-            toast.success("Novo link gerado com sucesso!");
-        } catch (e) {
-            console.error(e);
-            toast.error("Erro ao gerar novo link.");
-        } finally {
-            setGeneratingToken(false);
-        }
+                    setInviteToken(newToken);
+                    setInviteLink(`${window.location.origin}/invite?token=${newToken}`);
+                    toast.success("Novo link gerado com sucesso!");
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Erro ao gerar novo link.");
+                } finally {
+                    setGeneratingToken(false);
+                }
+            }
+        });
     };
 
     const handlePromote = async (uid: string, currentRole: string) => {
-        if (!confirm("Confirmar alteração de função?")) return;
-        try {
-            let newRole = '';
-            if (currentRole === 'ANCIAO') newRole = 'SERVO';
-            else if (currentRole === 'SERVO') newRole = 'PUBLICADOR';
-            else newRole = 'SERVO';
+        setConfirmModal({
+            isOpen: true,
+            title: "Alterar Função",
+            message: "Confirmar alteração de função?",
+            variant: 'info',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    let newRole = '';
+                    if (currentRole === 'ANCIAO') newRole = 'SERVO';
+                    else if (currentRole === 'SERVO') newRole = 'PUBLICADOR';
+                    else newRole = 'SERVO';
 
-            const { error } = await supabase.from("users").update({ role: newRole }).eq("id", uid);
-            if (error) throw error;
-            setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: newRole } : m));
-            toast.success("Função atualizada com sucesso");
-        } catch (e) {
-            toast.error("Erro ao alterar função");
-        }
+                    const { error } = await supabase.from("users").update({ role: newRole }).eq("id", uid);
+                    if (error) throw error;
+                    setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: newRole } : m));
+                    toast.success("Função atualizada com sucesso");
+                } catch (e) {
+                    toast.error("Erro ao alterar função");
+                }
+            }
+        });
     };
 
     const handleSetAnciao = async (uid: string) => {
-        if (!confirm("Promover este membro a Superintendente de Serviço (Ancião)?")) return;
-        try {
-            const { error } = await supabase.from("users").update({ role: 'ANCIAO' }).eq("id", uid);
-            if (error) throw error;
-            setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: 'ANCIAO' } : m));
-            toast.success("Membro promovido a Ancião");
-        } catch (e) {
-            toast.error("Erro ao promover membro");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Delegar Responsabilidade",
+            message: "Promover este membro a Superintendente de Serviço (Ancião)?",
+            variant: 'info',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const { error } = await supabase.from("users").update({ role: 'ANCIAO' }).eq("id", uid);
+                    if (error) throw error;
+                    setMembers(prev => prev.map(m => m.id === uid ? { ...m, role: 'ANCIAO' } : m));
+                    toast.success("Membro promovido a Ancião");
+                } catch (e) {
+                    toast.error("Erro ao promover membro");
+                }
+            }
+        });
     };
 
     const handleRemove = async (uid: string) => {
-        if (!confirm("Remover este usuário da congregação? Ele perderá acesso aos dados.")) return;
-        try {
-            const { error } = await supabase.from("users").update({
-                congregation_id: null,
-                role: 'PUBLICADOR'
-            }).eq("id", uid);
-            if (error) throw error;
-            setMembers(prev => prev.filter(m => m.id !== uid));
-        } catch (e) {
-            toast.error("Erro ao remover usuário");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Remover Membro",
+            message: "Remover este usuário da congregação? Ele perderá acesso aos dados.",
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const { error } = await supabase.from("users").update({
+                        congregation_id: null,
+                        role: 'PUBLICADOR'
+                    }).eq("id", uid);
+                    if (error) throw error;
+                    setMembers(prev => prev.filter(m => m.id !== uid));
+                    toast.success("Membro removido.");
+                } catch (e) {
+                    toast.error("Erro ao remover usuário");
+                }
+            }
+        });
     };
 
     const handleSaveProfile = async () => {
@@ -273,71 +310,7 @@ export default function SettingsPage() {
         }
     };
 
-    const handleOpenBugModal = async () => {
-        setShowBugModal(true);
-        setCapturingScreen(true);
-        try {
-            // 'logging: false' suprime os console.error internos do html2canvas
-            // 'allowTaint: true' + 'useCORS: true' tentam capturar imagens externas sem bloquear
-            // 'imageTimeout: 0' evita tentativas repetidas de baixar imagens bloqueadas
-            const canvas = await html2canvas(document.documentElement, {
-                useCORS: true,
-                allowTaint: false, // false = ignora imagens que falham CORS em vez de travar
-                logging: false,    // silencia console.error interno do html2canvas
-                scale: 1,
-                imageTimeout: 2000, // desiste de baixar imagens externas após 2s
-            });
-            setBugScreenshot(canvas.toDataURL('image/jpeg', 0.6));
-        } catch (e) {
-            // Sem console.error aqui para não disparar falso positivo no badge
-        } finally {
-            setCapturingScreen(false);
-        }
-    };
 
-    const handleSendBugReport = async () => {
-        if (!bugTitle) {
-            toast.error("Por favor, preencha o título.");
-            return;
-        }
-
-        setSendingBug(true);
-        try {
-            const deviceInfo = {
-                platform: window.navigator.platform,
-                vendor: window.navigator.vendor,
-                userAgent: window.navigator.userAgent,
-                screen: `${window.screen.width}x${window.screen.height}`,
-                pixelRatio: window.devicePixelRatio,
-                language: window.navigator.language,
-                appVersion: APP_VERSION,
-                zoom: Math.round(displayScale * 100) + '%',
-                consoleLogs: getConsoleLogs(),
-                screenshot: bugScreenshot
-            };
-
-            const { error } = await supabase.from('bug_reports').insert({
-                user_id: user?.id,
-                title: bugTitle,
-                description: bugDescription || null,
-                device_info: deviceInfo,
-                status: 'NEW'
-            });
-
-            if (error) throw error;
-
-            toast.success("Bug relatado com sucesso! Obrigado pelo feedback.");
-            setShowBugModal(false);
-            setBugTitle('');
-            setBugDescription('');
-            setBugScreenshot(null);
-        } catch (error: any) {
-            console.error("Error sending bug report:", error);
-            toast.error("Erro ao enviar relato. Tente novamente mais tarde.");
-        } finally {
-            setSendingBug(false);
-        }
-    };
 
     useEffect(() => {
         if (!loading && !user) {
@@ -518,30 +491,6 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
-                {/* Bug Report Section */}
-                <section className="space-y-4">
-                    <h2 className="text-sm font-bold text-muted uppercase tracking-widest pl-1">Ajuda & Feedback</h2>
-                    <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-xl">
-                                    <Bug className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-main">Encontrou um Bug?</h3>
-                                    <p className="text-sm text-muted">Relate erros ou sugira melhorias para o sistema.</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleOpenBugModal}
-                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                            >
-                                <Bug className="w-5 h-5" />
-                                Relatar Bug
-                            </button>
-                        </div>
-                    </div>
-                </section>
 
                 {/* Edit Profile Modal */}
                 {showEditModal && (
@@ -583,88 +532,7 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {/* Bug Report Modal */}
-                {showBugModal && (
-                    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
-                            <div className="bg-surface rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-in zoom-in-95 duration-200 my-8">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-xl">
-                                            <Bug className="w-5 h-5" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-xl font-bold text-main tracking-tight">Relatar Problema</h2>
-                                            <p className="text-xs text-muted font-medium tracking-tight">Seja o mais descritivo possível.</p>
-                                        </div>
-                                    </div>
-                                    <button onClick={() => setShowBugModal(false)} className="p-2 hover:bg-background rounded-full transition-colors">
-                                        <X className="w-6 h-6 text-muted" />
-                                    </button>
-                                </div>
 
-                                <div className="space-y-5">
-                                    {bugScreenshot && (
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Captura de Tela Automática</label>
-                                            <div className="relative rounded-xl overflow-hidden border border-surface-border h-32 bg-background">
-                                                <Image src={bugScreenshot} alt="Bug Capture" fill className="object-cover opacity-50" />
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <span className="text-[10px] font-bold text-main bg-surface/80 px-2 py-1 rounded-md border border-surface-border">Tela Capturada!</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Título do Problema</label>
-                                        <input
-                                            type="text"
-                                            value={bugTitle}
-                                            onChange={(e) => setBugTitle(e.target.value)}
-                                            className="w-full bg-background border border-surface-border rounded-xl py-3 px-4 text-sm font-bold focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-main transition-all outline-none"
-                                            placeholder="Ex: Erro ao carregar mapa"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest ml-1">Descrição Detalhada</label>
-                                        <textarea
-                                            value={bugDescription}
-                                            onChange={(e) => setBugDescription(e.target.value)}
-                                            rows={5}
-                                            className="w-full bg-background border border-surface-border rounded-xl py-3 px-4 text-sm font-medium focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 text-main transition-all outline-none resize-none"
-                                            placeholder="Descreva o que aconteceu, o que você estava fazendo e se o erro se repete..."
-                                        />
-                                    </div>
-
-                                    <div className="bg-background/50 border border-surface-border p-3 rounded-lg">
-                                        <p className="text-[10px] text-muted flex items-center gap-2 italic">
-                                            <Monitor className="w-3 h-3" />
-                                            Enviaremos automaticamente informações sobre seu navegador e zoom para ajudar na correção.
-                                        </p>
-                                    </div>
-
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => setShowBugModal(false)}
-                                            className="flex-1 bg-surface hover:bg-background text-main font-bold py-4 rounded-xl transition-all border border-surface-border"
-                                        >
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            onClick={handleSendBugReport}
-                                            disabled={sendingBug || !bugTitle}
-                                            className="flex-[2] bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-xl shadow-xl shadow-orange-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                        >
-                                            {sendingBug ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enviar Relato'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* Servant Section (Invite & Registry) */}
                 {canInviteMembers && (
@@ -1022,25 +890,32 @@ export default function SettingsPage() {
                                     </p>
                                 </div>
                                 <button
-                                    onClick={async () => {
-                                        if (confirm("TEM CERTEZA? Essa ação não pode ser desfeita e excluirá permanentemente sua conta.")) {
-                                            const doubleCheck = prompt("Digite 'DELETAR' para confirmar:");
-                                            if (doubleCheck === 'DELETAR') {
+                                    onClick={() => {
+                                        setConfirmModal({
+                                            isOpen: true,
+                                            title: "EXCLUIR CONTA DEFINITIVAMENTE?",
+                                            message: "Essa ação não pode ser desfeita. Todos os seus dados de perfil e acesso serão apagados permanentemente da plataforma.",
+                                            variant: 'danger',
+                                            confirmText: "Excluir Minha Conta",
+                                            onConfirm: async () => {
+                                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
                                                 try {
                                                     // 1. Delete Public Profile
                                                     if (user?.id) {
-                                                        await supabase.from("users").delete().eq("id", user.id);
+                                                        const { error: deleteError } = await supabase.from("users").delete().eq("id", user.id);
+                                                        if (deleteError) throw deleteError;
                                                     }
 
                                                     // 2. Logout
                                                     await authLogout();
-                                                    toast.success("Conta marcada para exclusão. Saída realizada.");
+                                                    toast.success("Conta excluída. Até logo!");
+                                                    router.push('/login');
                                                 } catch (error: any) {
                                                     console.error("Delete account error:", error);
                                                     toast.error("Erro ao excluir conta. Tente novamente.");
                                                 }
                                             }
-                                        }
+                                        });
                                     }}
                                     className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-red-600/20 whitespace-nowrap"
                                 >
@@ -1083,6 +958,18 @@ export default function SettingsPage() {
 
             {/* Bottom Navigation */}
             <BottomNav />
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+            />
         </div >
     );
 }

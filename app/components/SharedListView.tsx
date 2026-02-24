@@ -23,10 +23,18 @@ import {
     CheckCircle,
     Navigation,
     MoreVertical,
-    History as HistoryIcon
+    History as HistoryIcon,
+    Brain,
+    Calendar,
+    ChevronUp,
+    ChevronDown,
+    Hand,
+    Home
 } from 'lucide-react';
 import VisitReportModal from '@/app/components/VisitReportModal';
 import VisitHistoryModal from '@/app/components/VisitHistoryModal';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/app/context/AuthContext';
@@ -68,6 +76,13 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
     const [visitingItem, setVisitingItem] = useState<any | null>(null);
     const [viewingHistoryItem, setViewingHistoryItem] = useState<any | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
     // Stats
     const [addressCounts, setAddressCounts] = useState<Record<string, number>>({});
@@ -139,8 +154,10 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                         const result = linkResults[item.id];
                         return {
                             ...item,
-                            completed: (result?.status || item.visit_status) === 'contacted',
-                            visitStatus: result?.status || item.visit_status || ''
+                            completed: result?.status === 'contacted',
+                            visitStatus: result?.status || item.visitStatus || 'none',
+                            visitNotes: result?.notes || '',
+                            inactivatedAt: item.inactivated_at
                         };
                     });
 
@@ -178,7 +195,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                             stats.total++;
 
                             const result = linkResults[addr.id];
-                            const currentStatus = result?.status || addr.visit_status;
+                            const currentStatus = result?.status || 'none';
 
                             if (currentStatus && currentStatus !== 'none') {
                                 stats.processed++;
@@ -209,101 +226,136 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
     const handleReturnMap = async () => {
         if (!id) return;
-        if (!confirm("Confirmar devolução do mapa? O link será encerrado em breve.")) return;
-        setReturning(true);
-        try {
-            const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 24);
 
-            const { error } = await supabase.from('shared_lists').update({
-                expires_at: expiresAt.toISOString(),
-                returned_at: new Date().toISOString(),
-                status: 'completed'
-            }).eq('id', id);
+        setConfirmModal({
+            isOpen: true,
+            title: "Devolver Mapa",
+            message: "Confirmar devolução do mapa? O link será encerrado em breve.",
+            variant: 'info',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                setReturning(true);
+                try {
+                    const expiresAt = new Date();
+                    expiresAt.setHours(expiresAt.getHours() + 24);
 
-            if (error) throw error;
+                    const { error } = await supabase.from('shared_lists').update({
+                        expires_at: expiresAt.toISOString(),
+                        returned_at: new Date().toISOString(),
+                        status: 'completed'
+                    }).eq('id', id);
 
-            alert("Mapa devolvido com sucesso! O acesso será encerrado em 24 horas.");
-            window.location.reload();
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao devolver mapa.");
-            setReturning(false);
-        }
+                    if (error) throw error;
+
+                    toast.success("Mapa devolvido com sucesso! O acesso será encerrado em 24 horas.");
+                    window.location.reload();
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Erro ao devolver mapa.");
+                    setReturning(false);
+                }
+            }
+        });
     };
 
     const handleReturnTerritory = async (territoryId: string, territoryName: string) => {
-        if (!confirm(`Confirmar devolução do território ${territoryName}?`)) return;
+        setConfirmModal({
+            isOpen: true,
+            title: "Devolver Território",
+            message: `Confirmar devolução do território ${territoryName}?`,
+            variant: 'info',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                // Optimistic Update
+                setItems(prev => prev.map(item =>
+                    item.id === territoryId ? { ...item, visitStatus: 'completed' } : item
+                ));
 
-        // Optimistic Update
-        setItems(prev => prev.map(item =>
-            item.id === territoryId ? { ...item, visitStatus: 'completed' } : item
-        ));
+                try {
+                    // Update snapshot entry to mark as completed
+                    const { error: snapError } = await supabase
+                        .from('shared_list_snapshots')
+                        .update({
+                            data: {
+                                ...items.find(i => i.id === territoryId),
+                                visitStatus: 'completed'
+                            }
+                        })
+                        .eq('shared_list_id', id)
+                        .eq('item_id', territoryId);
 
-        try {
-            // Update snapshot entry to mark as completed
-            const { error: snapError } = await supabase
-                .from('shared_list_snapshots')
-                .update({ data: { ...items.find(i => i.id === territoryId), visitStatus: 'completed' } })
-                .eq('shared_list_id', id)
-                .eq('item_id', territoryId);
+                    if (snapError) throw snapError;
 
-            if (snapError) throw snapError;
+                    toast.success(`Território ${territoryName} devolvido.`);
 
-            // Check if all items are completed
-            const allCompleted = items.every(item =>
-                item.id === territoryId ? true : item.visitStatus === 'completed'
-            );
-
-            if (allCompleted) {
-                const expiresAt = new Date();
-                expiresAt.setHours(expiresAt.getHours() + 24);
-
-                await supabase.from('shared_lists').update({
-                    expires_at: expiresAt.toISOString(),
-                    returned_at: new Date().toISOString(),
-                    status: 'completed'
-                }).eq('id', id);
-
-                alert("Todos os territórios foram devolvidos! O mapa será encerrado em 24h.");
-                window.location.reload();
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Erro ao sincronizar devolução. Tente novamente.");
+                    // Revert optimistic update on error
+                    setItems(prev => prev.map(item =>
+                        item.id === territoryId ? { ...item, visitStatus: 'active' } : item
+                    ));
+                }
             }
-
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao sincronizar devolução. Tente novamente.");
-            // Revert optimistic update on error
-            setItems(prev => prev.map(item =>
-                item.id === territoryId ? { ...item, visitStatus: 'active' } : item
-            ));
-        }
+        });
     };
 
     const handleUndoReturnTerritory = async (territoryId: string, territoryName: string) => {
-        if (!confirm(`Desfazer devolução do território ${territoryName}?`)) return;
+        setConfirmModal({
+            isOpen: true,
+            title: "Desfazer Devolução",
+            message: `Desfazer devolução do território ${territoryName}?`,
+            variant: 'info',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                // Optimistic Update
+                setItems(prev => prev.map(item =>
+                    item.id === territoryId ? { ...item, visitStatus: 'active' } : item
+                ));
 
-        // Optimistic Update
-        setItems(prev => prev.map(item =>
-            item.id === territoryId ? { ...item, visitStatus: 'active' } : item
-        ));
+                try {
+                    // 1. Update Snapshot
+                    const { error: snapError } = await supabase
+                        .from('shared_list_snapshots')
+                        .update({
+                            data: {
+                                ...items.find(i => i.id === territoryId),
+                                visitStatus: 'active'
+                            }
+                        })
+                        .eq('shared_list_id', id)
+                        .eq('item_id', territoryId);
 
-        try {
-            const { error: snapError } = await supabase
-                .from('shared_list_snapshots')
-                .update({ data: { ...items.find(i => i.id === territoryId), visitStatus: 'active' } })
-                .eq('shared_list_id', id)
-                .eq('item_id', territoryId);
+                    if (snapError) throw snapError;
 
-            if (snapError) throw snapError;
+                    // 2. Reactivate global list if it was completed
+                    if (listData?.status === 'completed') {
+                        const { error: listError } = await supabase
+                            .from('shared_lists')
+                            .update({
+                                status: 'active',
+                                returned_at: null
+                            })
+                            .eq('id', id);
 
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao desfazer ação.");
-            // Revert optimistic
-            setItems(prev => prev.map(item =>
-                item.id === territoryId ? { ...item, visitStatus: 'completed' } : item
-            ));
-        }
+                        if (listError) throw listError;
+
+                        setListData(prev => prev ? { ...prev, status: 'active' } : null);
+                        toast.success("Mapa reativado!");
+                    } else {
+                        toast.success(`Retorno do território ${territoryName} desfeito.`);
+                    }
+
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Erro ao desfazer ação.");
+                    // Revert optimistic
+                    setItems(prev => prev.map(item =>
+                        item.id === territoryId ? { ...item, visitStatus: 'completed' } : item
+                    ));
+                }
+            }
+        });
     };
 
     const handleAcceptResponsibility = async () => {
@@ -347,7 +399,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
             setListData(prev => prev ? { ...prev, assignedTo: user.id, assignedName: profileName || 'Irmão sem Nome' } : null);
         } catch (e) {
             console.error("Error accepting responsibility:", e);
-            alert("Erro ao aceitar responsabilidade ou vincular à congregação.");
+            toast.error("Erro ao aceitar responsabilidade ou vincular à congregação.");
         } finally {
             setAccepting(false);
         }
@@ -359,7 +411,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
         // Optimistic UI Update
         setItems(prev => prev.map(item =>
             item.id === visitingItem.id
-                ? { ...item, completed: data.status === 'contacted', visitStatus: data.status }
+                ? { ...item, completed: data.status === 'contacted', visitStatus: data.status, visitNotes: data.observations || '' }
                 : item
         ));
 
@@ -374,7 +426,6 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                 address_id: savedItem.id,
                 territory_id: savedItem.territory_id || listData?.territoryId,
                 user_id: user?.id,
-                publisher_name: profileName || 'Publicador',
                 status: data.status,
                 notes: data.observations || '',
                 visit_date: visit_date,
@@ -403,13 +454,43 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
         } catch (e: any) {
             console.error("Error saving visit:", e);
-            alert(e.message || "Erro ao salvar. Verifique sua conexão.");
+            toast.error(e.message || "Erro ao salvar. Verifique sua conexão.");
             // Revert Optimistic Update
             setItems(prev => prev.map(item =>
                 item.id === savedItem.id
                     ? { ...item, completed: false, visitStatus: savedItem.visitStatus }
                     : item
             ));
+        }
+    };
+
+    const handleDeleteVisit = async () => {
+        if (!visitingItem || !id) return;
+
+        try {
+            const response = await fetch('/api/visits/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ addressId: visitingItem.id, shareId: id })
+            });
+
+            if (!response.ok) {
+                const errorJson = await response.json();
+                throw new Error(errorJson.error || 'Erro ao remover visita');
+            }
+
+            // Optimistic UI Update
+            setItems(prev => prev.map(item =>
+                item.id === visitingItem.id
+                    ? { ...item, completed: false, visitStatus: 'none', visitNotes: '' }
+                    : item
+            ));
+
+            toast.success("Resposta removida com sucesso!");
+
+        } catch (e: any) {
+            console.error("Error deleting visit:", e);
+            toast.error(e.message || "Erro ao remover visita.");
         }
     };
 
@@ -548,7 +629,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                             <button
                                 onClick={() => {
                                     navigator.clipboard.writeText(window.location.href);
-                                    alert("Link copiado!");
+                                    toast.success("Link copiado!");
                                 }}
                                 className="flex-1 bg-surface hover:bg-background text-primary dark:text-primary-light active:scale-95 transition-all px-6 py-3.5 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 border border-surface-border shadow-sm"
                             >
@@ -572,7 +653,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                         <button
                             onClick={() => {
                                 navigator.clipboard.writeText(window.location.href);
-                                alert("Link copiado!");
+                                toast.success("Link copiado!");
                             }}
                             className="bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 border border-white/10 w-full justify-center sm:w-auto"
                         >
@@ -612,16 +693,23 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
                         return (
                             <div key={item.id} className="block group">
-                                <div className="bg-surface p-4 rounded-lg border border-surface-border flex items-center gap-4 shadow-sm group-hover:border-primary-light dark:group-hover:border-primary-dark group-hover:shadow-md transition-all relative overflow-hidden">
+                                <div className={`bg-surface p-4 rounded-lg border border-surface-border flex items-center gap-4 shadow-sm group-hover:border-primary-light dark:group-hover:border-primary-dark group-hover:shadow-md transition-all relative overflow-hidden ${item.is_active === false || item.isActive === false ? 'opacity-60 grayscale' : ''}`}>
 
                                     {/* Hover Highlight */}
                                     <div
                                         onClick={() => {
                                             if (listData?.type === 'address') {
                                                 if (!user) {
-                                                    if (confirm("Você precisa estar logado para registrar uma visita. Deseja entrar agora?")) {
-                                                        router.push(`/login?redirect=/share?id=${id}`);
-                                                    }
+                                                    setConfirmModal({
+                                                        isOpen: true,
+                                                        title: "Login Necessário",
+                                                        message: "Você precisa estar logado para registrar uma visita. Deseja entrar agora?",
+                                                        variant: 'info',
+                                                        onConfirm: () => {
+                                                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                                            router.push(`/login?redirect=/share?id=${id}`);
+                                                        }
+                                                    });
                                                     return;
                                                 }
                                                 setVisitingItem(item);
@@ -680,23 +768,6 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                     ) : null}
                                                     {item.residentName && <span className="font-semibold text-main">{item.residentName}</span>}
 
-                                                    {item.gender && (
-                                                        <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${item.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                                            item.gender === 'MULHER' ? 'bg-pink-100/50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400' :
-                                                                'bg-purple-100/50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400'
-                                                            }`}>
-                                                            {item.gender === 'HOMEM' && <User className="w-3 h-3 fill-current" />}
-                                                            {item.gender === 'MULHER' && <User className="w-3 h-3 fill-current" />}
-                                                            {item.gender === 'CASAL' && (
-                                                                <div className="flex -space-x-1">
-                                                                    <User className="w-2.5 h-2.5 fill-current" />
-                                                                    <User className="w-2.5 h-2.5 fill-current" />
-                                                                </div>
-                                                            )}
-                                                            {item.gender === 'HOMEM' ? 'Homem' : item.gender === 'MULHER' ? 'Mulher' : 'Casal'}
-                                                        </span>
-                                                    )}
-
                                                     {item.is_deaf && (
                                                         <span className="flex items-center gap-1 bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                             <Ear className="w-3 h-3" /> Surdo
@@ -710,6 +781,11 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                     {item.is_student && (
                                                         <span className="flex items-center gap-1 bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
                                                             <GraduationCap className="w-3 h-3" /> Estudante
+                                                        </span>
+                                                    )}
+                                                    {(item.is_active === false || item.isActive === false) && item.inactivatedAt && (
+                                                        <span className="flex items-center gap-1 bg-red-50 text-red-600 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/30">
+                                                            <Calendar className="w-3 h-3" /> Desativado em: {new Date(item.inactivatedAt).toLocaleDateString('pt-BR')}
                                                         </span>
                                                     )}
                                                 </div>
@@ -802,7 +878,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                         ) : (
                                             <div className="flex items-center gap-3">
                                                 {/* Individual Return Action for Territories */}
-                                                {listData?.type === 'territory' && listData.items.length > 1 && (
+                                                {listData?.type === 'territory' && (
                                                     <div onClick={e => e.stopPropagation()}>
                                                         {item.visitStatus === 'completed' ? (
                                                             <button
@@ -846,6 +922,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     address={visitingItem}
                     onClose={() => setVisitingItem(null)}
                     onSave={handleSaveVisit}
+                    onDelete={handleDeleteVisit}
                     onViewHistory={() => {
                         setViewingHistoryItem(visitingItem);
                         setVisitingItem(null);
@@ -880,6 +957,16 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
             )}
 
             <BottomNav />
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant || 'danger'}
+            />
         </div>
     );
 }

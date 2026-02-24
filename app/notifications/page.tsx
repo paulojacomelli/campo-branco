@@ -59,25 +59,25 @@ export default function NotificationsPage() {
 
     // 2. Fetch Idle Territories & Stats (Simplified for notifications)
     useEffect(() => {
-        if (!congregationId && role !== 'SUPER_ADMIN') return;
+        if (!congregationId) return; // Always require congregationId now
 
         const fetchIdleAndCompletion = async () => {
             try {
-                const isGlobal = role === 'SUPER_ADMIN';
-
-                // Fetch Territories
-                let terrQuery = supabase.from('territories').select('*');
-                if (!isGlobal) terrQuery = terrQuery.eq('congregation_id', congregationId);
-                const { data: territories, error: terrError } = await terrQuery;
+                // Fetch Territories - restricted to congregation
+                const { data: territories, error: terrError } = await supabase
+                    .from('territories')
+                    .select('*')
+                    .eq('congregation_id', congregationId);
 
                 if (terrError) throw terrError;
                 const mapsCount = territories?.length || 0;
 
                 if (mapsCount > 0 && territories) {
-                    // 1. Get ALL shared lists history
-                    let historyQuery = supabase.from('shared_lists').select('*');
-                    if (!isGlobal) historyQuery = historyQuery.eq('congregation_id', congregationId);
-                    const { data: history, error: histError } = await historyQuery;
+                    // 1. Get ALL shared lists history - restricted to congregation
+                    const { data: history, error: histError } = await supabase
+                        .from('shared_lists')
+                        .select('*')
+                        .eq('congregation_id', congregationId);
 
                     if (histError) throw histError;
 
@@ -111,10 +111,12 @@ export default function NotificationsPage() {
                         }
                     });
 
-                    // Fetch Cities for names
-                    let citiesQuery = supabase.from('cities').select('id, name');
-                    if (!isGlobal) citiesQuery = citiesQuery.eq('congregation_id', congregationId);
-                    const { data: cities } = await citiesQuery;
+                    // Fetch Cities for names - restricted to congregation
+                    const { data: cities } = await supabase
+                        .from('cities')
+                        .select('id, name')
+                        .eq('congregation_id', congregationId);
+
                     const cityMap: Record<string, string> = {};
                     cities?.forEach(c => { if (c.name) cityMap[c.id] = c.name; });
 

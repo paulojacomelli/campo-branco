@@ -30,25 +30,37 @@ interface VisitReportModalProps {
     address: any;
     onClose: () => void;
     onSave: (data: any) => Promise<void>;
+    onDelete?: () => Promise<void>;
     onViewHistory: () => void;
     congregationType?: 'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE';
     forcedCongregationType?: 'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE'; // Backward compat
 }
 
-export default function VisitReportModal({ address, onClose, onSave, onViewHistory, congregationType: propType, forcedCongregationType }: VisitReportModalProps) {
+export default function VisitReportModal({
+    address,
+    onClose,
+    onSave,
+    onDelete,
+    onViewHistory,
+    congregationType: propType,
+    forcedCongregationType
+}: VisitReportModalProps) {
     const { congregationType: authType } = useAuth();
     // Resolve type: Prop > Forced > Auth > Default
     const congregationType = propType || forcedCongregationType || authType || 'TRADITIONAL';
 
     const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState<'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'contested' | ''>('');
+    const [status, setStatus] = useState<'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'contested' | ''>(
+        (address.visitStatus && address.visitStatus !== 'none') ? address.visitStatus : ''
+    );
     const [isDeaf, setIsDeaf] = useState(address.isDeaf || false);
     const [isMinor, setIsMinor] = useState(address.isMinor || false);
     const [isStudent, setIsStudent] = useState(address.isStudent || false);
     const [isNeurodivergent, setIsNeurodivergent] = useState(address.isNeurodivergent || false);
     const [gender, setGender] = useState<'HOMEM' | 'MULHER' | 'CASAL' | ''>(address.gender || '');
-    const [observations, setObservations] = useState(address.observations || '');
+    const [observations, setObservations] = useState(address.visitNotes || '');
     const [isListening, setIsListening] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const toggleListening = () => {
         if (isListening) {
@@ -58,7 +70,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            alert("Seu navegador não suporta reconhecimento de voz.");
+            toast.error("Seu navegador não suporta reconhecimento de voz.");
             return;
         }
 
@@ -87,17 +99,31 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
         recognition.start();
     };
 
+    const handleDelete = async () => {
+        if (!onDelete) return;
+        setLoading(true);
+        try {
+            await onDelete();
+            onClose();
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao remover visita.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSave = async () => {
         // If status is not selected, but we are editing other fields (tags/notes), we preserve the original status
         const finalStatus = status || address.visitStatus;
 
         if (!finalStatus) {
-            alert("Selecione um resultado para a visita.");
+            toast.error("Selecione um resultado para a visita.");
             return;
         }
 
         if (status === 'contested' && !observations.trim()) {
-            alert("Para contestar a inatividade, é necessário informar o motivo nas observações.");
+            toast.warning("Para contestar a inatividade, é necessário informar o motivo nas observações.");
             return;
         }
 
@@ -115,7 +141,7 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
             onClose();
         } catch (error) {
             console.error(error);
-            alert("Erro ao salvar visita.");
+            toast.error("Erro ao salvar visita.");
         } finally {
             setLoading(false);
         }
@@ -134,12 +160,22 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
 
                     <div className="space-y-6">
                         {/* Address Info */}
-                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
-                            <h3 className="font-bold text-gray-900 dark:text-white text-lg">
-                                {address.street}
-                                {!address.street?.includes(address.number || '') && address.number !== 'S/N' ? `, ${address.number}` : ''}
-                            </h3>
-                            {address.residentName && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{address.residentName}</p>}
+                        <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            <div className="mb-2">
+                                <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">
+                                    {address.street}
+                                    {!address.street?.includes(address.number || '') && address.number !== 'S/N' ? `, ${address.number}` : ''}
+                                </h3>
+                                {address.residentName && <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-0.5">{address.residentName}</p>}
+                            </div>
+
+                            {address.observations && (
+                                <div className="mt-2">
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 font-medium leading-relaxed">
+                                        {address.observations}
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Status Controls */}
@@ -344,13 +380,44 @@ export default function VisitReportModal({ address, onClose, onSave, onViewHisto
                             </button>
                         </div>
 
-                        {status && (
-                            <button
-                                onClick={() => setStatus('')}
-                                className="w-full py-3 text-red-500 text-xs font-bold uppercase tracking-wider hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                                Remover Resposta
-                            </button>
+                        {status && onDelete && (
+                            <div className="pt-2">
+                                {showDeleteConfirm ? (
+                                    <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-4 animate-in slide-in-from-top-2 duration-200">
+                                        <div className="flex items-start gap-3 mb-4">
+                                            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-sm font-bold text-red-800 dark:text-red-400">Tem certeza?</p>
+                                                <p className="text-[10px] text-red-600 dark:text-red-500 font-medium leading-relaxed">
+                                                    Isso removerá esta resposta desta lista. Se optar por continuar, este endereço voltará a ser exibido como pendente para todos que usarem este link.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowDeleteConfirm(false)}
+                                                className="flex-1 py-2 text-[10px] font-bold uppercase bg-white dark:bg-slate-800 text-gray-500 rounded-lg border border-gray-200 dark:border-slate-700 transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleDelete}
+                                                disabled={loading}
+                                                className="flex-1 py-2 text-[10px] font-bold uppercase bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/10 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirmar Remoção"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => setShowDeleteConfirm(true)}
+                                        className="w-full py-3 text-red-500 text-[10px] font-bold uppercase tracking-wider hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"
+                                    >
+                                        Remover Resposta
+                                    </button>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>

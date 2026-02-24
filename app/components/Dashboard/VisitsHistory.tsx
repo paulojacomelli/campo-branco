@@ -13,15 +13,19 @@ import {
     Trash2,
     X,
     Check,
-    Loader2
+    Loader2,
+    AlertCircle
 } from "lucide-react";
 
 import Link from "next/link";
+import { toast } from "sonner";
+import ConfirmationModal from "@/app/components/ConfirmationModal";
 
 export default function VisitsHistory({ scope = 'all', showViewAll = true }: { scope?: 'mine' | 'all', showViewAll?: boolean }) {
     const { user, congregationId, role, isElder, isServant, profileName, loading: authLoading } = useAuth();
     const [visits, setVisits] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -31,11 +35,21 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
         status: ''
     });
 
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
+
     const fetchVisits = useCallback(async () => {
         setLoading(true);
         try {
             // 1. Get Visits from Supabase
-            let query = supabase.from('visits').select('*');
+            // Seleciona apenas colunas usadas na listagem — exclui tags_snapshot (jsonb pesado) e shared_list_id
+            // Schema confirmado: id, territory_id, congregation_id, user_id, visit_date, notes, created_at, date, address_id, status
+            let query = supabase.from('visits').select('id, address_id, user_id, congregation_id, visit_date, status, notes');
 
             if (role !== 'SUPER_ADMIN') {
                 if (congregationId) {
@@ -70,7 +84,8 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
             const userNamesMap = new Map<string, string>();
 
             if (addressIds.length > 0) {
-                const { data: addrs } = await supabase.from('addresses').select('*').in('id', addressIds);
+                // A tabela addresses não tem coluna 'number' — o endereço completo está em 'street'
+                const { data: addrs } = await supabase.from('addresses').select('id, street').in('id', addressIds);
                 if (addrs) addrs.forEach(a => addressMap.set(a.id, a));
             }
 
@@ -85,9 +100,10 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                 const realUserName = v.user_id ? userNamesMap.get(v.user_id) : null;
                 return {
                     ...v,
+                    // 'street' já contém o endereço completo (ex: "Rua X, 123 - Cidade Jardim")
                     addressStreet: address?.street || 'Localização não identificada',
-                    addressNumber: address?.number || '',
-                    displayName: realUserName || v.publisher_name || 'Publicador',
+                    // publisher_name não existe na tabela visits — nome real vem do join com users
+                    displayName: realUserName || 'Publicador',
                     sortDate: v.visit_date ? new Date(v.visit_date) : new Date(0),
                     observations: v.notes || ''
                 };
@@ -102,10 +118,26 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
 
         } catch (error) {
             console.error("Error fetching visits:", error);
+            setHasError(true);
         } finally {
             setLoading(false);
         }
     }, [congregationId, isElder, isServant, role, user?.id, scope, showViewAll]);
+
+    // Timeout for safety
+    useEffect(() => {
+        if (!loading) return;
+
+        const timer = setTimeout(() => {
+            if (loading) {
+                console.warn("VisitsHistory fetch timed out");
+                setHasError(true);
+                setLoading(false);
+            }
+        }, 12000); // 12 seconds buffer
+
+        return () => clearTimeout(timer);
+    }, [loading]);
 
     useEffect(() => {
         // Wait for auth to resolve
@@ -118,6 +150,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
 
         // Only fetch if we have a role assigned (meaning profile sync completed)
         if (role) {
+            setHasError(false);
             fetchVisits();
         }
     }, [user, congregationId, role, fetchVisits, authLoading]);
@@ -132,18 +165,26 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
     }, [openMenuId]);
 
     const handleDelete = async (visit: any) => {
-        if (!confirm("Tem certeza que deseja excluir este registro de visita?")) return;
+        setConfirmModal({
+            isOpen: true,
+            title: "Excluir Registro",
+            message: "Tem certeza que deseja excluir este registro de visita?",
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const { error } = await supabase.from('visits').delete().eq('id', visit.id);
+                    if (error) throw error;
 
-        try {
-            const { error } = await supabase.from('visits').delete().eq('id', visit.id);
-            if (error) throw error;
-
-            // Remove from state
-            setVisits(prev => prev.filter(v => v.id !== visit.id));
-        } catch (error) {
-            console.error("Error deleting visit:", error);
-            alert("Erro ao excluir visita.");
-        }
+                    // Remove from state
+                    setVisits(prev => prev.filter(v => v.id !== visit.id));
+                    toast.success("Visita excluída com sucesso.");
+                } catch (error) {
+                    console.error("Error deleting visit:", error);
+                    toast.error("Erro ao excluir visita.");
+                }
+            }
+        });
     };
 
     const startEdit = (visit: any) => {
@@ -179,7 +220,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
             setEditingId(null);
         } catch (error) {
             console.error("Error updating visit:", error);
-            alert("Erro ao atualizar visita.");
+            toast.error("Erro ao atualizar visita.");
         }
     };
 
@@ -205,7 +246,25 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
 
     if (loading) return (
         <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border h-40 flex items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-light/500" />
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+    );
+
+    if (hasError) return (
+        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border h-46 flex flex-col items-center justify-center text-center">
+            <AlertCircle className="w-8 h-8 text-orange-400 mb-2" />
+            <p className="text-sm font-bold text-main">O carregamento está demorando muito.</p>
+            <p className="text-[10px] text-muted mb-4 px-4">Isso pode ser devido à sua conexão. Deseja tentar novamente?</p>
+            <button
+                onClick={() => {
+                    setHasError(false);
+                    setLoading(true);
+                    fetchVisits();
+                }}
+                className="bg-primary hover:bg-primary-dark text-white text-xs font-bold py-2 px-6 rounded-full transition-colors flex items-center gap-2"
+            >
+                Tentar Novamente
+            </button>
         </div>
     );
 
@@ -361,6 +420,16 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                     ))}
                 </div>
             )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant}
+            />
         </div>
     );
 }

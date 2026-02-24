@@ -27,6 +27,7 @@ import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 import CSVActionButtons from '@/app/components/CSVActionButtons';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 import TerritoryHistoryModal from '@/app/components/TerritoryHistoryModal';
 import TerritoryAssignmentsModal from '@/app/components/TerritoryAssignmentsModal';
 import AssignedUserBadge from '@/app/components/AssignedUserBadge';
@@ -198,24 +199,22 @@ function TerritoryListContent() {
     // Fetch Addresses (for counts and search)
     const fetchAddresses = async () => {
         if (!congregationId || !cityId) return;
-        // Optimization: We could use a VIEW or RPC for counts to avoid fetching all addresses
-        // For now, mirroring existing logic but selecting fewer fields
         try {
-            const { data, error } = await supabase
-                .from('addresses')
-                .select('id, territory_id, is_active, street, number, resident_name, observations, notes, gender, is_deaf, is_neurodivergent, is_student, is_minor')
-                .eq('congregation_id', congregationId)
-                .eq('city_id', cityId);
+            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}`);
+            const resData = await response.json();
 
-            if (error) throw error;
+            if (!resData.success) {
+                throw new Error(resData.error || 'Erro ao buscar endereços');
+            }
+
+            const { addresses: dataFromApi } = resData;
+            const addressesToProcess = dataFromApi || [];
 
             const counts: Record<string, number> = {};
             const gStats: Record<string, { men: number, women: number, couples: number }> = {};
             const searchIndex: Record<string, string> = {};
 
-            const addresses = data || [];
-
-            addresses.forEach((addr: any) => {
+            addressesToProcess.forEach((addr: any) => {
                 if (addr.territory_id && addr.is_active !== false) {
                     counts[addr.territory_id] = (counts[addr.territory_id] || 0) + 1;
 
@@ -224,7 +223,7 @@ function TerritoryListContent() {
 
                     if (!gStats[addr.territory_id]) gStats[addr.territory_id] = { men: 0, women: 0, couples: 0 };
 
-                    const g = addr.gender; // Assuming localized or enum values
+                    const g = addr.gender;
                     if (g === 'HOMEM') gStats[addr.territory_id].men++;
                     else if (g === 'MULHER') gStats[addr.territory_id].women++;
                     else if (g === 'CASAL') gStats[addr.territory_id].couples++;
@@ -234,7 +233,7 @@ function TerritoryListContent() {
             setAddressCounts(counts);
             setGenderStats(gStats);
             setTerritorySearchIndex(searchIndex);
-            setAllAddresses(addresses);
+            setAllAddresses(addressesToProcess);
         } catch (error) {
             console.error("Error fetching addresses:", error);
         }
@@ -568,13 +567,19 @@ function TerritoryListContent() {
                                                         </Link>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        {assignments.length > 0 ? (
+                                                        {t.status === 'OCUPADO' || assignments.length > 0 ? (
                                                             <div className="flex -space-x-2">
-                                                                {assignments.map((a, i) => (
-                                                                    <div key={i} className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold border-2 border-surface" title={a.publisher_id}>
-                                                                        {a.publisher_id.substring(0, 1).toUpperCase()}
-                                                                    </div>
-                                                                ))}
+                                                                {assignments.length > 0 ? (
+                                                                    assignments.map((a, i) => (
+                                                                        <div key={i} className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold border-2 border-surface" title={a.assignedName || 'Designado'}>
+                                                                            {(a.assignedName || 'D').substring(0, 1).toUpperCase()}
+                                                                        </div>
+                                                                    ))
+                                                                ) : (
+                                                                    <span className="px-2 py-1 bg-primary-light/50 text-primary dark:bg-primary-dark/30 dark:text-primary-light rounded-md text-[10px] font-bold uppercase whitespace-nowrap">
+                                                                        Ocupado
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <span className="px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-md text-[10px] font-bold uppercase">
@@ -772,11 +777,17 @@ function TerritoryListContent() {
                                             )}
 
                                             <div onClick={e => e.stopPropagation()}>
-                                                {assignments.length > 0 ? (
-                                                    <button onClick={() => setSelectedTerritoryForAssignments({ id: t.id, name: t.name, assignments })} className="flex flex-col items-end">
+                                                {t.status === 'OCUPADO' || assignments.length > 0 ? (
+                                                    <button onClick={() => assignments.length > 0 && setSelectedTerritoryForAssignments({ id: t.id, name: t.name, assignments })} className="flex flex-col items-end">
                                                         <div className="text-[10px] font-bold text-primary-600 bg-primary-50 border border-primary-100 dark:bg-primary-900/30 dark:border-primary-800 dark:text-primary-400 px-2 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors flex items-center gap-1">
-                                                            <AssignedUserBadge userId={assignments[0].assignedTo} fallbackName={assignments[0].assignedName} />
-                                                            {assignments.length > 1 && <span className="ml-0.5 bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-200 px-1 rounded-full text-[9px]">+{assignments.length - 1}</span>}
+                                                            {assignments.length > 0 ? (
+                                                                <>
+                                                                    <AssignedUserBadge userId={assignments[0].assignedTo} fallbackName={assignments[0].assignedName} />
+                                                                    {assignments.length > 1 && <span className="ml-0.5 bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-200 px-1 rounded-full text-[9px]">+{assignments.length - 1}</span>}
+                                                                </>
+                                                            ) : (
+                                                                <span>Ocupado</span>
+                                                            )}
                                                         </div>
                                                     </button>
                                                 ) : hasSharing ? (
@@ -960,6 +971,15 @@ function TerritoryListContent() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {selectedTerritoryForHistory && (
+                <TerritoryHistoryModal
+                    territoryId={selectedTerritoryForHistory.id}
+                    territoryName={selectedTerritoryForHistory.name}
+                    congregationId={congregationId}
+                    onClose={() => setSelectedTerritoryForHistory(null)}
+                />
             )}
 
             <BottomNav />

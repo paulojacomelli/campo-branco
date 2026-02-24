@@ -33,10 +33,13 @@ import {
     CheckCircle,
     MousePointer2,
     GripVertical,
-    Truck
+    Truck,
+    Hand,
+    Calendar
 } from 'lucide-react';
 import VisitHistoryModal from '@/app/components/VisitHistoryModal';
 import BottomNav from '@/app/components/BottomNav';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 import MapView, { MapItem } from '@/app/components/MapView';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -142,6 +145,9 @@ function AddressListContent() {
     const [selectedTerritoryId, setSelectedTerritoryId] = useState(territoryId);
 
     // UI State
+    const [addressToDelete, setAddressToDelete] = useState<string | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [isInactiveExpanded, setIsInactiveExpanded] = useState(false);
     const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
     const [isMapSelectionMode, setIsMapSelectionMode] = useState(true);
@@ -152,6 +158,16 @@ function AddressListContent() {
 
     // Multi-select state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        variant: 'info' as 'info' | 'danger',
+        confirmText: 'Confirmar',
+        cancelText: 'Cancelar',
+        onConfirm: () => { },
+        onCancel: undefined as (() => void) | undefined
+    });
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [shareExpiration, setShareExpiration] = useState('24h');
@@ -240,7 +256,7 @@ function AddressListContent() {
         if (!congregationId || !territoryId) return;
 
         try {
-            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&territoryId=${territoryId}`);
+            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
             const resData = await response.json();
 
             if (!response.ok) {
@@ -256,9 +272,6 @@ function AddressListContent() {
                 const orderA = a.sort_order ?? 999999;
                 const orderB = b.sort_order ?? 999999;
                 if (orderA !== orderB) return orderA - orderB;
-                if (a.street === b.street) {
-                    return a.number.localeCompare(b.number, undefined, { numeric: true });
-                }
                 return a.street.localeCompare(b.street);
             });
 
@@ -426,13 +439,31 @@ function AddressListContent() {
         setIsCreateModalOpen(true);
     };
 
-    const handleDeleteAddress = async (id: string) => {
-        if (!confirm("Excluir endereço?")) return;
+    const handleDeleteAddress = (id: string) => {
+        setAddressToDelete(id);
+        setIsDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteAddress = async () => {
+        if (!addressToDelete) return;
+        setIsDeleting(true);
         try {
-            const { error } = await supabase.from('addresses').delete().eq('id', id);
+            const { error } = await supabase
+                .from('addresses')
+                .delete()
+                .eq('id', addressToDelete);
+
             if (error) throw error;
+            toast.success("Endereço excluído com sucesso!");
+            fetchAddresses();
+            setIsDeleteDialogOpen(false);
+            setAddressToDelete(null);
+            setOpenMenuId(null);
         } catch (error) {
             console.error("Error deleting address:", error);
+            toast.error("Erro ao excluir endereço.");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -508,6 +539,83 @@ function AddressListContent() {
         else if (isAndroid) url = `geo:0,0?q=${encodeURIComponent(query)}`;
         else url = item.google_maps_link || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
         window.open(url, '_blank');
+    };
+
+    const handleApproveDNV = async (addr: Address) => {
+        try {
+            const addressData = {
+                ...addr,
+                is_active: false,
+                inactivated_at: new Date().toISOString()
+            };
+
+            const response = await fetch('/api/addresses/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addressData)
+            });
+
+            if (!response.ok) throw new Error("Erro ao desativar endereço");
+
+            toast.success("Endereço desativado com sucesso!");
+            fetchAddresses();
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao aprovar solicitação.");
+        }
+    };
+
+    const handleRemoveDNVMark = async (addr: Address) => {
+        try {
+            // Fetch the latest visit for this address to delete it
+            const { data: latestVisit, error: fetchErr } = await supabase
+                .from('visits')
+                .select('id')
+                .eq('address_id', addr.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (fetchErr || !latestVisit) throw new Error("Não foi possível encontrar a visita relacionada.");
+
+            const response = await fetch('/api/visits/delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ visitId: latestVisit.id })
+            });
+
+            if (!response.ok) throw new Error("Erro ao remover marcação");
+
+            toast.success("Marcação removida com sucesso!");
+            fetchAddresses();
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao remover marcação.");
+        }
+    };
+
+    const handleToggleActive = async (addr: Address) => {
+        try {
+            const addressData = {
+                ...addr,
+                is_active: !addr.is_active,
+                inactivated_at: !addr.is_active ? new Date().toISOString() : null
+            };
+
+            const response = await fetch('/api/addresses/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addressData)
+            });
+
+            if (!response.ok) throw new Error("Erro ao atualizar status");
+
+            toast.success(`Endereço ${!addr.is_active ? 'inativado' : 'reativado'} com sucesso!`);
+            fetchAddresses();
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao atualizar status.");
+        }
     };
 
     const handleMapClick = (clickLat: number, clickLng: number) => {
@@ -646,6 +754,17 @@ function AddressListContent() {
                                     <Truck className="w-3 h-3" /> Mudou-se
                                 </span>
                             )}
+                            {/* Deactivation Date for all inactive items */}
+                            {addr.is_active === false && (addr as any).inactivated_at && (
+                                <span className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border border-red-100 dark:border-red-900/30">
+                                    <Calendar className="w-3 h-3" /> Desativado em: {new Date((addr as any).inactivated_at).toLocaleDateString('pt-BR')}
+                                </span>
+                            )}
+                            {addr.is_active !== false && addr.visit_status === 'do_not_visit' && (
+                                <span className="flex items-center gap-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase animate-pulse border border-red-200 dark:border-red-800">
+                                    <Hand className="w-3 h-3" /> Pediu para não ser visitado
+                                </span>
+                            )}
                         </div>
 
                         {addr.observations && (
@@ -657,7 +776,33 @@ function AddressListContent() {
                     </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative flex items-center gap-2">
+                    {addr.is_active !== false && addr.visit_status === 'do_not_visit' && (isElder || isServant) && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmModal({
+                                    isOpen: true,
+                                    title: "Pedido de Não Visitar",
+                                    message: "Este morador solicitou não ser visitado. O que deseja fazer?",
+                                    variant: 'danger',
+                                    confirmText: "Inativar Endereço",
+                                    cancelText: "Remover Marcação",
+                                    onConfirm: () => {
+                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                        handleApproveDNV(addr);
+                                    },
+                                    onCancel: () => {
+                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                        handleRemoveDNVMark(addr);
+                                    }
+                                });
+                            }}
+                            className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm transition-colors flex items-center gap-1 animate-pulse"
+                        >
+                            <Hand className="w-3 h-3" /> Gerenciar Solicitação
+                        </button>
+                    )}
                     {(isElder || isServant) ? (
                         <button
                             onClick={(e) => {
@@ -715,6 +860,33 @@ function AddressListContent() {
                                 >
                                     <Pencil className="w-4 h-4" />
                                     Editar
+                                </button>
+                            )}
+
+                            {(isElder || isServant) && (
+                                <button
+                                    onClick={() => {
+                                        setConfirmModal({
+                                            isOpen: true,
+                                            title: addr.is_active === false ? "Reativar Endereço" : "Desativar Endereço",
+                                            message: addr.is_active === false
+                                                ? "Deseja reativar este endereço para que ele volte a aparecer nos links?"
+                                                : "Deseja desativar este endereço temporariamente?",
+                                            variant: addr.is_active === false ? 'info' : 'danger',
+                                            confirmText: addr.is_active === false ? "Reativar" : "Desativar",
+                                            cancelText: "Cancelar",
+                                            onConfirm: () => {
+                                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                                handleToggleActive(addr);
+                                            },
+                                            onCancel: undefined
+                                        });
+                                        setOpenMenuId(null);
+                                    }}
+                                    className={`flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors w-full text-left ${addr.is_active === false ? 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30' : 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30'}`}
+                                >
+                                    {addr.is_active === false ? <Plus className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                                    {addr.is_active === false ? 'Reativar Endereço' : 'Inativar Endereço'}
                                 </button>
                             )}
 
@@ -1266,6 +1438,33 @@ function AddressListContent() {
                     </div>
                 </div>
             )}
+
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                onCancel={confirmModal.onCancel}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+                variant={confirmModal.variant}
+            />
+
+            {/* Confirmation Modal for Deletion */}
+            <ConfirmationModal
+                isOpen={isDeleteDialogOpen}
+                onClose={() => {
+                    setIsDeleteDialogOpen(false);
+                    setAddressToDelete(null);
+                }}
+                onConfirm={confirmDeleteAddress}
+                title="Excluir Endereço"
+                message="Tem certeza que deseja excluir permanentemente este endereço? Esta ação não pode ser desfeita."
+                confirmText="Excluir"
+                variant="danger"
+                isLoading={isDeleting}
+            />
 
             <BottomNav />
         </div >

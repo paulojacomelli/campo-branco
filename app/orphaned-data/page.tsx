@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Database, Trash2, Link as LinkIcon, AlertTriangle, Check, Loader2, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 interface OrphanedItem {
     id: string;
@@ -35,6 +36,14 @@ export default function OrphanedDataPage() {
     const [selCong, setSelCong] = useState('');
     const [selCity, setSelCity] = useState('');
     const [selTerr, setSelTerr] = useState('');
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'info';
+    }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
     const [saving, setSaving] = useState(false);
     const [editName, setEditName] = useState('');
@@ -346,25 +355,34 @@ export default function OrphanedDataPage() {
     };
 
     const handleDelete = async (id: string, type: string) => {
-        if (!confirm("Tem certeza que deseja excluir este item permanentemente?")) return;
-        try {
-            const tableName = type === 'address' ? 'addresses' :
-                type === 'territory' ? 'territories' :
-                    type === 'witnessing' ? 'witnessing_points' :
-                        type === 'visit' ? 'visits' : 'cities';
+        setConfirmModal({
+            isOpen: true,
+            title: "Excluir Item",
+            message: "Tem certeza que deseja excluir este item permanentemente?",
+            variant: 'danger',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const tableName = type === 'address' ? 'addresses' :
+                        type === 'territory' ? 'territories' :
+                            type === 'witnessing' ? 'witnessing_points' :
+                                type === 'visit' ? 'visits' : 'cities';
 
-            const { error } = await supabase
-                .from(tableName)
-                .delete()
-                .eq('id', id);
+                    const { error } = await supabase
+                        .from(tableName)
+                        .delete()
+                        .eq('id', id);
 
-            if (error) throw error;
+                    if (error) throw error;
 
-            setOrphans(prev => prev.filter(o => o.id !== id));
-        } catch (error) {
-            console.error("Error deleting:", error);
-            toast.error("Erro ao excluir.");
-        }
+                    setOrphans(prev => prev.filter(o => o.id !== id));
+                    toast.success("Item excluído com sucesso.");
+                } catch (error) {
+                    console.error("Error deleting:", error);
+                    toast.error("Erro ao excluir.");
+                }
+            }
+        });
     };
 
     if (authLoading || !isSuperAdmin) return null;
@@ -569,6 +587,16 @@ export default function OrphanedDataPage() {
                     </div>
                 )
             }
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                variant={confirmModal.variant}
+            />
         </div >
     );
 }

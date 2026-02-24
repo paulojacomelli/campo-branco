@@ -2,51 +2,88 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 
-export const dynamic = 'force-dynamic';
-
 export async function GET(req: Request) {
     try {
         const supabase = await createServerClient();
         const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !currentUser) {
-            return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
         const url = new URL(req.url);
-        const congregation_id = url.searchParams.get('congregationId');
-        const territory_id = url.searchParams.get('territoryId');
+        const congregationId = url.searchParams.get('congregationId');
+        const cityId = url.searchParams.get('cityId');
+        const territoryId = url.searchParams.get('territoryId');
 
-        if (!congregation_id || !territory_id) {
+        if (!congregationId || !cityId) {
             return NextResponse.json({ error: 'Parâmetros ausentes' }, { status: 400 });
         }
 
-        // Verificar permissão
-        const { data: adminData } = await supabase
+        // Auth Logic (Try ID + Email verification)
+        let { data: adminData } = await supabaseAdmin
             .from('users')
-            .select('role, congregation_id')
+            .select('role, congregation_id, email')
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregation_id)) {
-            return NextResponse.json({ error: 'Acesso negado à congregação.' }, { status: 403 });
+        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
+            const { data: fallbackData } = await supabaseAdmin
+                .from('users')
+                .select('role, congregation_id, email')
+                .eq('email', currentUser.email)
+                .single();
+            if (fallbackData) adminData = fallbackData;
         }
 
-        const { data: addresses, error } = await supabaseAdmin
+        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
+        const reqCong = String(congregationId || '').toLowerCase().trim();
+
+        const isAllowed = adminData && (
+            adminData.role === 'SUPER_ADMIN' ||
+            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || '')))
+        );
+
+        if (!isAllowed) {
+            return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
+        }
+
+        // Fetch addresses using Admin to bypass RLS
+        let query = supabaseAdmin
             .from('addresses')
-            .select('*')
-            .eq('congregation_id', congregation_id)
-            .eq('territory_id', territory_id)
-            .order('sort_order', { ascending: true });
+            .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor, inactivated_at')
+            .eq('congregation_id', congregationId);
 
-        if (error) {
-            console.error("Supabase Admin Error:", error);
-            throw error;
+        if (territoryId) {
+            query = query.eq('territory_id', territoryId);
+        } else if (cityId) {
+            query = query.eq('city_id', cityId);
         }
 
-        return NextResponse.json({ addresses: addresses || [] });
+        const { data: addresses, error: aErr } = await query;
+        if (aErr) throw aErr;
+
+        // 2. Fetch Latest Visits for these addresses
+        const { data: latestVisits, error: vErr } = await supabaseAdmin
+            .from('visits')
+            .select('address_id, status, created_at')
+            .in('address_id', (addresses || []).map(a => a.id))
+            .order('created_at', { ascending: false });
+
+        if (vErr) console.error("[ADDRESS LIST API] Visits fetch error:", vErr);
+
+        // Map latest visit to each address
+        const addressesWithStatus = (addresses || []).map(addr => {
+            const lastVisit = (latestVisits || []).find(v => v.address_id === addr.id);
+            return {
+                ...addr,
+                visit_status: lastVisit?.status || 'none',
+                last_visited_at: lastVisit?.created_at
+            };
+        });
+
+        return NextResponse.json({ success: true, addresses: addressesWithStatus });
     } catch (error: any) {
-        console.error("List Addresses API error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
