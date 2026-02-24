@@ -26,7 +26,7 @@ export async function GET(req: Request) {
         // mas aqui estamos usando a tabela users), vamos garantir que ele tenha acesso.
         const isAllowed = adminData && (
             adminData.role === 'SUPER_ADMIN' ||
-            (adminData.congregation_id === congregationId && (adminData.role === 'ELDER' || adminData.role === 'SERVANT' || adminData.role === 'ADMIN'))
+            (String(adminData.congregation_id).toLowerCase().trim() === String(congregationId).toLowerCase().trim() && (adminData.role === 'ELDER' || adminData.role === 'SERVANT' || adminData.role === 'ADMIN'))
         );
 
         if (!isAllowed) {

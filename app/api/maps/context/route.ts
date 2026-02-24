@@ -23,7 +23,7 @@ export async function GET(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
+        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && String(adminData.congregation_id).toLowerCase().trim() !== String(congregationId).toLowerCase().trim())) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 

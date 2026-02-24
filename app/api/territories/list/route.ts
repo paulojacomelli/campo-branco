@@ -23,7 +23,7 @@ export async function GET(req: Request) {
             .single();
 
         // Permite visualizar quem é SUPER_ADMIN ou se a congregationId bate
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
+        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && String(adminData.congregation_id).toLowerCase().trim() !== String(congregationId).toLowerCase().trim())) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
