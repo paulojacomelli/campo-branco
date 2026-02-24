@@ -15,8 +15,8 @@ export async function GET(req: Request) {
         const cityId = url.searchParams.get('cityId');
         const congregationId = url.searchParams.get('congregationId');
 
-        // Add auth checking logic
-        const { data: adminData } = await supabase
+        // Add auth checking logic (Using Admin to bypass RLS)
+        const { data: adminData } = await supabaseAdmin
             .from('users')
             .select('role, congregation_id')
             .eq('id', currentUser.id)
