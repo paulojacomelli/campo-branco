@@ -22,11 +22,12 @@ export async function GET(req: Request) {
             .single();
 
         // Permite visualizar se for SUPER_ADMIN ou se a congregationId bater com o registro do usuário
-        // Se não houver adminData (usuário novo), mas ele tiver o role correto no token (podemos confiar no token se necessário, 
-        // mas aqui estamos usando a tabela users), vamos garantir que ele tenha acesso.
+        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
+        const reqCong = String(congregationId || '').toLowerCase().trim();
+
         const isAllowed = adminData && (
             adminData.role === 'SUPER_ADMIN' ||
-            (String(adminData.congregation_id).toLowerCase().trim() === String(congregationId).toLowerCase().trim() && (adminData.role === 'ELDER' || adminData.role === 'SERVANT' || adminData.role === 'ADMIN'))
+            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN'].includes(adminData.role || '')))
         );
 
         if (!isAllowed) {
