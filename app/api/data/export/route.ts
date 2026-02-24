@@ -178,7 +178,13 @@ export async function GET(req: Request) {
 
         // UTF-8 BOM para compatibilidade com Excel
         const BOM = '\ufeff';
-        const finalContent = BOM + csvContent;
+        const encoder = new TextEncoder();
+        const csvBytes = encoder.encode(csvContent);
+        const bomBytes = new Uint8Array([0xEF, 0xBB, 0xBF]);
+
+        const finalContent = new Uint8Array(bomBytes.length + csvBytes.length);
+        finalContent.set(bomBytes);
+        finalContent.set(csvBytes, bomBytes.length);
 
         const fileName = `export_campo_branco_${new Date().getTime()}.csv`;
 

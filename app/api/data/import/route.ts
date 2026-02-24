@@ -87,7 +87,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 });
         }
 
-        const text = await file.text();
+        const buffer = await file.arrayBuffer();
+        const decoder = new TextDecoder('utf-8');
+        const text = decoder.decode(buffer);
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
 
         if (lines.length < 2) {

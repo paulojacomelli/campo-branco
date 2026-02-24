@@ -153,7 +153,11 @@ export default function CSVImportModal({
         if (!f) return;
         setFile(f);
         setResults(null);
-        const text = await f.text();
+
+        const buffer = await f.arrayBuffer();
+        const decoder = new TextDecoder('utf-8');
+        const text = decoder.decode(buffer);
+
         const p = buildPreview(text);
         setPreview(p);
         // Expandir todas as cidades por padrão
