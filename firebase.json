@@ -2,7 +2,7 @@
     "hosting": [
         {
             "site": "campo-branco",
-            "source": ".",
+            "public": "public",
             "ignore": [
                 "firebase.json",
                 "**/.*",
@@ -12,7 +12,7 @@
         },
         {
             "site": "campobranco",
-            "source": ".",
+            "public": "public",
             "ignore": [
                 "firebase.json",
                 "**/.*",

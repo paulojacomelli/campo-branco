@@ -2,6 +2,11 @@
 <html lang="pt-BR">
 
 <head>
+    <script>
+        if (window.location.hostname !== 'localhost' && window.location.hostname.endsWith('.web.app')) {
+            window.location.replace('https://campobranco.vercel.app' + window.location.pathname + window.location.search);
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Source e Transparência | Campo Branco</title>
@@ -115,9 +120,15 @@
                     </div>
 
                     <h3>Transparência Técnica</h3>
-                    <p>A arquitetura do sistema foi projetada para garantir que os dados das congregações sejam isolados
-                        e protegidos. Ser <em>open source</em> permite que a comunidade técnica audite nossas práticas
-                        de segurança e privacidade a qualquer momento.</p>
+                    <p>A arquitetura do- **Redirecionamento Inteligente**: Implementamos um script que redireciona
+                        automaticamente acessos via `.web.app` para `campobranco.vercel.app`, facilitando a migração sem
+                        quebrar acessos em desenvolvimento (localhost).
+                        - **GitHub Pages (Branch homepage)**: Criamos e isolamos a branch `homepage` contendo apenas os
+                        arquivos estáticos na raiz. Isso permite usar o GitHub Pages de forma independente do código do
+                        aplicativo.
+                        - **Acessibilidade VLibras**: Widget VLibras integrado em todas as páginas para garantir
+                        conformidade e inclusão.
+                        - **Destaque GitHub**: Card premium na Home Page incentivando contribuições open-source.</p>
 
                     <hr class="my-8 border-gray-100" />
                     <p class="text-center text-xs text-gray-400 italic">
