@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { X, Plus, Loader2 } from 'lucide-react';
+import { X, Plus, Loader2, Link2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
@@ -11,47 +11,18 @@ interface NewPointModalProps {
     cityId: string;
     congregationId: string;
     cityName: string;
+    onSuccess?: () => void;
 }
 
-export default function NewPointModal({ isOpen, onClose, cityId, congregationId, cityName }: NewPointModalProps) {
+export default function NewPointModal({ isOpen, onClose, cityId, congregationId, cityName, onSuccess }: NewPointModalProps) {
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
-    const [lat, setLat] = useState('');
-    const [lng, setLng] = useState('');
+    const [googleMapsLink, setGoogleMapsLink] = useState('');
+    const [wazeLink, setWazeLink] = useState('');
     const [schedule, setSchedule] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleSearchLocation = async () => {
-        if (!address.trim()) {
-            toast.error("Digite um endereço para buscar.");
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const query = `${address}, ${cityName}, Brasil`;
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
-                headers: { 'User-Agent': 'CampoBrancoApp/1.0' }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.length > 0) {
-                    setLat(data[0].lat);
-                    setLng(data[0].lon);
-                } else {
-                    toast.error("Endereço não encontrado no mapa.");
-                }
-            } else {
-                toast.error("Erro ao buscar endereço.");
-            }
-        } catch (error) {
-            console.error("Error fetching location:", error);
-            toast.error("Erro de conexão.");
-        } finally {
-            setLoading(false);
-        }
-    };
+    // Search function removed as requested
 
     const handleCreatePoint = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -64,8 +35,8 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
                 address: address.trim(),
                 city_id: cityId,
                 congregation_id: congregationId,
-                lat: lat ? parseFloat(lat) : null,
-                lng: lng ? parseFloat(lng) : null,
+                google_maps_link: googleMapsLink.trim(),
+                waze_link: wazeLink.trim(),
                 schedule: schedule.trim(),
                 status: 'AVAILABLE',
                 current_publishers: []
@@ -75,13 +46,19 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
 
             setName('');
             setAddress('');
-            setLat('');
-            setLng('');
+            setGoogleMapsLink('');
+            setWazeLink('');
             setSchedule('');
+            toast.success("Ponto criado com sucesso!");
+            if (onSuccess) onSuccess();
             onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error creating point:", error);
-            toast.error("Erro ao criar ponto.");
+            if (error?.message?.includes('google_maps_link') || error?.message?.includes('column')) {
+                toast.error("Erro de Versão: Colunas faltantes no banco de dados. Contate o administrador.");
+            } else {
+                toast.error("Erro ao criar ponto.");
+            }
         } finally {
             setLoading(false);
         }
@@ -114,21 +91,53 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Endereço</label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                                className="w-full bg-gray-50 border-none rounded-lg p-4 font-medium text-gray-900 focus:ring-2 focus:ring-amber-500/20 outline-none"
-                                placeholder="Rua..."
-                            />
-                            <button
-                                type="button"
-                                onClick={handleSearchLocation}
-                                className="bg-amber-100 text-amber-700 p-3 rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-amber-200 transition-colors"
-                            >
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Mapa'}
-                            </button>
+                        <input
+                            type="text"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            className="w-full bg-gray-50 border-none rounded-lg p-4 font-medium text-gray-900 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                            placeholder="Rua..."
+                        />
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">
+                                Google Maps
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={googleMapsLink}
+                                    onChange={(e) => setGoogleMapsLink(e.target.value)}
+                                    className="w-full bg-gray-50 border-none rounded-lg p-3 pr-10 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                                    placeholder="Link..."
+                                />
+                                <img
+                                    src="/icons/google-maps.svg"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full object-cover pointer-events-none"
+                                    alt=""
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">
+                                Waze
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={wazeLink}
+                                    onChange={(e) => setWazeLink(e.target.value)}
+                                    className="w-full bg-gray-50 border-none rounded-lg p-3 pr-10 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                                    placeholder="Link..."
+                                />
+                                <img
+                                    src="/icons/waze.svg"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full object-cover pointer-events-none"
+                                    alt=""
+                                />
+                            </div>
                         </div>
                     </div>
                     <div>

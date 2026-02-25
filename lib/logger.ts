@@ -16,6 +16,13 @@ if (typeof window !== 'undefined') {
     };
 
     console.error = (...args) => {
+        const errorMsg = String(args[0] || '');
+        // Ignora erros comuns de extensões do navegador que poluem o console
+        if (errorMsg.includes('message channel closed') || errorMsg.includes('Extension context invalidated')) {
+            originalError.apply(console, args);
+            return;
+        }
+
         addLog('ERROR', args);
         errorCount++;
         // Dispara um evento customizado para notificar o botão flutuante de bug
@@ -31,10 +38,25 @@ if (typeof window !== 'undefined') {
 
 function addLog(level: string, args: any[]) {
     try {
+        const firstArg = String(args[0] || '');
+        if (firstArg.includes('message channel closed') || firstArg.includes('Extension context invalidated')) {
+            return;
+        }
+
         const time = new Date().toLocaleTimeString('pt-BR');
-        const message = args.map(arg =>
-            typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ');
+        const message = args.map(arg => {
+            if (arg instanceof Error) {
+                return `${arg.name}: ${arg.message}${arg.stack ? `\n${arg.stack}` : ''}`;
+            }
+            if (typeof arg === 'object' && arg !== null) {
+                try {
+                    return JSON.stringify(arg);
+                } catch (e) {
+                    return '[Unserializable Object]';
+                }
+            }
+            return String(arg);
+        }).join(' ');
 
         logs.push(`[${time}] [${level}] ${message}`);
 

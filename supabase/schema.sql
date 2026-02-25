@@ -185,18 +185,14 @@ CREATE TABLE IF NOT EXISTS public.visits (
 DROP FUNCTION IF EXISTS public.get_auth_role() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS user_role AS $$
-BEGIN
-    RETURN (SELECT role FROM public.users WHERE id = (select auth.uid()));
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+    SELECT role::user_role FROM public.users WHERE id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 DROP FUNCTION IF EXISTS public.get_auth_congregation() CASCADE;
 CREATE OR REPLACE FUNCTION public.get_auth_congregation()
 RETURNS TEXT AS $$
-BEGIN
-    RETURN (SELECT congregation_id FROM public.users WHERE id = (select auth.uid()));
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+    SELECT congregation_id FROM public.users WHERE id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- ##########################################################
 -- 4. POLÍTICAS DE SEGURANÇA (RLS)

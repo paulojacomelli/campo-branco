@@ -18,7 +18,8 @@ import {
     Pencil,
     MoreVertical,
     Navigation,
-    LogOut
+    LogOut,
+    AlertCircle
 } from 'lucide-react';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
@@ -41,6 +42,8 @@ interface WitnessingPoint {
     congregation_id: string; // snake_case
     lat?: number;
     lng?: number;
+    google_maps_link?: string;
+    waze_link?: string;
     status: 'AVAILABLE' | 'OCCUPIED';
     schedule?: string;
     current_publishers?: string[]; // snake_case
@@ -58,6 +61,7 @@ function WitnessingPointListContent() {
     const [points, setPoints] = useState<WitnessingPoint[]>([]);
 
     const [loading, setLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [cityName, setCityName] = useState('');
 
@@ -88,6 +92,21 @@ function WitnessingPointListContent() {
                 });
         }
     }, [cityId]);
+
+    // Timeout de segurança para evitar carregamento infinito
+    useEffect(() => {
+        if (!loading) return;
+
+        const timer = setTimeout(() => {
+            if (loading) {
+                console.warn("Witnessing points fetch timed out");
+                setHasError(true);
+                setLoading(false);
+            }
+        }, 12000); // 12 segundos de tolerância
+
+        return () => clearTimeout(timer);
+    }, [loading]);
 
     // Fetch Points & Subscription
     const fetchPoints = useCallback(async () => {
@@ -151,7 +170,7 @@ function WitnessingPointListContent() {
                 subscription.unsubscribe();
             }, 100);
         };
-    }, [congregationId, cityId, fetchPoints]);
+    }, [congregationId, cityId, fetchPoints, authLoading]);
 
     // Cleanup Expired Check-ins
     useEffect(() => {
@@ -227,6 +246,12 @@ function WitnessingPointListContent() {
     };
 
     const handleOpenPointMap = (point: WitnessingPoint) => {
+        // Se houver link direto do Maps, usa ele prioritariamente
+        if (point.google_maps_link) {
+            window.open(point.google_maps_link, '_blank');
+            return;
+        }
+
         const query = point.address;
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const isAndroid = /Android/i.test(navigator.userAgent);
@@ -431,6 +456,22 @@ function WitnessingPointListContent() {
 
                     {loading ? (
                         <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-amber-500" /></div>
+                    ) : hasError ? (
+                        <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border flex flex-col items-center justify-center text-center">
+                            <AlertCircle className="w-8 h-8 text-orange-400 mb-2" />
+                            <p className="text-sm font-bold text-main">O carregamento está demorando muito.</p>
+                            <p className="text-[10px] text-muted mb-4 px-4 text-pretty leading-relaxed">Isso pode ocorrer se houver instabilidade no banco de dados ou em sua conexão.</p>
+                            <button
+                                onClick={() => {
+                                    setHasError(false);
+                                    setLoading(true);
+                                    fetchPoints();
+                                }}
+                                className="bg-primary hover:bg-primary-dark text-white text-xs font-bold py-2 px-6 rounded-full transition-colors flex items-center gap-2"
+                            >
+                                Tentar Novamente
+                            </button>
+                        </div>
                     ) : filteredPoints.length === 0 ? (
                         <div className="text-center py-12 opacity-50">
                             <Store className="w-12 h-12 mx-auto mb-3 text-muted" />
@@ -465,17 +506,45 @@ function WitnessingPointListContent() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            {/* Navigation Button */}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleOpenPointMap(point);
-                                                }}
-                                                className="p-2 text-primary hover:text-primary-dark hover:bg-primary-light/50 dark:hover:bg-primary-dark/20 rounded-lg transition-all mr-1"
-                                                title="Navegar"
-                                            >
-                                                <Navigation className="w-5 h-5" />
-                                            </button>
+                                            {/* Navigation Buttons */}
+                                            <div className="flex gap-1 mr-1">
+                                                {point.google_maps_link && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            window.open(point.google_maps_link, '_blank');
+                                                        }}
+                                                        className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                                        title="Google Maps"
+                                                    >
+                                                        <Navigation className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                                {point.waze_link && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            window.open(point.waze_link, '_blank');
+                                                        }}
+                                                        className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all"
+                                                        title="Waze"
+                                                    >
+                                                        <Navigation className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                                {!point.google_maps_link && !point.waze_link && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenPointMap(point);
+                                                        }}
+                                                        className="p-2 text-primary hover:text-primary-dark hover:bg-primary-light/50 dark:hover:bg-primary-dark/20 rounded-lg transition-all"
+                                                        title="Navegar"
+                                                    >
+                                                        <Navigation className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                            </div>
 
                                             {canEdit && (
                                                 <div className="relative">
@@ -614,6 +683,7 @@ function WitnessingPointListContent() {
                 cityId={cityId || ''}
                 congregationId={congregationId || ''}
                 cityName={cityName}
+                onSuccess={fetchPoints}
             />
 
             {/* Edit Modal */}
@@ -625,6 +695,7 @@ function WitnessingPointListContent() {
                 }}
                 point={editingPoint}
                 cityName={cityName}
+                onSuccess={fetchPoints}
             />
 
 

@@ -46,10 +46,14 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
     const fetchVisits = useCallback(async () => {
         setLoading(true);
         try {
-            // 1. Get Visits from Supabase
-            // Seleciona apenas colunas usadas na listagem — exclui tags_snapshot (jsonb pesado) e shared_list_id
-            // Schema confirmado: id, territory_id, congregation_id, user_id, visit_date, notes, created_at, date, address_id, status
-            let query = supabase.from('visits').select('id, address_id, user_id, congregation_id, visit_date, status, notes');
+            // 1. Get Visits from Supabase with Joins
+            // Realizamos o JOIN direto no banco para evitar múltiplas chamadas (N+1 queries)
+            // addresses(street) e users(name) trazem os dados relacionados
+            let query = supabase.from('visits').select(`
+                id, address_id, user_id, congregation_id, visit_date, status, notes,
+                addresses (street),
+                users (name)
+            `);
 
             if (role !== 'SUPER_ADMIN') {
                 if (congregationId) {
@@ -61,13 +65,15 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                 }
             }
 
-            query = query.order('visit_date', { ascending: false }).limit(showViewAll ? 10 : 100);
+            // Aplicamos o filtro de escopo antes do limite se possível, 
+            // mas como o filtro de escopo depende de lógica do usuário, mantemos o limite um pouco maior
+            query = query.order('visit_date', { ascending: false }).limit(showViewAll ? 20 : 100);
 
             const { data: rawVisitsData, error } = await query;
             if (error) throw error;
             const rawVisits = rawVisitsData || [];
 
-            // Filter logic for non-admins (Scoped results)
+            // 2. Filter logic for non-admins (Scoped results)
             const filteredVisits = rawVisits.filter(v => {
                 if (scope === 'mine' && v.user_id !== user?.id) return false;
                 if (scope === 'all' && role !== 'SUPER_ADMIN' && !isElder && !isServant) {
@@ -76,34 +82,13 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                 return true;
             });
 
-            // 2. Fetch required addresses and users details
-            const addressIds = Array.from(new Set(filteredVisits.map(v => v.address_id).filter(id => id)));
-            const userIds = Array.from(new Set(filteredVisits.map(v => v.user_id).filter(id => id)));
-
-            const addressMap = new Map<string, any>();
-            const userNamesMap = new Map<string, string>();
-
-            if (addressIds.length > 0) {
-                // A tabela addresses não tem coluna 'number' — o endereço completo está em 'street'
-                const { data: addrs } = await supabase.from('addresses').select('id, street').in('id', addressIds);
-                if (addrs) addrs.forEach(a => addressMap.set(a.id, a));
-            }
-
-            if (userIds.length > 0) {
-                const { data: users } = await supabase.from('users').select('id, name').in('id', userIds);
-                if (users) users.forEach(u => userNamesMap.set(u.id, u.name));
-            }
-
-            // 3. Merge
-            const mergedVisits = filteredVisits.map(v => {
-                const address = v.address_id ? addressMap.get(v.address_id) : null;
-                const realUserName = v.user_id ? userNamesMap.get(v.user_id) : null;
+            // 3. Transform and Merge
+            const mergedVisits = filteredVisits.map((v: any) => {
                 return {
                     ...v,
-                    // 'street' já contém o endereço completo (ex: "Rua X, 123 - Cidade Jardim")
-                    addressStreet: address?.street || 'Localização não identificada',
-                    // publisher_name não existe na tabela visits — nome real vem do join com users
-                    displayName: realUserName || 'Publicador',
+                    // Dados vindos do join estão em objetos aninhados
+                    addressStreet: v.addresses?.street || 'Localização não identificada',
+                    displayName: v.users?.name || 'Publicador',
                     sortDate: v.visit_date ? new Date(v.visit_date) : new Date(0),
                     observations: v.notes || ''
                 };

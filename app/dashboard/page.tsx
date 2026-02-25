@@ -374,21 +374,25 @@ export default function DashboardPage() {
                 if (!congregationId && role !== 'SUPER_ADMIN') return;
                 const targetCong = congregationId || '00000000-0000-0000-0000-000000000000';
 
-                // Fetch all related data for validation
+                // Fetch data efficiently
+                // 1. For large tables, we use head counts (only get total records)
+                // 2. For territories, we join cities to avoid separate mapping
                 const [
                     { data: citiesData },
                     { data: territoriesData },
-                    { data: addressesData },
-                    { data: pointsData },
-                    { data: visitsData },
+                    { count: addressesCount },
+                    { count: pointsCount },
+                    { count: visitsCount },
                     { data: historyData }
                 ] = await Promise.all([
                     supabase.from('cities').select('id, name').eq('congregation_id', targetCong),
-                    supabase.from('territories').select('id, name, notes, city_id, manual_last_completed_date, last_visit, status, assigned_to').eq('congregation_id', targetCong),
-                    supabase.from('addresses').select('id, territory_id, is_active').eq('congregation_id', targetCong),
-                    supabase.from('witnessing_points').select('id, city_id').eq('congregation_id', targetCong),
-                    supabase.from('visits').select('id').eq('congregation_id', targetCong),
-                    supabase.from('shared_lists').select('id, territory_id, created_at, returned_at, status').eq('congregation_id', targetCong)
+                    supabase.from('territories').select(`
+                        id, name, notes, city_id, manual_last_completed_date, last_visit, status, assigned_to
+                    `).eq('congregation_id', targetCong),
+                    supabase.from('addresses').select('*', { count: 'exact', head: true }).eq('congregation_id', targetCong).eq('is_active', true),
+                    supabase.from('witnessing_points').select('*', { count: 'exact', head: true }).eq('congregation_id', targetCong),
+                    supabase.from('visits').select('*', { count: 'exact', head: true }).eq('congregation_id', targetCong),
+                    supabase.from('shared_lists').select('territory_id, created_at, returned_at').eq('congregation_id', targetCong)
                 ]);
 
                 // 1. Validate Cities
@@ -396,21 +400,11 @@ export default function DashboardPage() {
                 const cityMap: Record<string, string> = {};
                 citiesData?.forEach(c => cityMap[c.id] = c.name);
 
-                // 2. Validate Territories (must have valid city_id)
+                // 2. Validate Territories
                 const validTerritories = territoriesData?.filter(t => t.city_id && validCityIds.has(t.city_id)) || [];
                 const validTerritoryIds = new Set(validTerritories.map(t => t.id));
 
-                // 3. Validate Addresses (must be active AND have valid territory_id)
-                const activeAddresses = addressesData?.filter(a =>
-                    a.is_active !== false &&
-                    a.territory_id &&
-                    validTerritoryIds.has(a.territory_id)
-                ) || [];
-
-                // 4. Validate Points
-                const activePoints = pointsData?.filter(p => p.city_id && validCityIds.has(p.city_id)) || [];
-
-                // 5. Shared History / Coverage
+                // 3. Process History for Coverage
                 const latestWorkMap = new Map<string, number>();
                 const latestAnyActivityMap = new Map<string, number>();
 
@@ -502,9 +496,9 @@ export default function DashboardPage() {
                     congregations: (role === 'SUPER_ADMIN' && !congregationId) ? 0 : 1, // simplified
                     cities: citiesData?.length || 0,
                     maps: mapsCount,
-                    visits: visitsData?.length || 0,
-                    addresses: activeAddresses.length,
-                    publicWitnessing: activePoints.length,
+                    visits: visitsCount || 0,
+                    addresses: addressesCount || 0,
+                    publicWitnessing: pointsCount || 0,
                     revisits: 0,
                     pubs: 0,
                     coverage: Math.floor(coverageVal)

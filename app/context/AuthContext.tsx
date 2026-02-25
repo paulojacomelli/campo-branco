@@ -79,50 +79,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }, 10000);
 
             try {
-                // 1. Get Session
-                const { data: { session: currentSession } } = await supabase.auth.getSession();
+                // Short delay to allow browser to stabilize (avoids some AbortErrors in Dev)
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (!isMounted) return;
 
-                if (currentSession?.user) {
+                // 1. Get Session
+                const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+
+                if (sessionError) {
+                    if (sessionError.message?.includes('AbortError')) {
+                        console.warn("Session fetch aborted, will rely on onAuthStateChange");
+                    } else {
+                        throw sessionError;
+                    }
+                }
+
+                if (isMounted && currentSession?.user) {
                     setUser(currentSession.user);
                     setSession(currentSession);
                     await fetchUserProfile(currentSession.user);
-                } else {
+                } else if (isMounted) {
                     setLoading(false);
                 }
 
-                // 2. Listen for Auth Changes
-                const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-                    if (!isMounted) return;
-
-                    if (newSession?.user) {
-                        setUser(newSession.user);
-                        setSession(newSession);
-                        await fetchUserProfile(newSession.user);
-                    } else {
-                        setUser(null);
-                        setSession(null);
-                        setActualRole(null);
-                        setSimulatedRole(null);
-                        setCongregationId(null);
-                        setProfileName(null);
-                        setLoading(false);
-                    }
-                });
-
                 clearTimeout(timeout);
-                return () => {
-                    subscription.unsubscribe();
-                };
-            } catch (err) {
-                console.error("Critical Auth Init Error:", err);
-                if (isMounted) setLoading(false);
+            } catch (err: any) {
+                // Ignore AbortError as it usually means a new request is coming
+                if (err.name === 'AbortError' || err.message?.includes('AbortError')) {
+                    console.warn("Auth init aborted (harmless)");
+                } else {
+                    console.error("Critical Auth Init Error:", err);
+                    if (isMounted) setLoading(false);
+                }
                 clearTimeout(timeout);
             }
         };
 
+        // 2. Listen for Auth Changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+            if (!isMounted) return;
+
+            if (newSession?.user) {
+                setUser(newSession.user);
+                setSession(newSession);
+                await fetchUserProfile(newSession.user);
+            } else {
+                setUser(null);
+                setSession(null);
+                setActualRole(null);
+                setSimulatedRole(null);
+                setCongregationId(null);
+                setProfileName(null);
+                setLoading(false);
+            }
+        });
+
         initializeAuth();
 
-        return () => { isMounted = false; };
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const fetchUserProfile = async (currentUser: User) => {

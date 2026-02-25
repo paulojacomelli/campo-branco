@@ -51,7 +51,7 @@ export async function GET(req: Request) {
         // Fetch addresses using Admin to bypass RLS
         let query = supabaseAdmin
             .from('addresses')
-            .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor, inactivated_at')
+            .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor, inactivated_at, google_maps_link, waze_link, lat, lng')
             .eq('congregation_id', congregationId);
 
         if (territoryId) {

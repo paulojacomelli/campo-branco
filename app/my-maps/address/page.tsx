@@ -1164,211 +1164,225 @@ function AddressListContent() {
 
 
             {/* Create Modal */}
-            {
-                isCreateModalOpen && (
-                    <div className="fixed inset-0 z-[1000] overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                        <div className="flex min-h-full items-center justify-center p-4">
-                            <div className="bg-white dark:bg-slate-900 rounded-xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800 my-8">
-                                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                                    {editingId ? <Pencil className="w-6 h-6 text-blue-600" /> : <Plus className="w-6 h-6 text-blue-600" />}
-                                    {editingId ? 'Editar Endereço' : 'Novo Endereço'}
-                                </h2>
-                                <form onSubmit={handleCreateAddress} className="space-y-4">
-                                    {/* Status Header */}
-                                    <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
-                                        <span className="font-bold text-sm text-gray-700 dark:text-gray-300">Status do Endereço</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsActive(!isActive)}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isActive ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                                        >
-                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isActive ? 'translate-x-6' : 'translate-x-1'}`} />
-                                        </button>
+            {isCreateModalOpen && (
+                <div className="fixed inset-0 z-[1000] overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="flex min-h-full items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-900 rounded-xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-300 border border-transparent dark:border-slate-800 my-8">
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                                {editingId ? <Pencil className="w-6 h-6 text-blue-600" /> : <Plus className="w-6 h-6 text-blue-600" />}
+                                {editingId ? 'Editar Endereço' : 'Novo Endereço'}
+                            </h2>
+                            <form onSubmit={handleCreateAddress} className="space-y-4">
+                                {/* Status Header */}
+                                <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                                    <span className="font-bold text-sm text-gray-700 dark:text-gray-300">Status do Endereço</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsActive(!isActive)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isActive ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                {/* Context Info (Read Only) */}
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3 border border-gray-100 dark:border-gray-700">
+                                    <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
+                                        <span className="text-xs font-bold text-muted uppercase tracking-wider">Congregação</span>
+                                        <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.congregation}>{contextNames.congregation}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
+                                        <span className="text-xs font-bold text-muted uppercase tracking-wider">{localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'}</span>
+                                        <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.city}>{contextNames.city}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs font-bold text-muted uppercase tracking-wider">Território</span>
+                                        <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.territory}>{contextNames.territory}</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Endereço Completo</label>
+                                        <textarea
+                                            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main mb-2 focus:ring-2 focus:ring-blue-500/20 focus:outline-none resize-none"
+                                            rows={2}
+                                            value={combinedAddress}
+                                            onChange={e => setCombinedAddress(e.target.value)}
+                                            placeholder="Ex: Rua das Flores, 123"
+                                            required
+                                        />
                                     </div>
 
-                                    {/* Context Info (Read Only) */}
-                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3 border border-gray-100 dark:border-gray-700">
-                                        <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
-                                            <span className="text-xs font-bold text-muted uppercase tracking-wider">Congregação</span>
-                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.congregation}>{contextNames.congregation}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
-                                            <span className="text-xs font-bold text-muted uppercase tracking-wider">{localTermType === 'neighborhood' ? 'Bairro' : 'Cidade'}</span>
-                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.city}>{contextNames.city}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs font-bold text-muted uppercase tracking-wider">Território</span>
-                                            <span className="text-sm font-bold text-main text-right max-w-[60%] truncate" title={contextNames.territory}>{contextNames.territory}</span>
-                                        </div>
-                                    </div>
-
+                                    {/* Google Maps Link */}
                                     <div className="space-y-4">
                                         <div>
-                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Endereço Completo</label>
-                                            <textarea
-                                                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main mb-2 focus:ring-2 focus:ring-blue-500/20 focus:outline-none resize-none"
-                                                rows={2}
-                                                value={combinedAddress}
-                                                onChange={e => setCombinedAddress(e.target.value)}
-                                                placeholder="Ex: Rua das Flores, 123"
-                                                required
-                                            />
-                                        </div>
-
-                                        {/* Google Maps Link */}
-                                        <div>
-                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Link Google Maps</label>
-                                            <div className="flex gap-2">
+                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">
+                                                Link Google Maps
+                                            </label>
+                                            <div className="relative">
                                                 <input
-                                                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
+                                                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 pr-10 font-bold text-sm text-main focus:ring-2 focus:ring-blue-500/20 outline-none"
                                                     value={googleMapsLink}
                                                     onChange={e => setGoogleMapsLink(e.target.value)}
                                                     placeholder="https://maps.google.com..."
                                                 />
+                                                <img
+                                                    src="/icons/google-maps.svg"
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full object-cover pointer-events-none"
+                                                    alt=""
+                                                />
                                             </div>
-
-                                            {/* Waze Link */}
-                                            <div className="mt-4">
-                                                <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Link Waze</label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
-                                                        value={wazeLink}
-                                                        onChange={e => setWazeLink(e.target.value)}
-                                                        placeholder="https://waze.com/ul..."
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col gap-2 mt-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setPickerTempCoords(lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null);
-                                                        setIsMapPickerOpen(true);
-                                                    }}
-                                                    className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors flex items-center justify-center gap-2"
-                                                >
-                                                    <MapPin className="w-4 h-4" /> Selecionar Pino no Mapa
-                                                </button>
-                                            </div>
-                                            {/* Debug/Verify Coords */}
-                                            {lat && lng && (
-                                                <div className="mt-1 text-center text-[10px] text-muted">
-                                                    Lat: {lat.slice(0, 8)} | Lng: {lng.slice(0, 8)}
-                                                </div>
-                                            )}
                                         </div>
 
-                                        {!isTraditional && (
-                                            <div className="flex gap-3">
-                                                <div className="flex-1">
-                                                    <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Residentes</label>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
-                                                        value={residentsCount}
-                                                        onChange={e => setResidentsCount(e.target.value)}
-                                                        onBlur={() => {
-                                                            if (!residentsCount || parseInt(residentsCount) < 1) setResidentsCount('1');
-                                                        }}
-                                                        placeholder="Qtd."
-                                                    />
-                                                </div>
-                                                <div className="flex-[2]">
-                                                    <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Nome</label>
-                                                    <input
-                                                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
-                                                        value={residentName}
-                                                        onChange={e => setResidentName(e.target.value)}
-                                                        placeholder="Nome do morador"
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Gender Selection */}
-                                        {!isTraditional && (
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Gênero</label>
-                                                    <div className="flex gap-2">
-                                                        {[
-                                                            { id: 'HOMEM', label: 'Homem' },
-                                                            { id: 'MULHER', label: 'Mulher' },
-                                                            { id: 'CASAL', label: 'Casal' }
-                                                        ].map(opt => {
-                                                            const isSelected = gender === opt.id;
-                                                            let activeClass = '';
-
-                                                            if (opt.id === 'HOMEM') activeClass = 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
-                                                            else if (opt.id === 'MULHER') activeClass = 'border-pink-500 bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400';
-                                                            else activeClass = 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400';
-
-                                                            return (
-                                                                <button
-                                                                    key={opt.id}
-                                                                    type="button"
-                                                                    onClick={() => setGender(opt.id as any)}
-                                                                    className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase transition-all border-2 ${isSelected ? activeClass : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500 hover:border-gray-200 dark:hover:border-gray-600'}`}
-                                                                >
-                                                                    {opt.label}
-                                                                </button>
-                                                            )
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                {/* Checkboxes */}
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isDeaf ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
-                                                        <input type="checkbox" className="hidden" checked={isDeaf} onChange={() => setIsDeaf(!isDeaf)} />
-                                                        <Ear className="w-4 h-4" />
-                                                        <span className="text-xs font-bold uppercase">Surdo</span>
-                                                    </label>
-                                                    <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isMinor ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
-                                                        <input type="checkbox" className="hidden" checked={isMinor} onChange={() => setIsMinor(!isMinor)} />
-                                                        <Baby className="w-4 h-4" />
-                                                        <span className="text-xs font-bold uppercase">Menor</span>
-                                                    </label>
-                                                    <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isStudent ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
-                                                        <input type="checkbox" className="hidden" checked={isStudent} onChange={() => setIsStudent(!isStudent)} />
-                                                        <GraduationCap className="w-4 h-4" />
-                                                        <span className="text-xs font-bold uppercase">Estudante</span>
-                                                    </label>
-                                                    <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isNeurodivergent ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
-                                                        <input type="checkbox" className="hidden" checked={isNeurodivergent} onChange={() => setIsNeurodivergent(!isNeurodivergent)} />
-                                                        <Brain className="w-4 h-4" />
-                                                        <span className="text-xs font-bold uppercase">Neurodivergente</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
-
+                                        {/* Waze Link */}
                                         <div>
-                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Observações</label>
-                                            <textarea
-                                                className="w-full bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-700 rounded-lg p-3 font-medium text-sm min-h-[80px] text-main"
-                                                value={observations}
-                                                onChange={e => setObservations(e.target.value)}
-                                                placeholder="Detalhes adicionais..."
+                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">
+                                                Link Waze
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 pr-10 font-bold text-sm text-main focus:ring-2 focus:ring-blue-500/20 outline-none"
+                                                    value={wazeLink}
+                                                    onChange={e => setWazeLink(e.target.value)}
+                                                    placeholder="https://waze.com/ul..."
+                                                />
+                                                <img
+                                                    src="/icons/waze.svg"
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full object-cover pointer-events-none"
+                                                    alt=""
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-2 mt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setPickerTempCoords(lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null);
+                                                setIsMapPickerOpen(true);
+                                            }}
+                                            className="w-full py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold text-xs uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <MapPin className="w-4 h-4" /> Selecionar Pino no Mapa
+                                        </button>
+                                    </div>
+                                    {/* Debug/Verify Coords */}
+                                    {lat && lng && (
+                                        <div className="mt-1 text-center text-[10px] text-muted">
+                                            Lat: {lat.slice(0, 8)} | Lng: {lng.slice(0, 8)}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {!isTraditional && (
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Residentes</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
+                                                value={residentsCount}
+                                                onChange={e => setResidentsCount(e.target.value)}
+                                                onBlur={() => {
+                                                    if (!residentsCount || parseInt(residentsCount) < 1) setResidentsCount('1');
+                                                }}
+                                                placeholder="Qtd."
+                                            />
+                                        </div>
+                                        <div className="flex-[2]">
+                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Nome</label>
+                                            <input
+                                                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-3 font-bold text-sm text-main"
+                                                value={residentName}
+                                                onChange={e => setResidentName(e.target.value)}
+                                                placeholder="Nome do morador"
                                             />
                                         </div>
                                     </div>
+                                )}
 
-                                    <div className="flex gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                        <button type="button" onClick={resetForm} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">Cancelar</button>
-                                        <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">
-                                            {editingId ? 'Salvar Endereço' : 'Salvar Endereço'}
-                                        </button>
+                                {/* Gender Selection */}
+                                {!isTraditional && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Gênero</label>
+                                            <div className="flex gap-2">
+                                                {[
+                                                    { id: 'HOMEM', label: 'Homem' },
+                                                    { id: 'MULHER', label: 'Mulher' },
+                                                    { id: 'CASAL', label: 'Casal' }
+                                                ].map(opt => {
+                                                    const isSelected = gender === opt.id;
+                                                    let activeClass = '';
+
+                                                    if (opt.id === 'HOMEM') activeClass = 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+                                                    else if (opt.id === 'MULHER') activeClass = 'border-pink-500 bg-pink-50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400';
+                                                    else activeClass = 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400';
+
+                                                    return (
+                                                        <button
+                                                            key={opt.id}
+                                                            type="button"
+                                                            onClick={() => setGender(opt.id as any)}
+                                                            className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase transition-all border-2 ${isSelected ? activeClass : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500 hover:border-gray-200 dark:hover:border-gray-600'}`}
+                                                        >
+                                                            {opt.label}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Checkboxes */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isDeaf ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
+                                                <input type="checkbox" className="hidden" checked={isDeaf} onChange={() => setIsDeaf(!isDeaf)} />
+                                                <Ear className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase">Surdo</span>
+                                            </label>
+                                            <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isMinor ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
+                                                <input type="checkbox" className="hidden" checked={isMinor} onChange={() => setIsMinor(!isMinor)} />
+                                                <Baby className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase">Menor</span>
+                                            </label>
+                                            <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isStudent ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
+                                                <input type="checkbox" className="hidden" checked={isStudent} onChange={() => setIsStudent(!isStudent)} />
+                                                <GraduationCap className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase">Estudante</span>
+                                            </label>
+                                            <label className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all cursor-pointer ${isNeurodivergent ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400' : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-200'}`}>
+                                                <input type="checkbox" className="hidden" checked={isNeurodivergent} onChange={() => setIsNeurodivergent(!isNeurodivergent)} />
+                                                <Brain className="w-4 h-4" />
+                                                <span className="text-xs font-bold uppercase">Neurodivergente</span>
+                                            </label>
+                                        </div>
                                     </div>
-                                </form>
-                            </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Observações</label>
+                                    <textarea
+                                        className="w-full bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-700 rounded-lg p-3 font-medium text-sm min-h-[80px] text-main"
+                                        value={observations}
+                                        onChange={e => setObservations(e.target.value)}
+                                        placeholder="Detalhes adicionais..."
+                                    />
+                                </div>
+
+                                <div className="flex gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                                    <button type="button" onClick={resetForm} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 rounded-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">Cancelar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">
+                                        {editingId ? 'Salvar Endereço' : 'Salvar Endereço'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             {/* Map Picker Modal */}
             {isMapPickerOpen && (
@@ -1467,7 +1481,7 @@ function AddressListContent() {
             />
 
             <BottomNav />
-        </div >
+        </div>
     );
 }
 

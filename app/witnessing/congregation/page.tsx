@@ -6,7 +6,8 @@ import {
     Search,
     Loader2,
     Store,
-    ArrowRight
+    ArrowRight,
+    AlertCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -28,6 +29,7 @@ function WitnessingCityListContent() {
     const { congregationId: userCongregationId, loading: authLoading } = useAuth();
     const [cities, setCities] = useState<City[]>([]);
     const [loading, setLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
@@ -49,6 +51,15 @@ function WitnessingCityListContent() {
             setLoading(false);
             return;
         }
+
+        // Timeout de segurança
+        const timer = setTimeout(() => {
+            if (loading) {
+                console.warn("Witnessing cities fetch timed out");
+                setHasError(true);
+                setLoading(false);
+            }
+        }, 12000);
 
         let isMounted = true;
         const fetchCities = async () => {
@@ -86,11 +97,11 @@ function WitnessingCityListContent() {
             .subscribe();
 
         return () => {
-            setTimeout(() => {
-                subscription.unsubscribe();
-            }, 100);
+            isMounted = false;
+            clearTimeout(timer);
+            subscription.unsubscribe();
         };
-    }, [congregationId]);
+    }, [congregationId, authLoading]);
 
     const filteredCities = cities.filter(city =>
         city.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -146,6 +157,22 @@ function WitnessingCityListContent() {
                 {loading ? (
                     <div className="flex justify-center p-8">
                         <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                    </div>
+                ) : hasError ? (
+                    <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border flex flex-col items-center justify-center text-center">
+                        <AlertCircle className="w-8 h-8 text-orange-400 mb-2" />
+                        <p className="text-sm font-bold text-main">O carregamento está demorando muito.</p>
+                        <p className="text-[10px] text-muted mb-4 px-4 text-pretty leading-relaxed">Verifique sua conexão ou tente recarregar.</p>
+                        <button
+                            onClick={() => {
+                                setHasError(false);
+                                setLoading(true);
+                                window.location.reload();
+                            }}
+                            className="bg-primary hover:bg-primary-dark text-white text-xs font-bold py-2 px-6 rounded-full transition-colors flex items-center gap-2"
+                        >
+                            Recarregar Página
+                        </button>
                     </div>
                 ) : filteredCities.length === 0 ? (
                     <div className="text-center py-12 opacity-50">

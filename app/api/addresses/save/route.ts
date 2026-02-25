@@ -22,13 +22,16 @@ export async function POST(req: Request) {
         } = body;
 
         // Check if user belongs to the congregation
-        const { data: adminData } = await supabase
+        const { data: adminData } = await supabaseAdmin
             .from('users')
             .select('role, congregation_id')
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregation_id)) {
+        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
+        const reqCong = String(congregation_id || '').toLowerCase().trim();
+
+        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && userCong !== reqCong)) {
             return NextResponse.json({ error: 'Você não tem permissão nesta congregação.' }, { status: 403 });
         }
 
