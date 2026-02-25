@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Calendar } from 'lucide-react';
 import UserAvatar from './UserAvatar';
 import AssignedUserBadge from './AssignedUserBadge';
@@ -17,8 +19,15 @@ interface TerritoryAssignmentsModalProps {
 }
 
 export default function TerritoryAssignmentsModal({ territoryName, assignments, onClose }: TerritoryAssignmentsModalProps) {
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
             <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl border border-surface-border animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-bold text-main">
@@ -70,6 +79,7 @@ export default function TerritoryAssignmentsModal({ territoryName, assignments, 
                     ))}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

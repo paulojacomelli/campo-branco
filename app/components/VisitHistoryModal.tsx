@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/app/context/AuthContext';
 import {
@@ -30,6 +31,10 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
     const [loading, setLoading] = useState(true);
     const [visits, setVisits] = useState<any[]>([]);
     const { user, congregationId } = useAuth();
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
 
     useEffect(() => {
@@ -101,10 +106,10 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
         }
     };
 
-    if (!addressId) return null;
+    if (!addressId || !isMounted) return null;
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
                 <div className="flex justify-between items-center mb-6 shrink-0">
                     <div>
@@ -161,6 +166,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

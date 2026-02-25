@@ -205,6 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 3. Fetch Congregation Settings
     useEffect(() => {
+        let isMounted = true;
         if (!congregationId) {
             setTermType('city');
             setCongregationType(null);
@@ -219,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     .eq('id', congregationId)
                     .single();
 
-                if (data && !error) {
+                if (isMounted && data && !error) {
                     setTermType(data.term_type || 'city');
 
                     // Map category to internal type
@@ -234,6 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         fetchCong();
+        return () => { isMounted = false; };
     }, [congregationId]);
 
     // Derived flags

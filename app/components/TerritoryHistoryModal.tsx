@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import {
     X,
@@ -33,6 +34,10 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, cong
     const congregationId = targetCongregationId || authCongregationId;
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -69,8 +74,10 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, cong
         return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     };
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    if (!isMounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-surface rounded-lg w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
                 <div className="flex justify-between items-center mb-6 shrink-0">
                     <div>
@@ -143,6 +150,7 @@ export default function TerritoryHistoryModal({ territoryId, territoryName, cong
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

@@ -37,7 +37,7 @@ export default function LoginClient() {
     return (
         <div className="min-h-[100dvh] bg-primary dark:bg-background flex flex-col items-center justify-center p-6 font-sans transition-colors duration-300 relative z-10">
             <div className="w-full max-w-sm">
-                <div className="bg-white dark:bg-surface rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-12 fade-in duration-1000 border border-transparent dark:border-surface-border transition-colors">
+                <div className="bg-white dark:bg-surface rounded-2xl p-8 shadow-2xl animate-in slide-in-from-bottom-12 fade-in duration-1000 border border-transparent dark:border-surface-border transition-colors">
                     <div className="text-center mb-8">
                         <div className="w-24 h-24 flex items-center justify-center mx-auto mb-2">
                             <Image src="/app-icon.svg" alt="Campo Branco" width={96} height={96} className="w-full h-full object-contain" priority />
@@ -62,7 +62,7 @@ export default function LoginClient() {
                             type="button"
                             onClick={handleGoogleLogin}
                             disabled={loading}
-                            className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white font-extrabold py-4 px-6 rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-700/80 hover:border-gray-200 dark:hover:border-gray-600 flex items-center justify-center gap-4 transition-all active:scale-95 disabled:opacity-70 shadow-sm"
+                            className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white font-extrabold py-4 px-6 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/80 hover:border-gray-200 dark:hover:border-gray-600 flex items-center justify-center gap-4 transition-all active:scale-95 disabled:opacity-70 shadow-sm"
                         >
                             <svg className="w-6 h-6" viewBox="0 0 24 24">
                                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

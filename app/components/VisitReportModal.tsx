@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     X,
     ThumbsUp,
@@ -61,6 +62,11 @@ export default function VisitReportModal({
     const [observations, setObservations] = useState(address.visitNotes || '');
     const [isListening, setIsListening] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const toggleListening = () => {
         if (isListening) {
@@ -147,8 +153,10 @@ export default function VisitReportModal({
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    if (!isMounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="flex min-h-full items-center justify-center p-4">
                 <div className="bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center mb-6">
@@ -422,6 +430,7 @@ export default function VisitReportModal({
                     </div>
                 </div>
             </div>
-        </div >
+        </div >,
+        document.body
     );
 }

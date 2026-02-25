@@ -2,6 +2,7 @@
 
 import { X, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AccessDeniedModalProps {
     resourceName: string;
@@ -10,9 +11,11 @@ interface AccessDeniedModalProps {
 
 export default function AccessDeniedModal({ resourceName, onClose }: AccessDeniedModalProps) {
     const [isVisible, setIsVisible] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
         setIsVisible(true);
+        setIsMounted(true);
     }, []);
 
     const handleClose = () => {
@@ -20,8 +23,10 @@ export default function AccessDeniedModal({ resourceName, onClose }: AccessDenie
         setTimeout(onClose, 200);
     };
 
-    return (
-        <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-200 ${isVisible ? 'bg-black/60 backdrop-blur-sm' : 'bg-transparent pointer-events-none'}`}>
+    if (!isMounted) return null;
+
+    return createPortal(
+        <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 transition-all duration-200 ${isVisible ? 'bg-black/60 backdrop-blur-sm' : 'bg-transparent pointer-events-none'}`}>
             <div className={`bg-white dark:bg-surface rounded-lg w-full max-w-sm p-6 shadow-2xl transition-all duration-200 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}>
                 <div className="flex flex-col items-center text-center gap-4">
                     <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center text-red-500">
@@ -43,6 +48,7 @@ export default function AccessDeniedModal({ resourceName, onClose }: AccessDenie
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, HelpCircle, Info, Lightbulb, CheckCircle2 } from "lucide-react";
 
 interface HelpModalProps {
@@ -12,10 +14,15 @@ interface HelpModalProps {
 }
 
 export default function HelpModal({ isOpen, onClose, title, description, steps, tips }: HelpModalProps) {
-    if (!isOpen) return null;
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    if (!isOpen || !isMounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-surface rounded-lg w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
                 <div className="flex justify-between items-start mb-6 shrink-0">
                     <div className="flex items-center gap-3">
@@ -86,6 +93,7 @@ export default function HelpModal({ isOpen, onClose, title, description, steps, 
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

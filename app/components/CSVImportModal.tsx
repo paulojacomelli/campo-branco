@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     X, Upload, CheckCircle2, AlertCircle, Info,
     Loader2, Download, ChevronDown, ChevronRight,
@@ -140,6 +141,11 @@ function buildPreview(text: string): { cities: Record<string, PreviewCity>; tota
 export default function CSVImportModal({
     isOpen, onClose, congregationId, cityId, territoryId, onSuccess
 }: CSVImportModalProps) {
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState<ImportResults | null>(null);
@@ -224,7 +230,7 @@ export default function CSVImportModal({
 
     const resetAll = () => { setFile(null); setPreview(null); setResults(null); };
 
-    if (!isOpen) return null;
+    if (!isOpen || !isMounted) return null;
 
     const genderBadge = (g: string) => {
         if (g === 'HOMEM') return 'bg-blue-100 text-blue-700';
@@ -233,12 +239,12 @@ export default function CSVImportModal({
         return 'bg-gray-100 text-gray-600';
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-surface rounded-2xl w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] border border-surface-border">
+            <div className="bg-surface rounded-xl w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] border border-surface-border">
 
                 {/* Header */}
-                <div className="p-6 border-b border-surface-border flex justify-between items-center bg-surface sticky top-0 rounded-t-2xl z-10">
+                <div className="p-6 border-b border-surface-border flex justify-between items-center bg-surface sticky top-0 rounded-t-xl z-10">
                     <div>
                         <h2 className="text-xl font-bold text-main tracking-tight">Importação de Dados</h2>
                         <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-1">
@@ -429,6 +435,7 @@ export default function CSVImportModal({
                     </div>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

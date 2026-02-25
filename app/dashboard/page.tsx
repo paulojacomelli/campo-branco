@@ -371,184 +371,127 @@ export default function DashboardPage() {
 
         const fetchStats = async () => {
             try {
-                let congCount = 0;
-                let cityCount = 0;
-                let mapsCount = 0;
-                let addressCount = 0;
-                let visitCount = 0;
-                let publicWitnessingCount = 0;
-                let coverageVal = 0;
+                if (!congregationId && role !== 'SUPER_ADMIN') return;
+                const targetCong = congregationId || '00000000-0000-0000-0000-000000000000';
 
-                const countTable = async (table: string, filters: any = {}) => {
-                    let q = supabase.from(table).select('*', { count: 'exact', head: true });
-                    Object.entries(filters).forEach(([col, val]) => {
-                        if (val !== undefined && val !== 'all') {
-                            q = q.eq(col, val);
+                // Fetch all related data for validation
+                const [
+                    { data: citiesData },
+                    { data: territoriesData },
+                    { data: addressesData },
+                    { data: pointsData },
+                    { data: visitsData },
+                    { data: historyData }
+                ] = await Promise.all([
+                    supabase.from('cities').select('id, name').eq('congregation_id', targetCong),
+                    supabase.from('territories').select('id, name, notes, city_id, manual_last_completed_date, last_visit, status, assigned_to').eq('congregation_id', targetCong),
+                    supabase.from('addresses').select('id, territory_id, is_active').eq('congregation_id', targetCong),
+                    supabase.from('witnessing_points').select('id, city_id').eq('congregation_id', targetCong),
+                    supabase.from('visits').select('id').eq('congregation_id', targetCong),
+                    supabase.from('shared_lists').select('id, territory_id, created_at, returned_at, status').eq('congregation_id', targetCong)
+                ]);
+
+                // 1. Validate Cities
+                const validCityIds = new Set(citiesData?.map(c => c.id) || []);
+                const cityMap: Record<string, string> = {};
+                citiesData?.forEach(c => cityMap[c.id] = c.name);
+
+                // 2. Validate Territories (must have valid city_id)
+                const validTerritories = territoriesData?.filter(t => t.city_id && validCityIds.has(t.city_id)) || [];
+                const validTerritoryIds = new Set(validTerritories.map(t => t.id));
+
+                // 3. Validate Addresses (must be active AND have valid territory_id)
+                const activeAddresses = addressesData?.filter(a =>
+                    a.is_active !== false &&
+                    a.territory_id &&
+                    validTerritoryIds.has(a.territory_id)
+                ) || [];
+
+                // 4. Validate Points
+                const activePoints = pointsData?.filter(p => p.city_id && validCityIds.has(p.city_id)) || [];
+
+                // 5. Shared History / Coverage
+                const latestWorkMap = new Map<string, number>();
+                const latestAnyActivityMap = new Map<string, number>();
+
+                if (historyData) {
+                    historyData.forEach((data: any) => {
+                        if (data.territory_id && validTerritoryIds.has(data.territory_id)) {
+                            const created = data.created_at ? new Date(data.created_at).getTime() : 0;
+                            const returned = data.returned_at ? new Date(data.returned_at).getTime() : 0;
+
+                            if (created > (latestAnyActivityMap.get(data.territory_id) || 0)) latestAnyActivityMap.set(data.territory_id, created);
+                            if (returned > (latestWorkMap.get(data.territory_id) || 0)) latestWorkMap.set(data.territory_id, returned);
+                            if (returned > (latestAnyActivityMap.get(data.territory_id) || 0)) latestAnyActivityMap.set(data.territory_id, returned);
                         }
                     });
-                    const { count, error } = await q;
-                    if (error) console.error(`Error counting ${table}:`, error);
-                    return count || 0;
-                };
-
-                const countDistinctCitiesFromTerritories = async (congId?: string) => {
-                    let q = supabase.from('territories').select('city_id');
-                    if (congId) q = q.eq('congregation_id', congId);
-                    const { data, error } = await q;
-                    if (error) { console.error('Error counting cities:', error); return 0; }
-                    const unique = new Set((data || []).map((r: any) => r.city_id).filter(Boolean));
-                    return unique.size;
-                };
-
-                if (role === 'SUPER_ADMIN' || isElder || isServant) {
-                    const targetCong = congregationId || '00000000-0000-0000-0000-000000000000';
-                    const [congC, cityC, mapC, addrC, pwC, visitC] = await Promise.all([
-                        role === 'SUPER_ADMIN' ? countTable('congregations') : Promise.resolve(1),
-                        countDistinctCitiesFromTerritories(targetCong),
-                        countTable('territories', { congregation_id: targetCong }),
-                        countTable('addresses', { congregation_id: targetCong }),
-                        countTable('witnessing_points', { congregation_id: targetCong }),
-                        countTable('visits', { congregation_id: targetCong })
-                    ]);
-
-                    congCount = congC;
-                    cityCount = cityC;
-                    mapsCount = mapC;
-                    addressCount = addrC;
-                    publicWitnessingCount = pwC;
-                    visitCount = visitC;
-                } else {
-                    congCount = 0;
-                    cityCount = 0;
-                    mapsCount = myAssignments.length;
-                    addressCount = 0;
-                    publicWitnessingCount = 0;
-                    visitCount = await countTable('visits', { user_id: user?.id });
                 }
 
-                if (mapsCount > 0) {
-                    try {
-                        let mapsQuery = supabase.from('territories').select('id, name, notes, city_id, congregation_id, manual_last_completed_date, last_visit, status, assigned_to');
-                        let citiesQuery = supabase.from('cities').select('id, name');
-                        let historyQuery = supabase.from('shared_lists').select('id, territory_id, created_at, completed_at, returned_at, status');
+                // Calculate Coverage and Idle Lists
+                const currentYear = getServiceYear();
+                const { start: syStart, end: syEnd } = getServiceYearRange(currentYear);
+                const idleList: any[] = [];
+                let coveredCount = 0;
 
-                        if (congregationId) {
-                            mapsQuery = mapsQuery.eq('congregation_id', congregationId);
-                            citiesQuery = citiesQuery.eq('congregation_id', congregationId);
-                            historyQuery = historyQuery.eq('congregation_id', congregationId);
-                        } else if (role !== 'SUPER_ADMIN') {
-                            throw new Error("CongregationId missing");
-                        } else {
-                            mapsQuery = mapsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
-                            citiesQuery = citiesQuery.eq('id', '00000000-0000-0000-0000-000000000000');
-                            historyQuery = historyQuery.eq('id', '00000000-0000-0000-0000-000000000000');
-                        }
+                validTerritories.forEach((data: any) => {
+                    let lastWork = 0;
+                    if (data.manual_last_completed_date) lastWork = new Date(data.manual_last_completed_date).getTime();
+                    if (data.last_visit && !lastWork) lastWork = new Date(data.last_visit).getTime();
 
-                        const [
-                            { data: mapsData },
-                            { data: citiesData },
-                            { data: historyData }
-                        ] = await Promise.all([mapsQuery, citiesQuery, historyQuery]);
+                    const historyWork = latestWorkMap.get(data.id) || 0;
+                    if (historyWork > lastWork) lastWork = historyWork;
 
-                        const latestWorkMap = new Map<string, number>();
-                        const latestAnyActivityMap = new Map<string, number>();
-                        if (historyData) {
-                            historyData.forEach((data: any) => {
-                                const processDate = (id: string) => {
-                                    const created = data.created_at ? new Date(data.created_at).getTime() : 0;
-                                    const completed = data.completed_at ? new Date(data.completed_at).getTime() : 0;
-                                    const returned = data.returned_at ? new Date(data.returned_at).getTime() : 0;
+                    const lastWorkDate = lastWork > 0 ? new Date(lastWork) : null;
+                    if (lastWorkDate && lastWorkDate >= syStart && lastWorkDate <= syEnd) {
+                        coveredCount++;
+                    }
 
-                                    if (created > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, created);
-                                    if (completed > (latestWorkMap.get(id) || 0)) latestWorkMap.set(id, completed);
-                                    if (completed > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, completed);
-                                    if (returned > (latestWorkMap.get(id) || 0)) latestWorkMap.set(id, returned);
-                                    if (returned > (latestAnyActivityMap.get(id) || 0)) latestAnyActivityMap.set(id, returned);
-                                };
-                                if (data.territory_id) processDate(data.territory_id);
-                            });
-                        }
+                    let lastAny = lastWork;
+                    const historyAny = latestAnyActivityMap.get(data.id) || 0;
+                    if (historyAny > lastAny) lastAny = historyAny;
 
-                        const cityMap: Record<string, string> = {};
-                        if (citiesData) {
-                            citiesData.forEach((d: any) => {
-                                if (d.name) cityMap[d.id] = d.name;
-                            });
-                        }
+                    const lastAnyDate = lastAny > 0 ? new Date(lastAny) : null;
+                    const cityName = (data.city_id && cityMap[data.city_id]) || 'Cidade Desconhecida';
 
-                        const currentYear = getServiceYear();
-                        const { start: syStart, end: syEnd } = getServiceYearRange(currentYear);
-                        const idleList: any[] = [];
-                        let coveredCount = 0;
+                    if (data.assigned_to) return;
 
-                        if (mapsData) {
-                            mapsData.forEach((data: any) => {
-                                let lastWork = 0;
-                                if (data.manual_last_completed_date) lastWork = new Date(data.manual_last_completed_date).getTime();
-                                if (data.last_visit && !lastWork) lastWork = new Date(data.last_visit).getTime();
+                    const rollingYearAgo = new Date();
+                    rollingYearAgo.setDate(rollingYearAgo.getDate() - 180);
 
-                                const historyWork = latestWorkMap.get(data.id) || 0;
-                                if (historyWork > lastWork) lastWork = historyWork;
-
-                                const lastWorkDate = lastWork > 0 ? new Date(lastWork) : null;
-                                if (lastWorkDate && lastWorkDate >= syStart && lastWorkDate <= syEnd) {
-                                    coveredCount++;
-                                }
-
-                                let lastAny = lastWork;
-                                const historyAny = latestAnyActivityMap.get(data.id) || 0;
-                                if (historyAny > lastAny) lastAny = historyAny;
-
-                                const lastAnyDate = lastAny > 0 ? new Date(lastAny) : null;
-                                const cityName = (data.city_id && cityMap[data.city_id]) || data.city || 'Cidade Desconhecida';
-
-                                if (data.assigned_to || data.status === 'OCUPADO') return;
-
-                                const rollingYearAgo = new Date();
-                                rollingYearAgo.setDate(rollingYearAgo.getDate() - 180);
-
-                                if (!lastAnyDate) {
-                                    idleList.push({
-                                        id: data.id,
-                                        name: data.name || 'Sem Nome',
-                                        description: data.notes || '',
-                                        city: cityName,
-                                        city_id: data.city_id,
-                                        congregation_id: data.congregation_id,
-                                        lastVisit: null,
-                                        variant: 'danger'
-                                    });
-                                } else if (lastAnyDate < rollingYearAgo) {
-                                    idleList.push({
-                                        id: data.id,
-                                        name: data.name || 'Sem Nome',
-                                        description: data.notes || '',
-                                        city: cityName,
-                                        city_id: data.city_id,
-                                        congregation_id: data.congregation_id,
-                                        lastVisit: lastAnyDate,
-                                        variant: 'warning'
-                                    });
-                                }
-                            });
-                        }
-
-                        if (mapsCount > 0) {
-                            coverageVal = Math.floor((coveredCount / mapsCount) * 100);
-                        }
-
-                        idleList.sort((a, b) => {
-                            if (!a.lastVisit && !b.lastVisit) return 0;
-                            if (!a.lastVisit) return -1;
-                            if (!b.lastVisit) return 1;
-                            return a.lastVisit.getTime() - b.lastVisit.getTime();
+                    if (!lastAnyDate) {
+                        idleList.push({
+                            id: data.id,
+                            name: data.name || 'Sem Nome',
+                            description: data.notes || '',
+                            city: cityName,
+                            city_id: data.city_id,
+                            lastVisit: null,
+                            variant: 'danger'
                         });
+                    } else if (lastAnyDate < rollingYearAgo) {
+                        idleList.push({
+                            id: data.id,
+                            name: data.name || 'Sem Nome',
+                            description: data.notes || '',
+                            city: cityName,
+                            city_id: data.city_id,
+                            lastVisit: lastAnyDate,
+                            variant: 'warning'
+                        });
+                    }
+                });
 
-                        setIdleTerritories(idleList);
+                const mapsCount = validTerritories.length;
+                let coverageVal = mapsCount > 0 ? Math.floor((coveredCount / mapsCount) * 100) : 0;
 
-                    } catch (e) { console.error("Idle check error", e); }
-                }
+                idleList.sort((a, b) => {
+                    if (!a.lastVisit && !b.lastVisit) return 0;
+                    if (!a.lastVisit) return -1;
+                    if (!b.lastVisit) return 1;
+                    return a.lastVisit.getTime() - b.lastVisit.getTime();
+                });
 
+                setIdleTerritories(idleList);
                 if (coverageVal >= 100 && mapsCount > 0) {
                     setCityCompletion({ cityName: "Território Completo", percentage: 100 });
                 } else {
@@ -556,16 +499,17 @@ export default function DashboardPage() {
                 }
 
                 setStats({
-                    congregations: congCount,
-                    cities: cityCount,
+                    congregations: (role === 'SUPER_ADMIN' && !congregationId) ? 0 : 1, // simplified
+                    cities: citiesData?.length || 0,
                     maps: mapsCount,
-                    visits: visitCount,
-                    addresses: addressCount,
-                    publicWitnessing: publicWitnessingCount,
+                    visits: visitsData?.length || 0,
+                    addresses: activeAddresses.length,
+                    publicWitnessing: activePoints.length,
                     revisits: 0,
                     pubs: 0,
                     coverage: Math.floor(coverageVal)
                 });
+
             } catch (error) {
                 console.error("Critical Error fetching stats:", error);
             }
@@ -573,7 +517,7 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory, myAssignments.length]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;

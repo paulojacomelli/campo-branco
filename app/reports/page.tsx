@@ -104,7 +104,7 @@ export default function ReportsPage() {
 
                 // 1. From History
                 history.forEach((h: any) => {
-                    let d = h.returned_at ? new Date(h.returned_at) : (h.completed_at ? new Date(h.completed_at) : null);
+                    let d = h.returned_at ? new Date(h.returned_at) : null;
                     if (!d && h.status === 'completed') {
                         d = new Date();
                     }
@@ -189,7 +189,7 @@ export default function ReportsPage() {
 
                     let activeAssign: any = null;
                     tHistory.forEach((h: any) => {
-                        const d = h.returned_at ? new Date(h.returned_at) : (h.completed_at ? new Date(h.completed_at) : null);
+                        const d = h.returned_at ? new Date(h.returned_at) : null;
                         if (d && d > lastTouch) lastTouch = d;
 
                         if (h.status !== 'completed' && h.status !== 'expired') {

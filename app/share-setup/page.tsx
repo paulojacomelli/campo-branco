@@ -361,6 +361,7 @@ function ShareSetupContent() {
                             <option value="7d">7 Dias</option>
                             <option value="14d">14 Dias (Padrão)</option>
                             <option value="30d">30 Dias</option>
+                            <option value="never">Nunca Expira</option>
                         </select>
                     </div>
 

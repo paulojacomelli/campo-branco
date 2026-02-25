@@ -95,6 +95,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     // Sync from Supabase (authoritative)
     useEffect(() => {
+        let isMounted = true;
         if (user && loaded) {
             const fetchPrefs = async () => {
                 try {
@@ -104,7 +105,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                         .eq('id', user.id)
                         .maybeSingle();
 
-                    if (!error && data?.preferences) {
+                    if (isMounted && !error && data?.preferences) {
                         const prefs = data.preferences as any;
                         if (prefs.textSize) setTextSize(prefs.textSize);
                         if (prefs.displayScale) setDisplayScale(prefs.displayScale);
@@ -116,6 +117,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             };
             fetchPrefs();
         }
+        return () => { isMounted = false; };
     }, [user, loaded]);
 
     const updatePreferences = async (newTextSize: number, newDisplayScale: number, newThemeMode: ThemeMode) => {

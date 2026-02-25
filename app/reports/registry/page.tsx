@@ -137,14 +137,13 @@ export default function RegistryPage() {
             const assignmentsMap: Record<string, Assignment[]> = {};
             const completedDatesMap: Record<string, Date> = {}; // For the "Last completed" column
 
-            listData?.forEach(data => {
+            listData?.forEach((data: any) => {
                 if (data.type !== 'territory' || !data.items || data.items.length === 0) return;
 
                 // Determine dates
                 const createdDate = new Date(data.created_at || 0);
                 const returnDate = data.returned_at ? new Date(data.returned_at) :
-                    (data.completed_at ? new Date(data.completed_at) :
-                        (data.status === 'completed' ? new Date() : undefined));
+                    (data.status === 'completed' ? new Date() : undefined);
 
                 // Check if this assignment belongs to the current service year
                 const inRange = (createdDate >= start && createdDate <= end) || (returnDate && returnDate >= start && returnDate <= end);

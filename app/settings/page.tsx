@@ -150,13 +150,24 @@ export default function SettingsPage() {
 
                             // Se não existe token, gera um automaticamente (apenas Ancião pode regenerar na UI)
                             if (!token && canManageMembers) {
-                                token = crypto.randomUUID();
-                                await supabase.from("congregations").update({ invite_token: token }).eq("id", congregationId);
+                                const generatedToken = crypto.randomUUID();
+                                const { error: updateError } = await supabase
+                                    .from("congregations")
+                                    .update({ invite_token: generatedToken })
+                                    .eq("id", congregationId);
+
+                                if (!updateError) {
+                                    token = generatedToken;
+                                } else {
+                                    console.error("Erro ao salvar token de convite:", updateError);
+                                }
                             }
 
                             if (token) {
                                 setInviteToken(token);
                                 setInviteLink(`${window.location.origin}/invite?token=${token}`);
+                            } else if (canInviteMembers) {
+                                setInviteLink("Erro ao carregar link. Contate o suporte.");
                             }
                         }
                     }
@@ -168,7 +179,7 @@ export default function SettingsPage() {
             };
             fetchCongregationAndMembers();
         }
-    }, [canInviteMembers, canManageMembers, congregationId, isSuperAdmin]);
+    }, [canInviteMembers, canManageMembers, congregationId, isSuperAdmin, supabase]);
 
     const handleGenerateNewToken = async () => {
         setConfirmModal({

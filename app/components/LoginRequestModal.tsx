@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, LogIn } from 'lucide-react';
 import useRouter from 'next/navigation';
 
@@ -8,6 +10,10 @@ interface LoginRequestModalProps {
 }
 
 export default function LoginRequestModal({ onClose }: LoginRequestModalProps) {
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const handleLogin = () => {
         // Redirect to login with current URL as callback
@@ -15,8 +21,10 @@ export default function LoginRequestModal({ onClose }: LoginRequestModalProps) {
         window.location.href = `/login?callbackUrl=${currentUrl}`;
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    if (!isMounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
                 <div className="flex justify-end mb-2">
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -42,6 +50,7 @@ export default function LoginRequestModal({ onClose }: LoginRequestModalProps) {
                     Fazer Login
                 </button>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

@@ -26,6 +26,7 @@ export default function OrphanedDataPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [orphans, setOrphans] = useState<OrphanedItem[]>([]);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
     // Fix Modal State
     const [fixingItem, setFixItem] = useState<OrphanedItem | null>(null);
@@ -354,32 +355,66 @@ export default function OrphanedDataPage() {
         }
     };
 
-    const handleDelete = async (id: string, type: string) => {
+    const toggleSelect = (id: string) => {
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedIds(next);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === orphans.length) setSelectedIds(new Set());
+        else setSelectedIds(new Set(orphans.map(o => o.id)));
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+
         setConfirmModal({
             isOpen: true,
-            title: "Excluir Item",
-            message: "Tem certeza que deseja excluir este item permanentemente?",
+            title: `Excluir ${selectedIds.size} itens`,
+            message: `Tem certeza que deseja excluir permanentemente os ${selectedIds.size} itens selecionados? Esta ação não pode ser desfeita.`,
             variant: 'danger',
             onConfirm: async () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                setLoading(true);
                 try {
-                    const tableName = type === 'address' ? 'addresses' :
-                        type === 'territory' ? 'territories' :
-                            type === 'witnessing' ? 'witnessing_points' :
-                                type === 'visit' ? 'visits' : 'cities';
+                    const idsArray = Array.from(selectedIds);
 
-                    const { error } = await supabase
-                        .from(tableName)
-                        .delete()
-                        .eq('id', id);
+                    // Separar por tipo para deletar das tabelas corretas
+                    const byType: Record<string, string[]> = {};
+                    orphans.filter(o => selectedIds.has(o.id)).forEach(o => {
+                        if (!byType[o.type]) byType[o.type] = [];
+                        byType[o.type].push(o.id);
+                    });
 
-                    if (error) throw error;
+                    for (const [type, ids] of Object.entries(byType)) {
+                        const tableName = type === 'address' ? 'addresses' :
+                            type === 'territory' ? 'territories' :
+                                type === 'witnessing' ? 'witnessing_points' :
+                                    type === 'visit' ? 'visits' : 'cities';
 
-                    setOrphans(prev => prev.filter(o => o.id !== id));
-                    toast.success("Item excluído com sucesso.");
+                        // Limpar referências antes de deletar (similar ao individual)
+                        if (type === 'territory') {
+                            await supabase.from('addresses').update({ territory_id: null }).in('territory_id', ids);
+                        } else if (type === 'city') {
+                            await supabase.from('territories').update({ city_id: null }).in('city_id', ids);
+                            await supabase.from('addresses').update({ city_id: null }).in('city_id', ids);
+                            await supabase.from('witnessing_points').update({ city_id: null }).in('city_id', ids);
+                        }
+
+                        const { error } = await supabase.from(tableName).delete().in('id', ids);
+                        if (error) throw error;
+                    }
+
+                    toast.success(`${selectedIds.size} itens excluídos com sucesso.`);
+                    setSelectedIds(new Set());
+                    fetchOrphans();
                 } catch (error) {
-                    console.error("Error deleting:", error);
-                    toast.error("Erro ao excluir.");
+                    console.error("Error bulk deleting:", error);
+                    toast.error("Erro ao realizar exclusão em massa.");
+                } finally {
+                    setLoading(false);
                 }
             }
         });
@@ -415,34 +450,78 @@ export default function OrphanedDataPage() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        <div className="flex items-center gap-2 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg text-sm border border-orange-100 dark:border-orange-800">
-                            <AlertTriangle className="w-5 h-5 shrink-0" />
-                            <p>Foram encontrados <b>{orphans.length}</b> itens com vínculos quebrados.</p>
+                        <div className="flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg text-sm border border-orange-100 dark:border-orange-800 flex-1">
+                                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                                    <p>Foram encontrados <b>{orphans.length}</b> itens com vínculos quebrados.</p>
+                                </div>
+
+                                <label className="flex items-center gap-2 px-4 cursor-pointer hover:bg-surface rounded-lg transition-colors py-2 border border-surface-border ml-3 bg-surface shadow-sm active:scale-95 group">
+                                    <input
+                                        type="checkbox"
+                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        checked={selectedIds.size === orphans.length && orphans.length > 0}
+                                        onChange={toggleSelectAll}
+                                    />
+                                    <span className="text-xs font-bold text-muted group-hover:text-main">
+                                        {selectedIds.size === orphans.length ? 'Desmarcar Tudo' : 'Selecionar Tudo'}
+                                    </span>
+                                </label>
+                            </div>
+
+                            {selectedIds.size > 0 && (
+                                <div className="bg-surface border border-red-100 dark:border-red-900/30 p-4 rounded-xl flex items-center justify-between shadow-lg shadow-red-500/5 animate-in slide-in-from-top-2">
+                                    <p className="text-sm font-bold text-main">
+                                        <b>{selectedIds.size}</b> itens selecionados
+                                    </p>
+                                    <button
+                                        onClick={handleBulkDelete}
+                                        className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md shadow-red-500/20 transition-all active:scale-95"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        Excluir Selecionados
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {orphans.map(item => (
                             <div key={item.id} className="bg-surface p-5 rounded-lg shadow-sm border border-surface-border flex flex-col gap-4">
                                 <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase
-                                                ${item.type === 'address' ? 'bg-primary-light dark:bg-blue-900/30 text-primary-dark dark:text-blue-300' :
-                                                    item.type === 'territory' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
-                                                        item.type === 'witnessing' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' :
-                                                            item.type === 'visit' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'}
-                                            `}>
-                                                {item.type === 'address' ? 'Endereço' : item.type === 'territory' ? 'Mapa' : item.type === 'witnessing' ? 'T. Público' : item.type === 'visit' ? 'Visita' : 'Cidade'}
-                                            </span>
-                                            <span className="text-xs text-red-500 dark:text-red-400 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
-                                                Falta: {item.missing.join(', ')}
-                                            </span>
+                                    <div className="flex items-start gap-4 flex-1">
+                                        <div className="pt-1">
+                                            <input
+                                                type="checkbox"
+                                                className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary transition-transform active:scale-90"
+                                                checked={selectedIds.has(item.id)}
+                                                onChange={() => toggleSelect(item.id)}
+                                            />
                                         </div>
-                                        <h3 className="font-bold text-main text-lg">{item.name}</h3>
-                                        <p className="text-sm text-muted">{item.details}</p>
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase
+                                                    ${item.type === 'address' ? 'bg-primary-light dark:bg-blue-900/30 text-primary-dark dark:text-blue-300' :
+                                                        item.type === 'territory' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
+                                                            item.type === 'witnessing' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' :
+                                                                item.type === 'visit' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'}
+                                                `}>
+                                                    {item.type === 'address' ? 'Endereço' : item.type === 'territory' ? 'Mapa' : item.type === 'witnessing' ? 'T. Público' : item.type === 'visit' ? 'Visita' : 'Cidade'}
+                                                </span>
+                                                <span className="text-xs text-red-500 dark:text-red-400 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
+                                                    Falta: {item.missing.join(', ')}
+                                                </span>
+                                            </div>
+                                            <h3 className="font-bold text-main text-lg">{item.name}</h3>
+                                            <p className="text-sm text-muted">{item.details}</p>
+                                        </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => handleDelete(item.id, item.type)}
+                                            onClick={() => {
+                                                setSelectedIds(new Set([item.id]));
+                                                setTimeout(handleBulkDelete, 0);
+                                            }}
                                             className="p-2 text-red-600 hover:text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-lg transition-colors"
                                             title="Excluir"
                                         >
