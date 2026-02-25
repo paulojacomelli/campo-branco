@@ -24,7 +24,7 @@ export async function GET(req: Request) {
             .single();
 
         // Security: Force congregationId to be the user's congregation for operational views
-        if (adminData?.role !== 'SUPER_ADMIN' || !congregationId) {
+        if (adminData?.role !== 'ADMIN' || !congregationId) {
             congregationId = adminData?.congregation_id || null;
         }
 

@@ -1,32 +1,29 @@
+// app/auth/callback/page.tsx
+// Página de callback de autenticação
+// Com Firebase + signInWithPopup, não há mais necessidade de callback de rota.
+// Esta página é um redirecionador de segurança caso o usuário caia aqui.
+
 "use client";
 
 import { useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 export default function AuthCallback() {
     const router = useRouter();
 
     useEffect(() => {
-        const handleCallback = async () => {
-            // O Supabase Auth Helper para cliente lida automaticamente com o código na URL
-            // quando a instância do supabase é inicializada e o estado de auth muda.
-            // Mas para garantir o redirecionamento:
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
+        // Aguarda o estado de autenticação do Firebase e redireciona para o dashboard
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
                 router.push('/dashboard');
             } else {
-                // Se não houver sessão imediata, aguardamos um pouco ou o estado mudar
-                const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-                    if (event === 'SIGNED_IN' && session) {
-                        subscription.unsubscribe();
-                        router.push('/dashboard');
-                    }
-                });
+                router.push('/login');
             }
-        };
+        });
 
-        handleCallback();
+        return () => unsubscribe();
     }, [router]);
 
     return (

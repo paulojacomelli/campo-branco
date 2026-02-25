@@ -176,7 +176,7 @@ export default function NotificationsPage() {
             }
         };
 
-        if (isElder || isServant || role === 'SUPER_ADMIN') {
+        if (isElder || isServant || role === 'ADMIN') {
             fetchIdleAndCompletion();
         }
     }, [congregationId, role, isElder, isServant]);
@@ -204,7 +204,7 @@ export default function NotificationsPage() {
                     userName={profileName || 'Publicador'}
                     pendingMapsCount={pendingMapsCount}
                     hasPendingAnnotation={false}
-                    idleTerritories={isElder || isServant || role === 'SUPER_ADMIN' ? idleTerritories : []}
+                    idleTerritories={isElder || isServant || role === 'ADMIN' ? idleTerritories : []}
                     cityCompletion={cityCompletion}
                     expiringMaps={expiringMaps}
                     onAssignTerritory={handleQuickAssign}

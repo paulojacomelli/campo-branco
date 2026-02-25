@@ -1,35 +1,42 @@
+// app/login/LoginClient.tsx
+// Página de login usando Firebase Auth com provider Google
+
 "use client";
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { auth } from '@/lib/firebase';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { AlertCircle } from 'lucide-react';
 
 export default function LoginClient() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const router = useRouter();
 
     const handleGoogleLogin = async () => {
         setLoading(true);
         setError('');
 
         try {
-            const { error } = await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
-                    queryParams: {
-                        access_type: 'offline',
-                        prompt: 'consent',
-                    },
-                },
-            });
+            // Autenticação via popup do Google (Firebase)
+            const provider = new GoogleAuthProvider();
+            provider.addScope('email');
+            provider.addScope('profile');
+            provider.setCustomParameters({ prompt: 'select_account' });
 
-            if (error) throw error;
+            await signInWithPopup(auth, provider);
 
+            // Após login bem-sucedido, o AuthContext detecta via onAuthStateChanged
+            // e faz o redirect automaticamente
+            router.push('/dashboard');
         } catch (error: any) {
-            console.error("Google Login Error:", error);
-            setError("Erro ao conectar com Google. Tente novamente.");
+            console.error("Erro no login com Google:", error);
+            // Ignora cancelamento do popup pelo usuário
+            if (error.code !== 'auth/popup-closed-by-user') {
+                setError("Erro ao conectar com Google. Tente novamente.");
+            }
             setLoading(false);
         }
     };

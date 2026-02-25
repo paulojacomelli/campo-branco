@@ -4,7 +4,6 @@ import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Loader2, Building2, ChevronRight, Search, Store } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import BottomNav from '@/app/components/BottomNav';
 
@@ -14,7 +13,7 @@ interface Congregation {
 }
 
 export default function WitnessingPage() {
-    const { user, congregationId, isSuperAdmin, loading: authLoading } = useAuth();
+    const { user, congregationId, isAdminRoleGlobal, loading: authLoading } = useAuth();
     const router = useRouter();
     const [congregations, setCongregations] = useState<Congregation[]>([]);
     const [loading, setLoading] = useState(true);
@@ -43,11 +42,11 @@ export default function WitnessingPage() {
         c.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (authLoading || (isSuperAdmin && loading)) {
+    if (authLoading || (isAdminRoleGlobal && loading)) {
         return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
     }
 
-    if (!isSuperAdmin && !congregationId) {
+    if (!isAdminRoleGlobal && !congregationId) {
         return (
             <div className="bg-background min-h-screen flex flex-col items-center justify-center p-6 text-center">
                 <div className="bg-surface p-4 rounded-full mb-6 shadow-sm border border-surface-border">

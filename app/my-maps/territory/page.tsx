@@ -54,7 +54,7 @@ function TerritoryListContent() {
     const searchParams = useSearchParams();
     const congregationId = searchParams.get('congregationId');
     const cityId = searchParams.get('cityId');
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading } = useAuth();
+    const { user, isAdmin, isAdminRoleGlobal, isElder, isServant, loading: authLoading } = useAuth();
     const router = useRouter();
     const currentView = searchParams.get('view') || 'grid';
 
@@ -467,7 +467,7 @@ function TerritoryListContent() {
                 </div>
                 <div className="flex items-center gap-2">
                     <RoleBasedSwitcher />
-                    {(isElder || isServant || isAdmin || isSuperAdmin) && (
+                    {(isElder || isServant || isAdmin || isAdminRoleGlobal) && (
                         <>
                             <CSVActionButtons
                                 congregationId={congregationId}

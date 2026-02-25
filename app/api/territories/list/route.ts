@@ -1,13 +1,18 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/territories/list/route.ts
+// Lista os territórios de uma cidade com estatísticas de endereços
+// Requer autenticação e permissão de acesso à congregação
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token);
 
-        if (authError || !currentUser) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -15,77 +20,69 @@ export async function GET(req: Request) {
         const cityId = url.searchParams.get('cityId');
         let congregationId = url.searchParams.get('congregationId');
 
-        // Add auth checking logic
-        let { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id, email')
-            .eq('id', currentUser.id)
-            .single();
-
-        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
-            const { data: fallbackData } = await supabaseAdmin
-                .from('users')
-                .select('role, congregation_id, email')
-                .eq('email', currentUser.email)
-                .single();
-            if (fallbackData) adminData = fallbackData;
+        // Garante que usuários não-admin vejam apenas sua própria congregação
+        if (user.role !== 'ADMIN' || !congregationId) {
+            congregationId = user.congregationId || null;
         }
 
-        // Security: Force congregationId to be the user's congregation for operational views
-        // Superadmins can no longer jump between congregations in these views.
-        if (adminData?.role !== 'SUPER_ADMIN' || !congregationId) {
-            congregationId = adminData?.congregation_id || null;
-        }
-
-        const isAllowed = adminData && (
-            adminData.role === 'SUPER_ADMIN' ||
-            (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
-        );
+        // Verifica permissão
+        const isAllowed = user.role === 'ADMIN' ||
+            ['ANCIAO', 'SERVO', 'PUBLICADOR'].includes(user.role || '');
 
         if (!isAllowed || !congregationId) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
-        // 1. Busca os territórios
-        const { data: territories, error: tErr } = await supabaseAdmin
-            .from('territories')
-            .select('*')
-            .eq('city_id', cityId)
-            .eq('congregation_id', congregationId)
-            .order('name');
+        // 1. Busca os territórios no Firestore
+        let teQuery = adminDb.collection('territories')
+            .where('congregationId', '==', congregationId)
+            .orderBy('name');
 
-        if (tErr) throw tErr;
+        if (cityId) {
+            teQuery = adminDb.collection('territories')
+                .where('cityId', '==', cityId)
+                .where('congregationId', '==', congregationId)
+                .orderBy('name');
+        }
 
-        if (!territories || territories.length === 0) {
+        const teSnap = await teQuery.get();
+        const territories = teSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (territories.length === 0) {
             return NextResponse.json({ success: true, territories: [] });
         }
 
-        const territoryIds = territories.map(t => t.id);
+        const territoryIds = territories.map((t: any) => t.id);
 
-        // 2. Busca todos os endereços ATIVOS para estes territórios para contar em memória
-        const { data: addresses, error: aErr } = await supabaseAdmin
-            .from('addresses')
-            .select('territory_id, gender')
-            .in('territory_id', territoryIds)
-            .eq('is_active', true);
-
-        if (aErr) throw aErr;
-
-        // 3. Agrega as estatísticas
+        // 2. Busca endereços ativos para calcular estatísticas
+        // Divide em chunks de 30 (limite do Firestore para 'in')
         const statsMap: Record<string, { count: number, men: number, women: number, couples: number }> = {};
 
-        addresses?.forEach(addr => {
-            if (!statsMap[addr.territory_id]) {
-                statsMap[addr.territory_id] = { count: 0, men: 0, women: 0, couples: 0 };
-            }
-            statsMap[addr.territory_id].count++;
-            if (addr.gender === 'HOMEM') statsMap[addr.territory_id].men++;
-            else if (addr.gender === 'MULHER') statsMap[addr.territory_id].women++;
-            else if (addr.gender === 'CASAL') statsMap[addr.territory_id].couples++;
-        });
+        const chunks = [];
+        for (let i = 0; i < territoryIds.length; i += 30) {
+            chunks.push(territoryIds.slice(i, i + 30));
+        }
 
-        // 4. Formata o retorno
-        const formattedTerritories = territories.map(t => {
+        for (const chunk of chunks) {
+            const addrSnap = await adminDb.collection('addresses')
+                .where('territoryId', 'in', chunk)
+                .where('isActive', '==', true)
+                .get();
+
+            addrSnap.docs.forEach(doc => {
+                const addr = doc.data();
+                if (!statsMap[addr.territoryId]) {
+                    statsMap[addr.territoryId] = { count: 0, men: 0, women: 0, couples: 0 };
+                }
+                statsMap[addr.territoryId].count++;
+                if (addr.gender === 'HOMEM') statsMap[addr.territoryId].men++;
+                else if (addr.gender === 'MULHER') statsMap[addr.territoryId].women++;
+                else if (addr.gender === 'CASAL') statsMap[addr.territoryId].couples++;
+            });
+        }
+
+        // 3. Mescla estatísticas aos territórios
+        const formattedTerritories = territories.map((t: any) => {
             const stats = statsMap[t.id] || { count: 0, men: 0, women: 0, couples: 0 };
             return {
                 ...t,
@@ -98,6 +95,7 @@ export async function GET(req: Request) {
 
         return NextResponse.json({ success: true, territories: formattedTerritories });
     } catch (error: any) {
+        console.error("API Territories List Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

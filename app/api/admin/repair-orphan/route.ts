@@ -21,7 +21,7 @@ export async function POST(req: Request) {
             .eq('id', user.id)
             .single();
 
-        if (userError || userData?.role !== 'SUPER_ADMIN') {
+        if (userError || userData?.role !== 'ADMIN') {
             return NextResponse.json({ error: 'Acesso restrito a Super Admins' }, { status: 403 });
         }
 

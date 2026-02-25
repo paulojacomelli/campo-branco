@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
         // SECURITY: Verify congregationId alignment
         // Non-superadmins MUST save to their own congregation
-        if (profile?.role !== 'SUPER_ADMIN') {
+        if (profile?.role !== 'ADMIN') {
             if (payload.congregation_id && payload.congregation_id !== profile?.congregation_id) {
                 return NextResponse.json({ error: 'Acesso negado à congregação solicitada' }, { status: 403 });
             }

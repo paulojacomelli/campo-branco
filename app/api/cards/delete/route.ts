@@ -29,7 +29,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Erro ao verificar permissões.' }, { status: 500 });
         }
 
-        const isAuthorized = userData.role === 'SUPER_ADMIN' ||
+        const isAuthorized = userData.role === 'ADMIN' ||
             userData.role === 'ADMIN' ||
             userData.role === 'ELDER' ||
             userData.role === 'SERVANT';

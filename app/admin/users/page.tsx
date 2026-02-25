@@ -51,7 +51,7 @@ const ROLE_DEFINITIONS = [
 ];
 
 export default function SuperAdminUsersPage() {
-    const { user, isSuperAdmin, isElder, congregationId, loading } = useAuth();
+    const { user, isAdminRoleGlobal, isElder, congregationId, loading } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [congregations, setCongregations] = useState<Congregation[]>([]);
     const [loadingData, setLoadingData] = useState(true);
@@ -81,7 +81,7 @@ export default function SuperAdminUsersPage() {
             setCongregations(congData || []);
 
             let queryBuilder = supabase.from('users').select('*').order('name');
-            if (!isSuperAdmin && congregationId) {
+            if (!isAdminRoleGlobal && congregationId) {
                 queryBuilder = queryBuilder.eq('congregation_id', congregationId);
             }
 
@@ -117,7 +117,7 @@ export default function SuperAdminUsersPage() {
                 };
             }
         }
-    }, [user, isSuperAdmin, isElder, congregationId, loading, router]);
+    }, [user, isAdminRoleGlobal, isElder, congregationId, loading, router]);
 
     useEffect(() => {
         const handleClickOutside = () => setOpenMenuId(null);
@@ -128,20 +128,20 @@ export default function SuperAdminUsersPage() {
     }, [openMenuId]);
 
     const handleSaveUser = async () => {
-        if (!isSuperAdmin && !isElder) return;
+        if (!isAdminRoleGlobal && !isElder) return;
         if (!editingUser) return;
 
-        if (!isSuperAdmin && editingUser.congregation_id !== congregationId) {
+        if (!isAdminRoleGlobal && editingUser.congregation_id !== congregationId) {
             toast.error("Você só pode editar usuários da sua própria congregação.");
             return;
         }
 
-        if (!isSuperAdmin) {
-            if (editingUser.role === 'SUPER_ADMIN' || (editingUser.roles && editingUser.roles.includes('SUPER_ADMIN'))) {
+        if (!isAdminRoleGlobal) {
+            if (editingUser.role === 'ADMIN' || (editingUser.roles && editingUser.roles.includes('ADMIN'))) {
                 toast.error("Você não pode editar um Super Admin.");
                 return;
             }
-            if (editRoles.includes('SUPER_ADMIN')) {
+            if (editRoles.includes('ADMIN')) {
                 toast.error("Você não pode promover alguém a Super Admin.");
                 return;
             }
@@ -152,7 +152,7 @@ export default function SuperAdminUsersPage() {
             // Calcula o 'role' legado com base no papel de maior hierarquia selecionado
             // O banco Supabase possui apenas a coluna 'role' (string/enum),
             // não existe coluna 'roles' (array) na tabela users
-            const legacyRole = editRoles.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' :
+            const legacyRole = editRoles.includes('ADMIN') ? 'ADMIN' :
                 editRoles.includes('ANCIAO') ? 'ANCIAO' :
                     editRoles.includes('SERVO') ? 'SERVO' : 'PUBLICADOR';
 
@@ -196,7 +196,7 @@ export default function SuperAdminUsersPage() {
 
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isSuperAdmin && !isElder) return;
+        if (!isAdminRoleGlobal && !isElder) return;
 
         setLoadingData(true);
         try {
@@ -207,7 +207,7 @@ export default function SuperAdminUsersPage() {
                     id: newUserId,
                     name: newUser.name.trim(),
                     email: newUser.email.trim().toLowerCase(),
-                    congregation_id: isSuperAdmin ? (newUser.congregationId || null) : congregationId,
+                    congregation_id: isAdminRoleGlobal ? (newUser.congregationId || null) : congregationId,
                     role: 'PUBLICADOR'
                 });
 
@@ -218,7 +218,7 @@ export default function SuperAdminUsersPage() {
                 id: newUserId,
                 name: newUser.name.trim(),
                 email: newUser.email.trim().toLowerCase(),
-                congregation_id: isSuperAdmin ? (newUser.congregationId || null) : (congregationId || null),
+                congregation_id: isAdminRoleGlobal ? (newUser.congregationId || null) : (congregationId || null),
                 role: 'PUBLICADOR'
             };
             setUsers(prev => [createdUser, ...prev]);
@@ -241,12 +241,12 @@ export default function SuperAdminUsersPage() {
             return;
         }
 
-        if (!isSuperAdmin && targetUser.congregation_id !== congregationId) {
+        if (!isAdminRoleGlobal && targetUser.congregation_id !== congregationId) {
             toast.error("Você só pode excluir usuários da sua própria congregação.");
             return;
         }
 
-        if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
+        if (targetUser.role === 'ADMIN' && !isAdminRoleGlobal) {
             toast.error("Apenas Super Admins podem excluir outros Super Admins.");
             return;
         }
@@ -316,7 +316,7 @@ export default function SuperAdminUsersPage() {
                     <div>
                         <h1 className="font-bold text-lg text-main tracking-tight leading-tight">Membros</h1>
                         <p className="text-[10px] text-muted font-bold uppercase tracking-widest">
-                            {isSuperAdmin ? 'Administração Global' : 'Gestão da Congregação'}
+                            {isAdminRoleGlobal ? 'Administração Global' : 'Gestão da Congregação'}
                         </p>
                     </div>
                 </div>
@@ -483,7 +483,7 @@ export default function SuperAdminUsersPage() {
                                 />
                             </div>
 
-                            {isSuperAdmin && (
+                            {isAdminRoleGlobal && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Congregação</label>
                                     <select
@@ -534,7 +534,7 @@ export default function SuperAdminUsersPage() {
                                 />
                             </div>
 
-                            {isSuperAdmin && (
+                            {isAdminRoleGlobal && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Congregação</label>
                                     <select

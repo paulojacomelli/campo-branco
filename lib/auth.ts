@@ -1,5 +1,9 @@
+// lib/auth.ts
+// Funções de autenticação e autorização para uso nas API routes (servidor)
+// Usa Firebase Admin SDK para verificar tokens JWT sem expô-los ao cliente
+
+import { adminAuth, adminDb } from './firebase-admin';
 import { cookies } from 'next/headers';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export interface AuthorizedUser {
     uid: string;
@@ -10,49 +14,46 @@ export interface AuthorizedUser {
     [key: string]: any;
 }
 
+// Verifica o token de autenticação presente nos cookies da requisição
 export async function checkAuth(): Promise<AuthorizedUser | null> {
     try {
-        const supabase = createServerComponentClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
 
-        if (!session) {
-            return null;
-        }
+        if (!token) return null;
 
-        const user = session.user;
-        const uid = user.id;
+        // Verifica e decodifica o token JWT via Firebase Admin
+        const decodedToken = await adminAuth.verifyIdToken(token);
+        const uid = decodedToken.uid;
 
-        // Fetch full user profile from Supabase profiles table
-        const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', uid)
-            .single();
+        // Busca o perfil completo do usuário no Firestore
+        const userDoc = await adminDb.collection('users').doc(uid).get();
+        const userData = userDoc.data();
 
-        if (userError || !userData) {
-            // Default to publisher if no profile found
+        if (!userData) {
             return {
                 uid,
-                email: user.email,
-                role: 'PUBLISHER',
-                roles: ['PUBLISHER'],
+                email: decodedToken.email,
+                role: 'PUBLICADOR',
+                roles: ['PUBLICADOR'],
             };
         }
 
         return {
             uid,
-            email: user.email,
-            role: userData.role || 'PUBLISHER',
-            roles: userData.roles || [userData.role || 'PUBLISHER'],
-            congregationId: userData.congregation_id,
+            email: decodedToken.email,
+            role: userData.role || 'PUBLICADOR',
+            roles: [userData.role || 'PUBLICADOR'],
+            congregationId: userData.congregationId,
             ...userData
         };
     } catch (error) {
-        console.error('[AUTH] Supabase session verification failed:', error);
+        console.error('[AUTH] Falha na verificação do token Firebase:', error);
         return null;
     }
 }
 
+// Exige autenticação e opcionalmente um conjunto de papéis permitidos
 export async function requireAuth(allowedRoles?: string[]): Promise<AuthorizedUser> {
     const user = await checkAuth();
 
@@ -61,9 +62,7 @@ export async function requireAuth(allowedRoles?: string[]): Promise<AuthorizedUs
     }
 
     if (allowedRoles && allowedRoles.length > 0) {
-        const userRoles = Array.isArray(user.roles) ? user.roles : [user.role];
-        const hasPermission = userRoles.some((role: string) => allowedRoles.includes(role)) || user.role === 'SUPER_ADMIN';
-
+        const hasPermission = allowedRoles.includes(user.role) || user.role === 'ADMIN';
         if (!hasPermission) {
             throw new Error('Forbidden');
         }

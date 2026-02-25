@@ -55,7 +55,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                 users (name)
             `);
 
-            if (role !== 'SUPER_ADMIN') {
+            if (role !== 'ADMIN') {
                 if (congregationId) {
                     query = query.eq('congregation_id', congregationId);
                 } else {
@@ -76,7 +76,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
             // 2. Filter logic for non-admins (Scoped results)
             const filteredVisits = rawVisits.filter(v => {
                 if (scope === 'mine' && v.user_id !== user?.id) return false;
-                if (scope === 'all' && role !== 'SUPER_ADMIN' && !isElder && !isServant) {
+                if (scope === 'all' && role !== 'ADMIN' && !isElder && !isServant) {
                     if (v.user_id !== user?.id) return false;
                 }
                 return true;
@@ -282,7 +282,7 @@ export default function VisitsHistory({ scope = 'all', showViewAll = true }: { s
                     <p className="text-sm text-gray-400">
                         {loading ? "Carregando histórico..." : "Nenhuma visita realizada recentemente."}
                     </p>
-                    {(role === 'SUPER_ADMIN' || isElder) && !loading && (
+                    {(role === 'ADMIN' || isElder) && !loading && (
                         <p className="text-[10px] text-gray-300 mt-2 uppercase">Verifique se as visitas possuem congregação vinculada</p>
                     )}
                 </div>

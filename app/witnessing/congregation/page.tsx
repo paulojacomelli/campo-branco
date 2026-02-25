@@ -9,7 +9,8 @@ import {
     ArrowRight,
     AlertCircle
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -19,7 +20,7 @@ interface City {
     id: string;
     name: string;
     uf: string;
-    congregation_id: string; // Note: snake_case from Supabase
+    congregationId: string; // camelCase no Firestore
 }
 
 function WitnessingCityListContent() {
@@ -62,44 +63,37 @@ function WitnessingCityListContent() {
         }, 12000);
 
         let isMounted = true;
-        const fetchCities = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('cities')
-                    .select('*')
-                    .eq('congregation_id', congregationId)
-                    .order('name');
 
-                if (error) throw error;
+        // onSnapshot: busca cidades e ouve mudanças em tempo real via Firestore
+        const citiesQuery = query(
+            collection(db, 'cities'),
+            where('congregationId', '==', congregationId),
+            orderBy('name')
+        );
 
-                if (data && isMounted) {
-                    setCities(data);
+        const unsubscribe = onSnapshot(
+            citiesQuery,
+            (snapshot) => {
+                if (!isMounted) return;
+                const citiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as City));
+                setCities(citiesData);
+                setLoading(false);
+                clearTimeout(timer);
+            },
+            (error) => {
+                console.error("Error fetching cities:", error);
+                if (isMounted) {
+                    setHasError(true);
+                    setLoading(false);
                 }
-            } catch (error: any) {
-                console.error("Error fetching cities:", error.message || error);
-            } finally {
-                if (isMounted) setLoading(false);
+                clearTimeout(timer);
             }
-        };
-
-        fetchCities();
-
-        const subscription = supabase
-            .channel(`cities:congrgation=${congregationId}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'cities',
-                filter: `congregation_id=eq.${congregationId}`
-            }, (payload) => {
-                fetchCities();
-            })
-            .subscribe();
+        );
 
         return () => {
             isMounted = false;
             clearTimeout(timer);
-            subscription.unsubscribe();
+            unsubscribe();
         };
     }, [congregationId, authLoading]);
 

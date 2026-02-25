@@ -1,5 +1,11 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+// lib/firebase.ts
+// Cliente Firebase para uso em componentes do lado do cliente (browser)
 
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore';
+
+// Configuração do Firebase lida das variáveis de ambiente
 const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -9,6 +15,10 @@ const firebaseConfig = {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Inicializa o app apenas uma vez (evita duplicatas em hot-reload do Next.js)
+const app: FirebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
+// Exporta instâncias dos serviços para uso nos componentes
+export const auth: Auth = getAuth(app);
+export const db: Firestore = getFirestore(app);
 export { app };

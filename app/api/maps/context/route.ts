@@ -32,12 +32,12 @@ export async function GET(req: Request) {
             if (fallbackData) adminData = fallbackData;
         }
 
-        // Permite visualizar se for SUPER_ADMIN ou se a congregationId bater com o registro do usuário
+        // Permite visualizar se for ADMIN ou se a congregationId bater com o registro do usuário
         const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
         const reqCong = String(congregationId || '').toLowerCase().trim();
 
         const isAllowed = adminData && (
-            adminData.role === 'SUPER_ADMIN' ||
+            adminData.role === 'ADMIN' ||
             (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || '')))
         );
 

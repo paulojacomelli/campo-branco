@@ -1,5 +1,9 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/visits/report/route.ts
+// Registra uma visita realizada via link de território compartilhado
+// Não requer autenticação pois o acesso é controlado pelo shareId
+
 import { NextResponse } from 'next/server';
+import { adminDb, FieldValue } from '@/lib/firestore';
 
 export async function POST(req: Request) {
     try {
@@ -10,48 +14,35 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
         }
 
-        // 1. Verify that the shared list exists and is not expired
-        const { data: list, error: listError } = await supabaseAdmin
-            .from('shared_lists')
-            .select('expires_at, congregation_id')
-            .eq('id', shareId)
-            .single();
+        // 1. Verifica se a lista compartilhada existe e não está expirada
+        const listRef = adminDb.collection('sharedLists').doc(shareId);
+        const listSnap = await listRef.get();
 
-        if (listError || !list) {
+        if (!listSnap.exists) {
             return NextResponse.json({ error: 'Link de compartilhamento inválido' }, { status: 403 });
         }
 
-        if (list.expires_at) {
-            const now = new Date();
-            const expires = new Date(list.expires_at);
-            if (now > expires) {
+        const list = listSnap.data()!;
+
+        if (list.expiresAt) {
+            const expiresDate = list.expiresAt.toDate ? list.expiresAt.toDate() : new Date(list.expiresAt);
+            if (new Date() > expiresDate) {
                 return NextResponse.json({ error: 'Link expirado' }, { status: 410 });
             }
         }
 
-        // 2. Insert the visit using admin client
-        // Ensure the congregation_id matches the list's congregation
+        // 2. Insere a visita vinculada à congregação da lista
         const finalVisitData = {
             ...visitData,
-            shared_list_id: shareId,
-            congregation_id: list.congregation_id
+            sharedListId: shareId,
+            congregationId: list.congregationId,
+            createdAt: FieldValue.serverTimestamp(),
         };
 
-        const { data: insertedVisit, error: insertError } = await supabaseAdmin
-            .from('visits')
-            .insert(finalVisitData)
-            .select()
-            .single();
+        const visitRef = await adminDb.collection('visits').add(finalVisitData);
+        const visitSnap = await visitRef.get();
 
-        if (insertError) {
-            console.error("[VISIT REPORT API] Insert error:", insertError);
-            throw insertError;
-        }
-
-        // 3. (Removido) Inativação automática revertida em favor de aprovação manual por admins
-
-
-        return NextResponse.json({ success: true, visit: insertedVisit });
+        return NextResponse.json({ success: true, visit: { id: visitRef.id, ...visitSnap.data() } });
 
     } catch (error: any) {
         console.error("Critical Error in /api/visits/report:", error);

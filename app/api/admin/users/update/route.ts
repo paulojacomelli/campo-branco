@@ -24,7 +24,7 @@ export async function POST(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.role !== 'ANCIAO' && adminData.role !== 'SERVO')) {
+        if (!adminData || (adminData.role !== 'ADMIN' && adminData.role !== 'ANCIAO' && adminData.role !== 'SERVO')) {
             return NextResponse.json({ error: 'Você não tem permissão para atualizar usuários.' }, { status: 403 });
         }
 
@@ -40,15 +40,15 @@ export async function POST(req: Request) {
         }
 
         // 3. Regras de segurança adicionais
-        if (adminData.role !== 'SUPER_ADMIN') {
+        if (adminData.role !== 'ADMIN') {
             // Se for Ancião ou Servo, só edita da própria congregação
             if (targetUser.congregation_id !== adminData.congregation_id) {
                 return NextResponse.json({ error: 'Você só pode editar usuários da sua congregação.' }, { status: 403 });
             }
-            if (targetUser.role === 'SUPER_ADMIN') {
+            if (targetUser.role === 'ADMIN') {
                 return NextResponse.json({ error: 'Você não pode editar um Super Admin.' }, { status: 403 });
             }
-            if (role === 'SUPER_ADMIN') {
+            if (role === 'ADMIN') {
                 return NextResponse.json({ error: 'Você não pode promover alguém a Super Admin.' }, { status: 403 });
             }
         }

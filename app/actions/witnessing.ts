@@ -38,7 +38,7 @@ export async function createWitnessingPoint(data: {
         const supabase = createServerActionClient({ cookies });
 
         // Security check
-        if (user.role !== 'SUPER_ADMIN') {
+        if (user.role !== 'ADMIN') {
             const { data: city, error: cityError } = await supabase
                 .from('cities')
                 .select('congregation_id')
@@ -113,7 +113,7 @@ export async function updateWitnessingPointDetails(id: string, data: {
         if (fetchError || !point) throw new Error('Not found');
 
         // Security check
-        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
+        if (user.role !== 'ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 
@@ -152,7 +152,7 @@ export async function updateWitnessingPointStatus(id: string, status: string, pu
         if (fetchError || !point) throw new Error('Not found');
 
         // Ensure point belongs to user's congregation
-        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
+        if (user.role !== 'ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 
@@ -188,7 +188,7 @@ export async function deleteWitnessingPoint(id: string) {
 
         if (fetchError || !point) throw new Error('Not found');
 
-        if (user.role !== 'SUPER_ADMIN' && point.congregation_id !== user.congregationId) {
+        if (user.role !== 'ADMIN' && point.congregation_id !== user.congregationId) {
             throw new Error('Forbidden');
         }
 

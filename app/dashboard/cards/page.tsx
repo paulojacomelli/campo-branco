@@ -33,7 +33,7 @@ function CardsContent() {
     const router = useRouter();
     const scope = (searchParams.get('scope') as 'mine' | 'managed') || 'mine';
 
-    const { user, role, isElder, isServant, congregationId, profileName, isSuperAdmin, loading: authLoading } = useAuth();
+    const { user, role, isElder, isServant, congregationId, profileName, isAdminRoleGlobal, loading: authLoading } = useAuth();
     const [lists, setLists] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -68,15 +68,15 @@ function CardsContent() {
             }
             // SCOPE: MANAGED (Sent/All)
             else if (scope === 'managed') {
-                if (role !== 'SUPER_ADMIN' && congregationId) {
+                if (role !== 'ADMIN' && congregationId) {
                     query = query.eq("congregation_id", congregationId);
-                } else if (role !== 'SUPER_ADMIN') {
+                } else if (role !== 'ADMIN') {
                     setLists([]);
                     setLoading(false);
                     return;
                 }
                 // Super admin sees all, limited for safety
-                if (role === 'SUPER_ADMIN') {
+                if (role === 'ADMIN') {
                     query = query.limit(100);
                 }
             } else {
@@ -101,7 +101,7 @@ function CardsContent() {
             }));
 
             // Filter for Publisher in Managed View
-            if (scope === 'managed' && !isElder && !isServant && !isSuperAdmin) {
+            if (scope === 'managed' && !isElder && !isServant && !isAdminRoleGlobal) {
                 const userName = profileName || user?.user_metadata?.full_name || user?.email?.split('@')[0];
                 rawLists = rawLists.filter(l => l.assignedName === userName || l.assignedTo === user.id);
             }
@@ -130,7 +130,7 @@ function CardsContent() {
         } finally {
             setLoading(false);
         }
-    }, [user, scope, role, isElder, isServant, congregationId, profileName, isSuperAdmin]);
+    }, [user, scope, role, isElder, isServant, congregationId, profileName, isAdminRoleGlobal]);
 
     useEffect(() => {
         if (!authLoading && user) {
@@ -499,7 +499,7 @@ function CardsContent() {
                                                     <Share2 className="w-3.5 h-3.5" />
                                                     Enviar Link
                                                 </button>
-                                                {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                                                {(isElder || isServant || role === 'ADMIN') && (
                                                     <button
                                                         onClick={() => {
                                                             setConfirmModal({

@@ -20,11 +20,11 @@ const ROLE_DEFINITIONS = [
     { label: 'Publicador', value: 'PUBLICADOR', weight: 1 },
     { label: 'Servo de Territórios', value: 'SERVO', weight: 2 },
     { label: 'Superintendente de Serviço', value: 'ANCIAO', weight: 3 },
-    { label: 'SUPER_ADMIN', value: 'SUPER_ADMIN', weight: 4 },
+    { label: 'ADMIN', value: 'ADMIN', weight: 4 },
 ];
 
 export default function UserManagementList({ congregationId }: { congregationId?: string | null }) {
-    const { user: currentUser, isSuperAdmin, isElder } = useAuth();
+    const { user: currentUser, isAdminRoleGlobal, isElder } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
     }, [congregationId]);
 
     const canAssignRole = (targetRole: string): boolean => {
-        if (isSuperAdmin) return true;
+        if (isAdminRoleGlobal) return true;
         if (isElder) {
             // Elders can assign Publicador and Servo, but NOT Anciao or Super Admin
             return ['PUBLICADOR', 'SERVO'].includes(targetRole);
@@ -169,7 +169,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
                                                 <div className="flex flex-wrap gap-1 mt-1">
                                                     {displayRoles.map(r => (
                                                         <span key={r} className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase
-                                                            ${r === 'SUPER_ADMIN' ? 'bg-red-100 text-red-700' :
+                                                            ${r === 'ADMIN' ? 'bg-red-100 text-red-700' :
                                                                 r === 'ANCIAO' ? 'bg-purple-100 text-purple-700' :
                                                                     r === 'SERVO' ? 'bg-primary-light text-primary-dark' :
                                                                         'bg-green-100 text-green-700'}

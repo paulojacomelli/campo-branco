@@ -1,13 +1,18 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/addresses/list/route.ts
+// Lista endereços de um território ou cidade com informações da última visita
+// Requer autenticação e permissão de acesso à congregação solicitada
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken, canAccessCongregation, isAdminRole } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token);
 
-        if (authError || !currentUser) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -20,70 +25,63 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Parâmetros ausentes' }, { status: 400 });
         }
 
-        // Auth Logic (Try ID + Email verification)
-        let { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id, email')
-            .eq('id', currentUser.id)
-            .single();
-
-        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
-            const { data: fallbackData } = await supabaseAdmin
-                .from('users')
-                .select('role, congregation_id, email')
-                .eq('email', currentUser.email)
-                .single();
-            if (fallbackData) adminData = fallbackData;
-        }
-
-        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
-        const reqCong = String(congregationId || '').toLowerCase().trim();
-
-        const isAllowed = adminData && (
-            adminData.role === 'SUPER_ADMIN' ||
-            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || '')))
-        );
-
-        if (!isAllowed) {
+        // Verifica permissão de acesso à congregação
+        if (!canAccessCongregation(user, congregationId) || !isAdminRole(user.role)) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
-        // Fetch addresses using Admin to bypass RLS
-        let query = supabaseAdmin
-            .from('addresses')
-            .select('id, territory_id, is_active, street, resident_name, observations, gender, is_deaf, is_neurodivergent, is_student, is_minor, inactivated_at, google_maps_link, waze_link, lat, lng')
-            .eq('congregation_id', congregationId);
+        // Busca endereços no Firestore com filtros aplicados
+        let query = adminDb.collection('addresses')
+            .where('congregationId', '==', congregationId);
 
         if (territoryId) {
-            query = query.eq('territory_id', territoryId);
-        } else if (cityId) {
-            query = query.eq('city_id', cityId);
+            query = query.where('territoryId', '==', territoryId);
+        } else {
+            query = query.where('cityId', '==', cityId);
         }
 
-        const { data: addresses, error: aErr } = await query;
-        if (aErr) throw aErr;
+        const addressSnap = await query.get();
+        const addresses = addressSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // 2. Fetch Latest Visits for these addresses
-        const { data: latestVisits, error: vErr } = await supabaseAdmin
-            .from('visits')
-            .select('address_id, status, created_at')
-            .in('address_id', (addresses || []).map(a => a.id))
-            .order('created_at', { ascending: false });
+        // Busca as visitas mais recentes para esses endereços
+        const addressIds = addresses.map((a: any) => a.id);
+        const visitsMap: Record<string, any> = {};
 
-        if (vErr) console.error("[ADDRESS LIST API] Visits fetch error:", vErr);
+        if (addressIds.length > 0) {
+            // Firestore só suporta até 30 itens por 'in' query, dividindo em chunks
+            const chunks = [];
+            for (let i = 0; i < addressIds.length; i += 30) {
+                chunks.push(addressIds.slice(i, i + 30));
+            }
 
-        // Map latest visit to each address
-        const addressesWithStatus = (addresses || []).map(addr => {
-            const lastVisit = (latestVisits || []).find(v => v.address_id === addr.id);
+            for (const chunk of chunks) {
+                const visitSnap = await adminDb.collection('visits')
+                    .where('addressId', 'in', chunk)
+                    .orderBy('createdAt', 'desc')
+                    .get();
+
+                for (const vDoc of visitSnap.docs) {
+                    const vData = vDoc.data();
+                    if (!visitsMap[vData.addressId]) {
+                        visitsMap[vData.addressId] = vData;
+                    }
+                }
+            }
+        }
+
+        // Mescla dados de visita a cada endereço
+        const addressesWithStatus = addresses.map((addr: any) => {
+            const lastVisit = visitsMap[addr.id];
             return {
                 ...addr,
                 visit_status: lastVisit?.status || 'none',
-                last_visited_at: lastVisit?.created_at
+                last_visited_at: lastVisit?.createdAt?.toDate?.()?.toISOString() || null
             };
         });
 
         return NextResponse.json({ success: true, addresses: addressesWithStatus });
     } catch (error: any) {
+        console.error("API Address List Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

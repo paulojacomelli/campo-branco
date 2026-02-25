@@ -36,7 +36,7 @@ interface RegistryRow {
 }
 
 export default function RegistryPage() {
-    const { user, congregationId, isElder, isServant, isSuperAdmin, loading } = useAuth();
+    const { user, congregationId, isElder, isServant, isAdminRoleGlobal, loading } = useAuth();
     const router = useRouter();
 
     const [currentServiceYear, setCurrentServiceYear] = useState<number>(getServiceYear());
@@ -63,10 +63,10 @@ export default function RegistryPage() {
     const [editingLegacy, setEditingLegacy] = useState<{ territoryId: string; name: string; date?: Date } | null>(null);
 
     useEffect(() => {
-        if (!loading && !isElder && !isServant && !isSuperAdmin) {
+        if (!loading && !isElder && !isServant && !isAdminRoleGlobal) {
             router.push('/dashboard');
         }
-    }, [loading, isElder, isServant, isSuperAdmin, router]);
+    }, [loading, isElder, isServant, isAdminRoleGlobal, router]);
 
     // Initialize selectedCongregationId
     useEffect(() => {

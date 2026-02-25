@@ -1,71 +1,73 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/addresses/save/route.ts
+// Cria ou atualiza um endereço no Firestore
+// Requer autenticação e permissão de pertencimento à congregação
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken, canAccessCongregation, FieldValue } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token);
 
-        if (authError || !currentUser) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
         const body = await req.json();
         const {
-            street, territory_id, congregation_id, city_id, lat, lng,
-            is_active, google_maps_link, waze_link, resident_name, gender,
-            is_deaf, is_minor, is_student, is_neurodivergent, observations, id,
+            street, territoryId, congregationId, cityId, lat, lng,
+            isActive, googleMapsLink, wazeLink, residentName, gender,
+            isDeaf, isMinor, isStudent, isNeurodivergent, observations, id,
+            inactivatedAt,
+            // Compatibilidade com campo snake_case do formulário legado
+            territory_id, congregation_id, city_id, is_active, is_deaf, is_minor,
+            is_student, is_neurodivergent, resident_name, google_maps_link, waze_link,
             inactivated_at
         } = body;
 
-        // Check if user belongs to the congregation
-        const { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
+        // Aceita ambos os formatos (camelCase novo e snake_case legado)
+        const finalCongregationId = congregationId || congregation_id;
+        const finalTerritoryId = territoryId || territory_id;
+        const finalCityId = cityId || city_id;
 
-        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
-        const reqCong = String(congregation_id || '').toLowerCase().trim();
-
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && userCong !== reqCong)) {
+        if (!canAccessCongregation(user, finalCongregationId)) {
             return NextResponse.json({ error: 'Você não tem permissão nesta congregação.' }, { status: 403 });
         }
 
-        const addressData = {
+        // Monta o objeto de dados do endereço
+        const addressData: Record<string, any> = {
             street,
-            territory_id,
-            congregation_id,
-            city_id,
-            lat,
-            lng,
-            is_active,
-            google_maps_link,
-            waze_link,
-            resident_name,
-            gender,
-            is_deaf,
-            is_minor,
-            is_student,
-            is_neurodivergent,
-            observations,
-            inactivated_at
+            territoryId: finalTerritoryId,
+            congregationId: finalCongregationId,
+            cityId: finalCityId,
+            lat: lat || null,
+            lng: lng || null,
+            isActive: isActive ?? is_active ?? true,
+            googleMapsLink: googleMapsLink || google_maps_link || null,
+            wazeLink: wazeLink || waze_link || null,
+            residentName: residentName || resident_name || null,
+            gender: gender || null,
+            isDeaf: isDeaf ?? is_deaf ?? false,
+            isMinor: isMinor ?? is_minor ?? false,
+            isStudent: isStudent ?? is_student ?? false,
+            isNeurodivergent: isNeurodivergent ?? is_neurodivergent ?? false,
+            observations: observations || null,
+            inactivatedAt: inactivatedAt || inactivated_at || null,
+            updatedAt: FieldValue.serverTimestamp(),
         };
 
         if (id) {
-            // Update
-            const { error: updateError } = await supabaseAdmin.from('addresses').update(addressData).eq('id', id);
-            if (updateError) throw updateError;
+            // Atualiza um endereço existente
+            await adminDb.collection('addresses').doc(id).update(addressData);
         } else {
-            // Insert
-            const { error: insertError } = await supabaseAdmin.from('addresses').insert({
-                ...addressData,
-                created_at: new Date().toISOString()
-            });
-            if (insertError) throw insertError;
+            // Cria um novo endereço
+            addressData.createdAt = FieldValue.serverTimestamp();
+            await adminDb.collection('addresses').add(addressData);
         }
 
         return NextResponse.json({ success: true });

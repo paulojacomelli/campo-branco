@@ -51,7 +51,7 @@ const STATUS_CONFIG: Record<BugStatus, { label: string, color: string, icon: any
 };
 
 export default function BugReportsAdminPage() {
-    const { isSuperAdmin, loading: authLoading } = useAuth();
+    const { isAdminRoleGlobal, loading: authLoading } = useAuth();
     const [reports, setReports] = useState<BugReport[]>([]);
     const [loading, setLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState<BugStatus | 'ALL'>('ALL');
@@ -62,10 +62,10 @@ export default function BugReportsAdminPage() {
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!authLoading && isSuperAdmin) {
+        if (!authLoading && isAdminRoleGlobal) {
             fetchReports();
         }
-    }, [isSuperAdmin, authLoading]);
+    }, [isAdminRoleGlobal, authLoading]);
 
     const fetchReports = async () => {
         setLoading(true);
@@ -122,7 +122,7 @@ export default function BugReportsAdminPage() {
         return matchesStatus && matchesSearch;
     });
 
-    if (authLoading || (!isSuperAdmin && !authLoading)) {
+    if (authLoading || (!isAdminRoleGlobal && !authLoading)) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />

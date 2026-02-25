@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
         // Force congregationId to be the user's congregation for non-superadmins
         // Or if the user is a superadmin but we want to stick to their own for operational views
-        if (profile?.role !== 'SUPER_ADMIN' || !congregationId) {
+        if (profile?.role !== 'ADMIN' || !congregationId) {
             congregationId = profile?.congregation_id || null;
         }
 

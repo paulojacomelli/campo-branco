@@ -7,14 +7,18 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function UnassignedPage() {
-    const { user, logout, loading, profileName } = useAuth();
+    const { user, role, logout, loading, profileName } = useAuth();
     const router = useRouter();
 
     useEffect(() => {
-        if (!loading && !user) {
-            router.push('/login');
+        if (!loading) {
+            if (!user) {
+                router.push('/login');
+            } else if (role === 'ADMIN') {
+                router.push('/dashboard');
+            }
         }
-    }, [user, loading, router]);
+    }, [user, loading, role, router]);
 
     const handleLogout = async () => {
         await logout();

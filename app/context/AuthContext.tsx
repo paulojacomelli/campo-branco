@@ -1,22 +1,25 @@
+// app/context/AuthContext.tsx
+// Contexto global de autenticação usando Firebase Auth
+// Gerencia sessão do usuário, perfil, permissões e configurações de congregação
+
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { User, onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
+// Tipagem do contexto de autenticação
 interface AuthContextType {
     user: User | null;
-    session: Session | null;
     loading: boolean;
     role: string | null;
     congregationId: string | null;
     logout: () => Promise<void>;
-    // Helper flags
     profileName: string | null;
-    isSuperAdmin: boolean;
+    isAdminRoleGlobal: boolean;
     isElder: boolean;
     isServant: boolean;
     isAdmin: boolean;
-    // Simulation
     simulateRole: (role: string | null) => void;
     isSimulating: boolean;
     actualRole: string | null;
@@ -28,15 +31,15 @@ interface AuthContextType {
     canInviteMembers: boolean;
 }
 
+// Valores padrão do contexto (estado inicial antes de carregar)
 const AuthContext = createContext<AuthContextType>({
     user: null,
-    session: null,
     loading: true,
     role: null,
     congregationId: null,
     logout: async () => { },
     profileName: null,
-    isSuperAdmin: false,
+    isAdminRoleGlobal: false,
     isElder: false,
     isServant: false,
     isAdmin: false,
@@ -48,206 +51,147 @@ const AuthContext = createContext<AuthContextType>({
     notificationsEnabled: true,
     setNotificationsEnabled: async () => { },
     canManageMembers: false,
-    canInviteMembers: false
+    canInviteMembers: false,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
-    const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
-    const [actualRole, setActualRole] = useState<string | null>(null); // Real role from DB
-    const [simulatedRole, setSimulatedRole] = useState<string | null>(null); // Simulation override
+    const [actualRole, setActualRole] = useState<string | null>(null);
+    const [simulatedRole, setSimulatedRole] = useState<string | null>(null);
     const [congregationId, setCongregationId] = useState<string | null>(null);
     const [profileName, setProfileName] = useState<string | null>(null);
     const [termType, setTermType] = useState<'city' | 'neighborhood'>('city');
     const [congregationType, setCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
     const [notificationsEnabled, setNotificationsEnabledInternal] = useState(true);
 
-    // Effective role is the simulated one (if active) or the actual one
+    // Papel efetivo: simulado (se ativo) ou real do banco
     const role = simulatedRole || actualRole;
 
+    // Timeout de segurança para evitar loading infinito
     useEffect(() => {
-        let isMounted = true;
+        const safetyTimeout = setTimeout(() => {
+            setLoading(false);
+        }, 10000);
 
-        const initializeAuth = async () => {
-            // Safety timeout: if auth takes more than 10 seconds, stop loading
-            const timeout = setTimeout(() => {
-                if (isMounted && loading) {
-                    console.warn("Auth initialization timed out safety trigger");
-                    setLoading(false);
+        return () => clearTimeout(safetyTimeout);
+    }, []);
+
+    // Ouve mudanças de estado de autenticação do Firebase
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                setUser(firebaseUser);
+                await fetchUserProfile(firebaseUser);
+
+                // Salva o token no cookie para uso nas API routes (servidor)
+                try {
+                    const token = await firebaseUser.getIdToken();
+                    document.cookie = `__session=${token}; path=/; max-age=3600; SameSite=Strict`;
+                } catch (e) {
+                    console.warn("Não foi possível salvar o token no cookie:", e);
                 }
-            }, 10000);
-
-            try {
-                // Short delay to allow browser to stabilize (avoids some AbortErrors in Dev)
-                await new Promise(resolve => setTimeout(resolve, 100));
-                if (!isMounted) return;
-
-                // 1. Get Session
-                const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-
-                if (sessionError) {
-                    if (sessionError.message?.includes('AbortError')) {
-                        console.warn("Session fetch aborted, will rely on onAuthStateChange");
-                    } else {
-                        throw sessionError;
-                    }
-                }
-
-                if (isMounted && currentSession?.user) {
-                    setUser(currentSession.user);
-                    setSession(currentSession);
-                    await fetchUserProfile(currentSession.user);
-                } else if (isMounted) {
-                    setLoading(false);
-                }
-
-                clearTimeout(timeout);
-            } catch (err: any) {
-                // Ignore AbortError as it usually means a new request is coming
-                if (err.name === 'AbortError' || err.message?.includes('AbortError')) {
-                    console.warn("Auth init aborted (harmless)");
-                } else {
-                    console.error("Critical Auth Init Error:", err);
-                    if (isMounted) setLoading(false);
-                }
-                clearTimeout(timeout);
-            }
-        };
-
-        // 2. Listen for Auth Changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-            if (!isMounted) return;
-
-            if (newSession?.user) {
-                setUser(newSession.user);
-                setSession(newSession);
-                await fetchUserProfile(newSession.user);
             } else {
+                // Usuário deslogou
                 setUser(null);
-                setSession(null);
                 setActualRole(null);
                 setSimulatedRole(null);
                 setCongregationId(null);
                 setProfileName(null);
+                document.cookie = '__session=; path=/; max-age=0';
                 setLoading(false);
             }
         });
 
-        initializeAuth();
-
-        return () => {
-            isMounted = false;
-            subscription.unsubscribe();
-        };
+        return () => unsubscribe();
     }, []);
 
+    // Busca o perfil do usuário no Firestore (role, congregação, nome, etc.)
     const fetchUserProfile = async (currentUser: User) => {
         try {
-            // Fetch User Data from Supabase 'users' table
-            // We assume a trigger or manual insert created this record on signup, 
-            // but for migration safety we might want to check existence.
+            const userRef = doc(db, 'users', currentUser.uid);
+            const userSnap = await getDoc(userRef);
 
-            let { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', currentUser.id)
-                .single();
+            if (userSnap.exists()) {
+                const data = userSnap.data();
 
-            if (error && error.code === 'PGRST116') {
-                // User not found in public.users table (maybe first login after migration?)
-                // In a real app, we might create it here or rely on database triggers.
-                console.warn("User record not found in public.users");
-                data = null;
-            } else if (error) {
-                // Ignore AbortError which is harmless request cancellation
-                if ((error as any).message?.includes('AbortError') || (error as any).details?.includes('AbortError')) {
-                    // silently ignore
+                // Força ADMIN para o email principal caso o banco esteja limpo
+                if (currentUser.email === 'campobrancojw@gmail.com' && data.role !== 'ADMIN') {
+                    await setDoc(userRef, {
+                        name: 'Super Admin',
+                        email: currentUser.email,
+                        role: 'ADMIN',
+                        congregationId: null,
+                        updatedAt: serverTimestamp(),
+                        createdAt: data.createdAt || serverTimestamp()
+                    }, { merge: true });
+                    setActualRole('ADMIN');
+                    setCongregationId(null);
+                    setProfileName('Super Admin');
                 } else {
-                    console.error("Error fetching user profile:", JSON.stringify(error, null, 2));
+                    setActualRole(data.role || 'PUBLICADOR');
+                    setCongregationId(data.congregationId || null);
+                    setProfileName(data.name || currentUser.displayName || currentUser.email);
                 }
-            }
 
-            if (data) {
-                setActualRole(data.role || 'PUBLICADOR');
-                setCongregationId(data.congregation_id || null); // Note snake_case from SQL
-                setProfileName(data.name || currentUser.user_metadata?.full_name || currentUser.email);
+                setNotificationsEnabledInternal(data.notificationsEnabled ?? true);
 
-                // START: Legal Consent Enforcement
-                if (!data.terms_accepted_at && window.location.pathname !== '/legal-consent' && window.location.pathname !== '/login') {
-                    // window.location.href = '/legal-consent'; // Temporarily disabled for migration testing
-                    // return;
+                // Redireciona para aceite de termos se ainda não foi feito
+                if (!data.termsAcceptedAt &&
+                    window.location.pathname !== '/legal-consent' &&
+                    window.location.pathname !== '/login') {
+                    // window.location.href = '/legal-consent'; // Ativar após migração completa
                 }
-                // END: Legal Consent Enforcement
-
-                setNotificationsEnabledInternal(data.notifications_enabled ?? true);
-
             } else {
-                setProfileName(currentUser.user_metadata?.full_name || currentUser.email);
-                setActualRole('PUBLICADOR');
+                // Primeiro login
+                if (currentUser.email === 'campobrancojw@gmail.com') {
+                    await setDoc(userRef, {
+                        name: 'Super Admin',
+                        email: currentUser.email,
+                        role: 'ADMIN',
+                        congregationId: null,
+                        updatedAt: serverTimestamp(),
+                        createdAt: serverTimestamp()
+                    });
+                    setProfileName('Super Admin');
+                    setActualRole('ADMIN');
+                } else {
+                    setProfileName(currentUser.displayName || currentUser.email);
+                    setActualRole('PUBLICADOR');
+                }
             }
         } catch (error) {
-            console.error("Auth Sync Error:", error);
-            // Don't log out on sync error to avoid loops, just degrade
+            console.error("Erro ao buscar perfil do usuário:", error);
         } finally {
             setLoading(false);
         }
     };
 
-    const logout = async () => {
-        await supabase.auth.signOut();
-    };
-
-    const updateNotificationsEnabled = async (enabled: boolean) => {
-        if (!user) return;
-        try {
-            const { error } = await supabase
-                .from('users')
-                .update({ notifications_enabled: enabled })
-                .eq('id', user.id);
-
-            if (error) throw error;
-            setNotificationsEnabledInternal(enabled);
-        } catch (error) {
-            console.error("Error updating notifications preference:", error);
-            throw error;
-        }
-    };
-
-    const simulateRole = (newRole: string | null) => {
-        if (actualRole === 'SUPER_ADMIN') {
-            setSimulatedRole(newRole);
-        }
-    };
-
-    // 3. Fetch Congregation Settings
+    // Busca configurações da congregação (tipo de termo, categoria)
     useEffect(() => {
-        let isMounted = true;
         if (!congregationId) {
             setTermType('city');
             setCongregationType(null);
             return;
         }
 
+        let isMounted = true;
         const fetchCong = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('congregations')
-                    .select('*')
-                    .eq('id', congregationId)
-                    .single();
+                const congRef = doc(db, 'congregations', congregationId);
+                const congSnap = await getDoc(congRef);
 
-                if (isMounted && data && !error) {
-                    setTermType(data.term_type || 'city');
+                if (isMounted && congSnap.exists()) {
+                    const data = congSnap.data();
+                    setTermType(data.termType || 'city');
 
-                    // Map category to internal type
                     const cat = (data.category || '').toLowerCase();
                     if (cat.includes('sinais')) setCongregationType('SIGN_LANGUAGE');
                     else if (cat.includes('estrangeiro')) setCongregationType('FOREIGN_LANGUAGE');
                     else setCongregationType('TRADITIONAL');
                 }
             } catch (err) {
-                console.error("Error fetching congregation settings:", err);
+                console.error("Erro ao buscar configurações da congregação:", err);
             }
         };
 
@@ -255,25 +199,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => { isMounted = false; };
     }, [congregationId]);
 
-    // Derived flags
-    const isSuperAdmin = role === 'SUPER_ADMIN';
-    const isElder = role === 'ANCIAO' || isSuperAdmin;
-    const isServant = role === 'SERVO' || isElder;
-    const isAdmin = isElder; // Ancião e Superadmin são considerados admins de congregação
+    // Realiza logout do Firebase
+    const logout = async () => {
+        await signOut(auth);
+        document.cookie = '__session=; path=/; max-age=0';
+    };
 
+    // Atualiza a preferência de notificações do usuário no Firestore
+    const updateNotificationsEnabled = async (enabled: boolean) => {
+        if (!user) return;
+        try {
+            await updateDoc(doc(db, 'users', user.uid), { notificationsEnabled: enabled });
+            setNotificationsEnabledInternal(enabled);
+        } catch (error) {
+            console.error("Erro ao atualizar notificações:", error);
+            throw error;
+        }
+    };
+
+    // Permite que Super Admins simulem outros papéis para testar permissões
+    const simulateRole = (newRole: string | null) => {
+        if (actualRole === 'ADMIN') {
+            setSimulatedRole(newRole);
+        }
+    };
+
+    // Flags de permissão derivadas do papel atual
+    const isAdminRoleGlobal = role === 'ADMIN';
+    const isElder = role === 'ANCIAO' || isAdminRoleGlobal;
+    const isServant = role === 'SERVO' || isElder;
+    const isAdmin = isElder;
     const canManageMembers = isElder;
     const canInviteMembers = isServant;
 
     return (
         <AuthContext.Provider value={{
             user,
-            session,
             loading,
             role,
             congregationId,
             profileName,
             logout,
-            isSuperAdmin,
+            isAdminRoleGlobal,
             isElder,
             isServant,
             isAdmin,

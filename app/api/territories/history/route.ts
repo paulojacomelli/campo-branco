@@ -27,7 +27,7 @@ export async function GET(req: Request) {
             .single();
 
         // Security: Ensure congregationId matches the user's congregation
-        if (profile?.role !== 'SUPER_ADMIN' || !congregationId) {
+        if (profile?.role !== 'ADMIN' || !congregationId) {
             congregationId = profile?.congregation_id || null;
         }
 

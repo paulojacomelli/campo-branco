@@ -6,14 +6,14 @@ import { LayoutGrid, Table2 } from 'lucide-react';
 import { Suspense } from 'react';
 
 function SwitcherContent() {
-    const { isSuperAdmin, isElder, isServant } = useAuth();
+    const { isAdminRoleGlobal, isElder, isServant } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
     // Show only for specific roles - REMOVED to fix visibility issue
     // Access control is handled by the parent pages
-    // if (!isSuperAdmin && !isElder && !isServant) return null;
+    // if (!isAdminRoleGlobal && !isElder && !isServant) return null;
 
 
     const currentView = searchParams.get('view') === 'table' ? 'TABLE' : 'GRID';

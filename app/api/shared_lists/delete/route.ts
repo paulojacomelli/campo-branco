@@ -37,7 +37,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Registro não encontrado' }, { status: 404 });
         }
 
-        if (profile?.role !== 'SUPER_ADMIN' && existingList.congregation_id !== profile?.congregation_id) {
+        if (profile?.role !== 'ADMIN' && existingList.congregation_id !== profile?.congregation_id) {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 

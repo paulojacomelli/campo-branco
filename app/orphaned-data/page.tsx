@@ -22,7 +22,7 @@ interface OrphanedItem {
 }
 
 export default function OrphanedDataPage() {
-    const { isSuperAdmin, loading: authLoading } = useAuth();
+    const { isAdminRoleGlobal, loading: authLoading } = useAuth();
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [orphans, setOrphans] = useState<OrphanedItem[]>([]);
@@ -56,10 +56,10 @@ export default function OrphanedDataPage() {
     const [editState, setEditState] = useState('');
 
     useEffect(() => {
-        if (!authLoading && !isSuperAdmin) {
+        if (!authLoading && !isAdminRoleGlobal) {
             router.push('/');
         }
-    }, [isSuperAdmin, authLoading, router]);
+    }, [isAdminRoleGlobal, authLoading, router]);
 
     const fetchOrphans = async () => {
         setLoading(true);
@@ -200,8 +200,8 @@ export default function OrphanedDataPage() {
     };
 
     useEffect(() => {
-        if (isSuperAdmin) fetchOrphans();
-    }, [isSuperAdmin]);
+        if (isAdminRoleGlobal) fetchOrphans();
+    }, [isAdminRoleGlobal]);
 
     // Fetch Context Options when modal opens
     useEffect(() => {
@@ -420,7 +420,7 @@ export default function OrphanedDataPage() {
         });
     };
 
-    if (authLoading || !isSuperAdmin) return null;
+    if (authLoading || !isAdminRoleGlobal) return null;
 
     return (
         <div className="min-h-screen bg-background pb-10 font-sans text-main">

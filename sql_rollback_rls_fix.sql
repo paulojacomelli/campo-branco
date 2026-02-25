@@ -22,7 +22,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 -- 2. Restaurar Endereços (Tirar os selects sub-queries de validação de perfomance)
 DROP POLICY IF EXISTS "Ver endereços (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.addresses;
 CREATE POLICY "Ver endereços (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.addresses FOR SELECT TO authenticated USING (
-    public.get_auth_role() IN ('SUPER_ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = public.get_auth_congregation() OR public.get_auth_role() = 'SUPER_ADMIN')
+    public.get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = public.get_auth_congregation() OR public.get_auth_role() = 'ADMIN')
     OR
     territory_id IN (SELECT id FROM public.territories WHERE assigned_to = auth.uid())
 );
@@ -31,19 +31,19 @@ DROP POLICY IF EXISTS "Gerenciar endereços (Ancião/Servo/Superadmin)" ON publi
 CREATE POLICY "Gerenciar endereços (Ancião/Servo/Superadmin)" ON public.addresses FOR ALL TO authenticated USING (
     (congregation_id = public.get_auth_congregation() AND
      public.get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO')) OR
-    public.get_auth_role() = 'SUPER_ADMIN'
+    public.get_auth_role() = 'ADMIN'
 );
 
 -- 3. Restaurar Shared Lists
 DROP POLICY IF EXISTS "Ver listas compartilhadas" ON public.shared_lists;
 CREATE POLICY "Ver listas compartilhadas" ON public.shared_lists FOR SELECT TO authenticated USING (
-    congregation_id = public.get_auth_congregation() OR public.get_auth_role() = 'SUPER_ADMIN'
+    congregation_id = public.get_auth_congregation() OR public.get_auth_role() = 'ADMIN'
 );
 
 DROP POLICY IF EXISTS "Gerenciar listas compartilhadas" ON public.shared_lists;
 CREATE POLICY "Gerenciar listas compartilhadas" ON public.shared_lists FOR ALL TO authenticated USING (
     (congregation_id = public.get_auth_congregation() AND public.get_auth_role() IN ('ADMIN', 'ANCIAO', 'SERVO')) OR
-    public.get_auth_role() = 'SUPER_ADMIN'
+    public.get_auth_role() = 'ADMIN'
 );
 
 -- 4. Restaurar Witnessing Points
@@ -52,7 +52,7 @@ CREATE POLICY "Atualizar pontos de testemunho" ON public.witnessing_points
 FOR UPDATE TO authenticated 
 USING (
     congregation_id = public.get_auth_congregation() OR
-    public.get_auth_role() = 'SUPER_ADMIN'
+    public.get_auth_role() = 'ADMIN'
 );
 
 -- 5. Restaurar Snapshots
@@ -65,5 +65,5 @@ WITH CHECK (
         WHERE sl.id = shared_list_id 
         AND sl.congregation_id = public.get_auth_congregation()
     )
-    OR public.get_auth_role() = 'SUPER_ADMIN'
+    OR public.get_auth_role() = 'ADMIN'
 );

@@ -73,7 +73,7 @@ const formatExpirationTime = (expiresAtString: any) => {
 };
 
 export default function DashboardPage() {
-    const { user, role, isElder, isServant, congregationId, loading, profileName, isSuperAdmin } = useAuth();
+    const { user, role, isElder, isServant, congregationId, loading, profileName, isAdminRoleGlobal } = useAuth();
     const router = useRouter();
     const [sharedHistory, setSharedHistory] = useState<any[]>([]);
     const [myAssignments, setMyAssignments] = useState<any[]>([]);
@@ -109,10 +109,10 @@ export default function DashboardPage() {
     useEffect(() => {
         if (!loading && !user) {
             router.push('/login');
-        } else if (!loading && user && !congregationId && !isSuperAdmin) {
+        } else if (!loading && user && !congregationId && role !== 'ADMIN') {
             router.push('/unassigned');
         }
-    }, [user, loading, congregationId, isSuperAdmin, router]);
+    }, [user, loading, congregationId, role, router]);
 
     // Fetch user's assigned maps
     useEffect(() => {
@@ -120,11 +120,22 @@ export default function DashboardPage() {
 
         const fetchMyAssignments = async () => {
             try {
+                const userId = user.uid || (user as any).id;
+
+                // Evita erro do PostgreSQL "invalid input syntax for type uuid" caso o ID seja do Firebase
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+                if (!isUUID) {
+                    setMyAssignments([]);
+                    setPendingMapsCount(0);
+                    setExpiringMaps([]);
+                    return;
+                }
+
                 // Colunas confirmadas no schema — exclui context (jsonb pesado) e city_id que não são usados aqui
                 const { data: lists, error } = await supabase
                     .from('shared_lists')
                     .select('id, title, name, status, assigned_to, assigned_name, created_at, expires_at, congregation_id, territory_id, type')
-                    .eq('assigned_to', user.id);
+                    .eq('assigned_to', userId);
 
                 if (error) {
                     console.error("Error fetching my assignments:", error);
@@ -176,7 +187,7 @@ export default function DashboardPage() {
 
         fetchMyAssignments();
 
-    }, [user, isSuperAdmin]);
+    }, [user, isAdminRoleGlobal]);
 
     // Close menu on click outside
     useEffect(() => {
@@ -187,13 +198,13 @@ export default function DashboardPage() {
         return () => window.removeEventListener('click', handleClickOutside);
     }, [openMenuId]);
 
-    const roleLabel = role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' :
+    const roleLabel = role === 'ADMIN' ? 'ADMIN' :
         role === 'ANCIAO' ? 'Superintendente de Serviço' :
             role === 'SERVO' ? 'Servo de Territórios' :
                 'Publicador';
 
     const fetchSharedHistory = useCallback(async () => {
-        if (!congregationId && role !== 'SUPER_ADMIN') return;
+        if (!congregationId && role !== 'ADMIN') return;
 
         setHistoryLoading(true);
         try {
@@ -202,7 +213,7 @@ export default function DashboardPage() {
 
             if (congregationId) {
                 query = query.eq('congregation_id', congregationId);
-            } else if (role !== 'SUPER_ADMIN') {
+            } else if (role !== 'ADMIN') {
                 return; // Protection for normal users
             } else {
                 // Superadmin without congregation: force empty results
@@ -214,7 +225,7 @@ export default function DashboardPage() {
                 let uQuery = supabase.from('users').select('id, name');
                 if (congregationId) {
                     uQuery = uQuery.eq('congregation_id', congregationId);
-                } else if (role !== 'SUPER_ADMIN') {
+                } else if (role !== 'ADMIN') {
                     // Skip
                 } else {
                     uQuery = uQuery.limit(500);
@@ -251,8 +262,8 @@ export default function DashboardPage() {
             }
 
             let filteredLists = [...processedLists];
-            if (!isElder && !isServant && role !== 'SUPER_ADMIN') {
-                filteredLists = processedLists.filter(l => l.assigned_to === user?.id);
+            if (!isElder && !isServant && role !== 'ADMIN') {
+                filteredLists = processedLists.filter(l => l.assigned_to === (user?.uid || (user as any)?.id));
             }
 
             filteredLists.sort((a, b) => {
@@ -327,7 +338,7 @@ export default function DashboardPage() {
                 };
 
                 const myActiveLists = sharedHistory.filter(l => {
-                    const isAssigned = l.assigned_to === user?.id || l.created_by === user?.id;
+                    const isAssigned = l.assigned_to === (user?.uid || (user as any)?.id) || l.created_by === (user?.uid || (user as any)?.id);
                     return isAssigned && l.status === 'active';
                 });
 
@@ -367,11 +378,11 @@ export default function DashboardPage() {
     }, [user, sharedHistory, profileName]);
 
     useEffect(() => {
-        if (!congregationId && role !== 'SUPER_ADMIN') return;
+        if (!congregationId && role !== 'ADMIN') return;
 
         const fetchStats = async () => {
             try {
-                if (!congregationId && role !== 'SUPER_ADMIN') return;
+                if (!congregationId && role !== 'ADMIN') return;
                 const targetCong = congregationId || '00000000-0000-0000-0000-000000000000';
 
                 // Fetch data efficiently
@@ -493,7 +504,7 @@ export default function DashboardPage() {
                 }
 
                 setStats({
-                    congregations: (role === 'SUPER_ADMIN' && !congregationId) ? 0 : 1, // simplified
+                    congregations: (role === 'ADMIN' && !congregationId) ? 0 : 1, // simplified
                     cities: citiesData?.length || 0,
                     maps: mapsCount,
                     visits: visitsCount || 0,
@@ -511,7 +522,7 @@ export default function DashboardPage() {
 
         fetchStats();
         fetchSharedHistory();
-    }, [congregationId, role, isElder, isServant, profileName, user?.id, fetchSharedHistory]);
+    }, [congregationId, role, isElder, isServant, profileName, user?.uid, fetchSharedHistory]);
 
     const handleCopyLink = async (id: string) => {
         const shareUrl = window.location.origin + "/share?id=" + id;
@@ -720,7 +731,7 @@ export default function DashboardPage() {
                                                     <Share2 className="w-3.5 h-3.5" />
                                                     Enviar Link
                                                 </button>
-                                                {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                                                {(isElder || isServant || role === 'ADMIN') && (
                                                     <button
                                                         onClick={() => {
                                                             setConfirmModal({
@@ -810,7 +821,7 @@ export default function DashboardPage() {
                 {/* Greeting */}
                 <div>
                     <h1 className="text-2xl font-bold text-main tracking-tight">
-                        Olá, {(profileName || user?.user_metadata?.full_name || user?.email)?.split(' ')[0] || 'Irmão'}
+                        Olá, {(profileName || user?.displayName || user?.email)?.split(' ')[0] || 'Irmão'}
                     </h1>
                     <p className="text-muted text-sm">
                         Aqui está o resumo para sua função.
@@ -824,12 +835,12 @@ export default function DashboardPage() {
                         <h2 className="text-lg font-bold text-main tracking-tight uppercase text-[12px]">Ministério</h2>
                     </div>
 
-                    {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                    {(isElder || isServant || role === 'ADMIN') && (
                         <ActionCenter
-                            userName={profileName || user?.user_metadata?.full_name || user?.email || 'Publicador'}
+                            userName={profileName || user?.displayName || user?.email || 'Publicador'}
                             pendingMapsCount={pendingMapsCount}
                             hasPendingAnnotation={false}
-                            idleTerritories={isElder || isServant || role === 'SUPER_ADMIN' ? idleTerritories : []}
+                            idleTerritories={isElder || isServant || role === 'ADMIN' ? idleTerritories : []}
                             cityCompletion={cityCompletion}
                             expiringMaps={expiringMaps}
                             onAssignTerritory={handleQuickAssign}
@@ -847,7 +858,7 @@ export default function DashboardPage() {
                 </section>
 
                 {/* SECTION 2: GESTÃO DE TERRITÓRIOS */}
-                {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                {(isElder || isServant || role === 'ADMIN') && (
                     <section className="space-y-6">
                         <div className="flex items-center gap-2 px-1">
                             <div className="w-1 h-6 bg-purple-600 rounded-full" />
@@ -864,7 +875,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* SECTION 3: A CONGREGAÇÃO */}
-                {(isElder || isServant || role === 'SUPER_ADMIN') && (
+                {(isElder || isServant || role === 'ADMIN') && (
                     <section className="space-y-6">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
                             <div className="flex items-center gap-2">
@@ -874,7 +885,7 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                            {role === 'SUPER_ADMIN' && !congregationId && (
+                            {role === 'ADMIN' && !congregationId && (
                                 <div className="col-span-2 bg-surface p-4 rounded-lg shadow-sm border border-surface-border flex flex-col justify-center">
                                     <p className="text-[10px] font-bold text-muted uppercase tracking-widest line-clamp-1">CONGREGAÇÕES</p>
                                     <p className="text-2xl font-bold text-main">{stats.congregations}</p>

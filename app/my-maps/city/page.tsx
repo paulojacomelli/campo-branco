@@ -49,7 +49,7 @@ function CityListContent() {
     const searchParams = useSearchParams();
     const congregationId = searchParams.get('congregationId');
     const currentView = searchParams.get('view') || 'grid';
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, logout } = useAuth();
+    const { user, isAdmin, isAdminRoleGlobal, isElder, isServant, loading: authLoading, logout } = useAuth();
     const router = useRouter();
     const [cities, setCities] = useState<City[]>([]);
     const [loading, setLoading] = useState(true);
@@ -430,7 +430,7 @@ function CityListContent() {
                         <LogOut className="w-5 h-5" />
                     </button>
 
-                    {(isAdmin || isServant || isElder || isSuperAdmin) && (
+                    {(isAdmin || isServant || isElder || isAdminRoleGlobal) && (
                         <>
                             <CSVActionButtons
                                 congregationId={congregationId}

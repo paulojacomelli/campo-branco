@@ -24,7 +24,7 @@ export async function POST(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.role !== 'ANCIAO')) {
+        if (!adminData || (adminData.role !== 'ADMIN' && adminData.role !== 'ANCIAO')) {
             return NextResponse.json({ error: 'Você não tem permissão para esta ação.' }, { status: 403 });
         }
 
@@ -40,12 +40,12 @@ export async function POST(req: Request) {
         }
 
         // 3. Regras de segurança adicionais
-        if (adminData.role !== 'SUPER_ADMIN') {
+        if (adminData.role !== 'ADMIN') {
             // Se for Ancião, só deleta da própria congregação e não pode deletar Super Admin ou outro Ancião
             if (targetUser.congregation_id !== adminData.congregation_id) {
                 return NextResponse.json({ error: 'Você só pode excluir usuários da sua congregação.' }, { status: 403 });
             }
-            if (targetUser.role === 'SUPER_ADMIN' || targetUser.role === 'ANCIAO') {
+            if (targetUser.role === 'ADMIN' || targetUser.role === 'ANCIAO') {
                 return NextResponse.json({ error: 'Você não tem permissão para excluir este nível de usuário.' }, { status: 403 });
             }
         }

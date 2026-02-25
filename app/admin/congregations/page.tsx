@@ -43,7 +43,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function CongregationsPage() {
-    const { user, isSuperAdmin, loading: authLoading } = useAuth();
+    const { user, isAdminRoleGlobal, loading: authLoading } = useAuth();
     const [confirmModal, setConfirmModal] = useState<{
         title: string;
         message: string;
@@ -97,7 +97,7 @@ export default function CongregationsPage() {
     useEffect(() => {
         if (authLoading) return;
 
-        if (!isSuperAdmin) {
+        if (!isAdminRoleGlobal) {
             router.push('/dashboard');
             return;
         }
@@ -114,7 +114,7 @@ export default function CongregationsPage() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [authLoading, isSuperAdmin, router, fetchCongregations]);
+    }, [authLoading, isAdminRoleGlobal, router, fetchCongregations]);
 
     const handleCreateCongregation = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -325,7 +325,7 @@ export default function CongregationsPage() {
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 mb-0.5">
                                             <h3 className="font-bold text-main truncate">{cong.name}</h3>
-                                            {isSuperAdmin && (
+                                            {isAdminRoleGlobal && (
                                                 <span className="text-[9px] font-mono bg-background border border-surface-border text-muted px-1.5 py-0.5 rounded uppercase leading-none">
                                                     ID: {cong.id.length > 8 ? `${cong.id.substring(0, 8)}...` : cong.id}
                                                 </span>

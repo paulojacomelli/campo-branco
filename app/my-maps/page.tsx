@@ -30,15 +30,15 @@ interface Congregation {
 }
 
 export default function CongregationListPage() {
-    const { user, isSuperAdmin, isElder, isServant, loading: authLoading, congregationId } = useAuth();
+    const { user, isAdminRoleGlobal, isElder, isServant, loading: authLoading, congregationId } = useAuth();
     const router = useRouter();
 
     // Redirect Unassigned Users
     useEffect(() => {
-        if (!authLoading && user && !congregationId && !isSuperAdmin) {
+        if (!authLoading && user && !congregationId && !isAdminRoleGlobal) {
             router.push('/unassigned');
         }
-    }, [user, authLoading, congregationId, isSuperAdmin, router]);
+    }, [user, authLoading, congregationId, isAdminRoleGlobal, router]);
 
     // Redirect Non-Servants
     useEffect(() => {
@@ -53,12 +53,12 @@ export default function CongregationListPage() {
             if (congregationId) {
                 // If has a congregation, go directly to their city list
                 router.replace(`/my-maps/city?congregationId=${congregationId}`);
-            } else if (isSuperAdmin) {
+            } else if (isAdminRoleGlobal) {
                 // If Superadmin without congregation, go to admin panel
                 router.replace('/admin/congregations');
             }
         }
-    }, [user, authLoading, congregationId, isSuperAdmin, isServant, router]);
+    }, [user, authLoading, congregationId, isAdminRoleGlobal, isServant, router]);
 
     return (
         <div className="bg-background min-h-screen pb-32 font-sans flex items-center justify-center">

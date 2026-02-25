@@ -25,7 +25,7 @@ export async function POST(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.role !== 'ANCIAO' && adminData.role !== 'SERVO')) {
+        if (!adminData || (adminData.role !== 'ADMIN' && adminData.role !== 'ANCIAO' && adminData.role !== 'SERVO')) {
             return NextResponse.json({ error: 'Você não tem permissão para esta ação.' }, { status: 403 });
         }
 
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
         }
 
         // Se for Ancião/Servo, só pode deletar da própria congregação
-        if (adminData.role !== 'SUPER_ADMIN' && territoryData.congregation_id !== adminData.congregation_id) {
+        if (adminData.role !== 'ADMIN' && territoryData.congregation_id !== adminData.congregation_id) {
             return NextResponse.json({ error: 'Você só pode excluir itens da sua congregação.' }, { status: 403 });
         }
 

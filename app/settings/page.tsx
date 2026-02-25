@@ -53,7 +53,7 @@ import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 
 export default function SettingsPage() {
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, notificationsEnabled, logout: authLogout, canManageMembers, canInviteMembers } = useAuth();
+    const { user, isAdmin, isAdminRoleGlobal, isElder, isServant, congregationId, loading, profileName, role, simulateRole, isSimulating, notificationsEnabled, logout: authLogout, canManageMembers, canInviteMembers } = useAuth();
     const router = useRouter();
     const { textSize, displayScale, themeMode, updatePreferences } = useTheme();
 
@@ -108,10 +108,10 @@ export default function SettingsPage() {
 
     // Redirect Unassigned Users
     useEffect(() => {
-        if (!loading && user && !congregationId && !isSuperAdmin) {
+        if (!loading && user && !congregationId && !isAdminRoleGlobal) {
             router.push('/unassigned');
         }
-    }, [user, loading, congregationId, isSuperAdmin, router]);
+    }, [user, loading, congregationId, isAdminRoleGlobal, router]);
 
     useEffect(() => {
         if ((canInviteMembers || canManageMembers) && congregationId) {
@@ -129,8 +129,8 @@ export default function SettingsPage() {
                         if (memberError) throw memberError;
                         docs = memberData || [];
 
-                        if (!isSuperAdmin) {
-                            docs = docs.filter((d: any) => d.role !== 'SUPER_ADMIN');
+                        if (!isAdminRoleGlobal) {
+                            docs = docs.filter((d: any) => d.role !== 'ADMIN');
                         }
                     }
                     setMembers(docs);
@@ -179,7 +179,7 @@ export default function SettingsPage() {
             };
             fetchCongregationAndMembers();
         }
-    }, [canInviteMembers, canManageMembers, congregationId, isSuperAdmin, supabase]);
+    }, [canInviteMembers, canManageMembers, congregationId, isAdminRoleGlobal, supabase]);
 
     const handleGenerateNewToken = async () => {
         setConfirmModal({
@@ -373,7 +373,7 @@ export default function SettingsPage() {
                                     <Shield className="w-3 h-3" />
                                     {(() => {
                                         switch (role) {
-                                            case 'SUPER_ADMIN': return 'Super Admin';
+                                            case 'ADMIN': return 'Super Admin';
                                             case 'ANCIAO': return 'Superintendente de Serviço';
                                             case 'SERVO': return 'Servo de Territórios';
                                             default: return 'Publicador';
@@ -655,7 +655,7 @@ export default function SettingsPage() {
                                             </div>
 
                                             {/* Actions - Only Elders can manage, Super Admin manages everyone */}
-                                            {(isSuperAdmin || (isElder && member.role !== 'SUPER_ADMIN' && member.role !== 'ANCIAO')) && member.id !== user?.id && (
+                                            {(isAdminRoleGlobal || (isElder && member.role !== 'ADMIN' && member.role !== 'ANCIAO')) && member.id !== user?.id && (
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => {
@@ -678,7 +678,7 @@ export default function SettingsPage() {
                                                                     member.role === 'SERVO' ? "Rebaixar a Publicador" :
                                                                         "Promover a Servo"}
                                                             </button>
-                                                            {isSuperAdmin && member.role === 'SERVO' && (
+                                                            {isAdminRoleGlobal && member.role === 'SERVO' && (
                                                                 <button
                                                                     onClick={() => {
                                                                         handleSetAnciao(member.id);
@@ -710,7 +710,7 @@ export default function SettingsPage() {
                             </div>
 
                             {/* Simulation Mode (Super Admin Only) */}
-                            {isSuperAdmin && (
+                            {isAdminRoleGlobal && (
                                 <div className="bg-gradient-to-br from-primary-light/20 to-surface dark:from-primary-dark/10 dark:to-surface p-6 rounded-lg shadow-sm border border-primary-light/30 dark:border-primary-dark/30 mb-6 relative overflow-hidden">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="p-2 bg-primary-light/50 rounded-lg text-primary dark:bg-primary-dark/50 dark:text-primary-light">
@@ -754,7 +754,7 @@ export default function SettingsPage() {
                             )}
 
                             {/* Super Admin - All Congregations */}
-                            {isSuperAdmin && (
+                            {isAdminRoleGlobal && (
                                 <div className="bg-surface p-6 rounded-lg shadow-sm border border-primary-light dark:border-primary-dark/30 mb-6 relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                                         <Building2 className="w-24 h-24 text-primary" />

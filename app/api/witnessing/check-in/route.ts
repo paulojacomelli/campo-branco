@@ -1,25 +1,18 @@
-import { createServerClient } from '@/lib/supabase-server';
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
+// app/api/witnessing/check-in/route.ts
+// Registra check-in e check-out em pontos de testemunho público
+// Qualquer usuário autenticado pode fazer check-in/out
 
-// Cliente Admin para ignorar RLS durante a transição/manutenção
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }
-);
+import { NextResponse } from 'next/server';
+import { adminDb, getUserFromToken, FieldValue } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token);
 
-        if (authError || !user) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -29,27 +22,22 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
         }
 
-        // 1. Verificar se o usuário existe e está ativo (opcional, dependendo da necessidade de segurança)
-        // Por enquanto, permitimos que qualquer usuário autenticado faça check-in/out
+        // Atualiza o ponto de testemunho no Firestore
+        const pointRef = adminDb.collection('witnessingPoints').doc(id);
+        const pointSnap = await pointRef.get();
 
-        // 2. Executar a atualização via Admin para garantir que o check-in funcione
-        // mesmo que o ponto esteja com dados órfãos (congregação desalinhada)
-        const { data, error } = await supabaseAdmin
-            .from('witnessing_points')
-            .update(updates)
-            .eq('id', id)
-            .select();
-
-        if (error) {
-            console.error('Check-in API Error:', error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-
-        if (!data || data.length === 0) {
+        if (!pointSnap.exists) {
             return NextResponse.json({ error: 'Ponto não encontrado' }, { status: 404 });
         }
 
-        return NextResponse.json({ success: true, data: data[0] });
+        await pointRef.update({
+            ...updates,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        const updatedSnap = await pointRef.get();
+
+        return NextResponse.json({ success: true, data: { id: updatedSnap.id, ...updatedSnap.data() } });
     } catch (error: any) {
         console.error('Check-in API Critical Error:', error);
         return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });

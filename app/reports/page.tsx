@@ -30,7 +30,7 @@ import { useRouter } from "next/navigation";
 
 export default function ReportsPage() {
     const router = useRouter();
-    const { user, role, isElder, isServant, isSuperAdmin, congregationId: userCongregationId, loading: authLoading } = useAuth();
+    const { user, role, isElder, isServant, isAdminRoleGlobal, congregationId: userCongregationId, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(true);
     const [selectedCongregationId, setSelectedCongregationId] = useState<string | null>(null);
 
@@ -74,7 +74,7 @@ export default function ReportsPage() {
 
     useEffect(() => {
         const targetCongId = selectedCongregationId || userCongregationId;
-        if (!targetCongId || (!isElder && !isServant && !isSuperAdmin)) {
+        if (!targetCongId || (!isElder && !isServant && !isAdminRoleGlobal)) {
             setLoading(false);
             return;
         }
@@ -289,10 +289,10 @@ export default function ReportsPage() {
         };
 
         fetchData();
-    }, [selectedCongregationId, userCongregationId, isElder, isServant, isSuperAdmin, selectedServiceYear]);
+    }, [selectedCongregationId, userCongregationId, isElder, isServant, isAdminRoleGlobal, selectedServiceYear]);
 
     // Role Guard
-    if (!loading && !isElder && !isServant && role !== 'SUPER_ADMIN') {
+    if (!loading && !isElder && !isServant && role !== 'ADMIN') {
         return (
             <div className="bg-background min-h-screen pb-24 font-sans text-main flex flex-col items-center justify-center p-6 text-center">
                 <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-full mb-4">

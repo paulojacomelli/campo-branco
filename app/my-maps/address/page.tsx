@@ -81,7 +81,7 @@ function AddressListContent() {
     const territoryId = searchParams.get('territoryId') || '';
     const currentView = searchParams.get('view') || 'grid';
 
-    const { user, isAdmin, isSuperAdmin, isElder, isServant, loading: authLoading, congregationType: authCongregationType, termType } = useAuth();
+    const { user, isAdmin, isAdminRoleGlobal, isElder, isServant, loading: authLoading, congregationType: authCongregationType, termType } = useAuth();
     const [localCongregationType, setLocalCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
     const isTraditional = (localCongregationType || authCongregationType) === 'TRADITIONAL';
     const [addresses, setAddresses] = useState<Address[]>([]);
@@ -939,7 +939,7 @@ function AddressListContent() {
 
                 <div className="flex items-center gap-2">
 
-                    {(isElder || isServant || isAdmin || isSuperAdmin) && (
+                    {(isElder || isServant || isAdmin || isAdminRoleGlobal) && (
                         <>
                             <CSVActionButtons
                                 congregationId={congregationId}

@@ -85,7 +85,7 @@ export async function POST(req: Request) {
             .eq('id', currentUser.id)
             .single();
 
-        if (!adminData || (adminData.role !== 'SUPER_ADMIN' && adminData.congregation_id !== congregationId)) {
+        if (!adminData || (adminData.role !== 'ADMIN' && adminData.congregation_id !== congregationId)) {
             return NextResponse.json({ error: 'Acesso negado à congregação.' }, { status: 403 });
         }
 

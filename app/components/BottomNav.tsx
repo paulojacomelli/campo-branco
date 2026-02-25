@@ -7,15 +7,15 @@ import { BarChart3, Map as MapIcon, FileText, User, Settings, Home, Store } from
 
 export default function BottomNav() {
     const pathname = usePathname();
-    const { congregationId, isSuperAdmin, isElder, isServant } = useAuth();
+    const { congregationId, isAdminRoleGlobal, isElder, isServant } = useAuth();
 
     // Determine path for Maps link
     // Super Admins go to the Congregation List (/my-maps)
     // Assigned users go directly to their congregation
-    const mapsPath = isSuperAdmin ? '/my-maps' : (congregationId ? `/my-maps/city?congregationId=${congregationId}` : '/my-maps');
+    const mapsPath = isAdminRoleGlobal ? '/my-maps' : (congregationId ? `/my-maps/city?congregationId=${congregationId}` : '/my-maps');
 
     // Determine path for Witnessing link
-    const witnessingPath = isSuperAdmin ? '/witnessing' : (congregationId ? `/witnessing/congregation?congregationId=${congregationId}` : '/witnessing');
+    const witnessingPath = isAdminRoleGlobal ? '/witnessing' : (congregationId ? `/witnessing/congregation?congregationId=${congregationId}` : '/witnessing');
 
     const isActive = (path: string) => {
         if (path === '/dashboard' && pathname === '/dashboard') return true;

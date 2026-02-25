@@ -46,8 +46,8 @@ export async function GET(req: Request) {
         }
 
         // 3. SECURE: Verify that ALL territories belong to the same congregation as the user
-        // (Unless the user is a SUPER_ADMIN)
-        if (userData.role !== 'SUPER_ADMIN') {
+        // (Unless the user is a ADMIN)
+        if (userData.role !== 'ADMIN') {
             const hasUnauthorized = territories.some(t => t.congregation_id !== userData.congregation_id);
             if (hasUnauthorized) {
                 return NextResponse.json({ error: 'Você não tem permissão para acessar alguns dos territórios solicitados.' }, { status: 403 });

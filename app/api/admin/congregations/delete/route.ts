@@ -18,7 +18,7 @@ export async function POST(req: Request) {
             .eq('id', user.id)
             .single();
 
-        if (profile?.role !== 'SUPER_ADMIN') {
+        if (profile?.role !== 'ADMIN') {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 

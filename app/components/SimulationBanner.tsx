@@ -14,7 +14,7 @@ export default function SimulationBanner() {
 
     const getRoleLabel = (r: string | null) => {
         switch (r) {
-            case 'SUPER_ADMIN': return 'Super Admin';
+            case 'ADMIN': return 'Super Admin';
             case 'ANCIAO': return 'Ancião';
             case 'SERVO': return 'Servo Ministerial';
             case 'PUBLICADOR': return 'Publicador';

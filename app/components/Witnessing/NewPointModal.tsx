@@ -1,8 +1,13 @@
+// app/components/Witnessing/NewPointModal.tsx
+// Modal para criação de novos pontos de testemunho público
+// Salva diretamente no Firestore (coleção witnessingPoints)
+
 "use client";
 
 import { useState } from 'react';
-import { X, Plus, Loader2, Link2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { X, Plus, Loader2 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
 
 interface NewPointModalProps {
@@ -22,43 +27,39 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
     const [schedule, setSchedule] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Search function removed as requested
-
+    // Cria um novo ponto de testemunho no Firestore
     const handleCreatePoint = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
 
         setLoading(true);
         try {
-            const { error } = await supabase.from('witnessing_points').insert({
+            await addDoc(collection(db, 'witnessingPoints'), {
                 name: name.trim(),
                 address: address.trim(),
-                city_id: cityId,
-                congregation_id: congregationId,
-                google_maps_link: googleMapsLink.trim(),
-                waze_link: wazeLink.trim(),
-                schedule: schedule.trim(),
+                cityId,
+                congregationId,
+                googleMapsLink: googleMapsLink.trim() || null,
+                wazeLink: wazeLink.trim() || null,
+                schedule: schedule.trim() || null,
                 status: 'AVAILABLE',
-                current_publishers: []
+                currentPublishers: [],
+                activeUsers: [],
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
             });
 
-            if (error) throw error;
-
+            toast.success("Ponto criado com sucesso!");
             setName('');
             setAddress('');
             setGoogleMapsLink('');
             setWazeLink('');
             setSchedule('');
-            toast.success("Ponto criado com sucesso!");
             if (onSuccess) onSuccess();
             onClose();
         } catch (error: any) {
-            console.error("Error creating point:", error);
-            if (error?.message?.includes('google_maps_link') || error?.message?.includes('column')) {
-                toast.error("Erro de Versão: Colunas faltantes no banco de dados. Contate o administrador.");
-            } else {
-                toast.error("Erro ao criar ponto.");
-            }
+            console.error("Erro ao criar ponto:", error);
+            toast.error("Erro ao criar ponto. Tente novamente.");
         } finally {
             setLoading(false);
         }
@@ -102,9 +103,7 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
 
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">
-                                Google Maps
-                            </label>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Google Maps</label>
                             <div className="relative">
                                 <input
                                     type="text"
@@ -121,9 +120,7 @@ export default function NewPointModal({ isOpen, onClose, cityId, congregationId,
                             </div>
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">
-                                Waze
-                            </label>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Waze</label>
                             <div className="relative">
                                 <input
                                     type="text"

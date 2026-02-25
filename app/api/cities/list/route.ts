@@ -32,12 +32,12 @@ export async function GET(req: Request) {
 
         // Security: Force congregationId to be the user's congregation for operational views
         // Superadmins can no longer jump between congregations in these views.
-        if (adminData?.role !== 'SUPER_ADMIN' || !congregationId) {
+        if (adminData?.role !== 'ADMIN' || !congregationId) {
             congregationId = adminData?.congregation_id || null;
         }
 
         const isAllowed = adminData && (
-            adminData.role === 'SUPER_ADMIN' ||
+            adminData.role === 'ADMIN' ||
             (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
         );
 

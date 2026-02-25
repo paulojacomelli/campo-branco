@@ -20,7 +20,7 @@ interface Report {
 }
 
 export default function AdminReportsPage() {
-    const { isAdmin, isSuperAdmin, loading: authLoading } = useAuth();
+    const { isAdmin, isAdminRoleGlobal, loading: authLoading } = useAuth();
     const [reports, setReports] = useState<Report[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -42,7 +42,7 @@ export default function AdminReportsPage() {
     };
 
     useEffect(() => {
-        if (isSuperAdmin) {
+        if (isAdminRoleGlobal) {
             fetchReports();
 
             const channel = supabase
@@ -58,7 +58,7 @@ export default function AdminReportsPage() {
                 }, 100);
             };
         }
-    }, [isSuperAdmin]);
+    }, [isAdminRoleGlobal]);
 
     const handleResolve = async (id: string) => {
         try {
@@ -77,7 +77,7 @@ export default function AdminReportsPage() {
     };
 
     if (authLoading) return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin" /></div>;
-    if (!isSuperAdmin) return <div className="p-8 text-center">Acesso Negado</div>;
+    if (!isAdminRoleGlobal) return <div className="p-8 text-center">Acesso Negado</div>;
 
     return (
         <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 bg-background min-h-screen text-main">
