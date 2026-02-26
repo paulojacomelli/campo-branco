@@ -11,7 +11,7 @@ runConfig:
 env:
   # --- Variáveis Públicas (Firebase, VAPID, Supabase URL) ---
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    value: "AIzaSyBr3YWjU36LvCjkYIzjuHzZ_KFq0lc6nb4"
+    secret: FIREBASE_API_KEY
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: "campo-branco.firebaseapp.com"
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
@@ -27,7 +27,7 @@ env:
   - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
     value: "BA7he-Uqiclqp1EtSMW9__Z73UyPogRQfUJxPWeJ5HLQ0N2bYxKqdqfMpmZVmCNPPP6GnCDY"
   - variable: FIREBASE_CLIENT_EMAIL
-    value: "firebase-adminsdk-fbsvc@campo-branco.iam.gserviceaccount.com"
+    secret: FIREBASE_CLIENT_EMAIL
   
   # --- Segredos Sensíveis (Devem existir no Secret Manager) ---
   - variable: NEXT_PUBLIC_SUPABASE_URL
