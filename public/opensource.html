@@ -2,11 +2,7 @@
 <html lang="pt-BR">
 
 <head>
-    <script>
-        if (window.location.hostname !== 'localhost' && window.location.hostname.endsWith('.web.app')) {
-            window.location.replace('https://campobranco.vercel.app' + window.location.pathname + window.location.search);
-        }
-    </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Source e Transparência | Campo Branco</title>
@@ -120,9 +116,7 @@
                     </div>
 
                     <h3>Transparência Técnica</h3>
-                    <p>A arquitetura do- **Redirecionamento Inteligente**: Implementamos um script que redireciona
-                        automaticamente acessos via `.web.app` para `campobranco.vercel.app`, facilitando a migração sem
-                        quebrar acessos em desenvolvimento (localhost).
+                    <p>A arquitetura do projeto favorece a transparência, com decisões como:
                         - **GitHub Pages (Branch homepage)**: Criamos e isolamos a branch `homepage` contendo apenas os
                         arquivos estáticos na raiz. Isso permite usar o GitHub Pages de forma independente do código do
                         aplicativo.
