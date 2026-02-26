@@ -6,11 +6,13 @@ import { NextResponse } from 'next/server';
 import { adminDb, getUserFromToken, canAccessCongregation, isAdminRole } from '@/lib/firestore';
 import { cookies } from 'next/headers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
     try {
         const cookieStore = await cookies();
         const token = cookieStore.get('__session')?.value;
-        const user = await getUserFromToken(token);
+        const user = await getUserFromToken(token) as any;
 
         if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
