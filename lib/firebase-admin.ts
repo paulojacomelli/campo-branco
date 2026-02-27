@@ -58,7 +58,15 @@ function initAdminApp(): App {
     }
 }
 
-// Instâncias do Admin SDK
+// Instâncias do Admin SDK - Inicializadas de forma segura
 const adminApp: App = initAdminApp();
-export const adminDb: Firestore = getFirestore(adminApp);
-export const adminAuth: Auth = getAuth(adminApp);
+
+// Evitamos chamar getFirestore e getAuth se o app for um mock (comum no build do Next.js)
+// prevenindo o erro "firebaseApp.getOrInitService is not a function"
+export const adminDb: Firestore = adminApp.name !== '[mock]'
+    ? getFirestore(adminApp)
+    : { collection: () => { throw new Error("Firestore access blocked: missing credentials during build."); } } as any;
+
+export const adminAuth: Auth = adminApp.name !== '[mock]'
+    ? getAuth(adminApp)
+    : { verifyIdToken: () => { throw new Error("Auth access blocked: missing credentials during build."); } } as any;
