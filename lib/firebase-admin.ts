@@ -29,12 +29,10 @@ function initAdminApp(): App {
         credential: cert({
             projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_ADMIN_PROJECT_ID,
             clientEmail: process.env.FIREBASE_CLIENT_EMAIL || process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-            // Parsing mais robusto para evitar "Invalid PEM formatted message"
+            // Processamento robusto da chave privada para diferentes ambientes (Vercel, Local, Docker)
+            // Remove aspas excedentes e converte \n literais para quebras de linha reais
             privateKey: rawKey
-                ? rawKey
-                    .replace(/\\n/gm, '\n')
-                    .replace(/^["']|["']$/g, '')
-                    .trim()
+                ? rawKey.replace(/\\n/g, '\n').replace(/^["']|["']$/g, '').trim()
                 : undefined,
         }),
     });
