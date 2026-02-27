@@ -30,12 +30,12 @@ env:
     secret: FIREBASE_CLIENT_EMAIL
   
   # --- Segredos Sensíveis (Devem existir no Secret Manager) ---
-  - variable: NEXT_PUBLIC_SUPABASE_URL
-    secret: SUPABASE_URL
-  - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
-    secret: SUPABASE_ANON_KEY
-  - variable: SUPABASE_SERVICE_ROLE_KEY
-    secret: SUPABASE_SERVICE_ROLE_KEY
+  # - variable: NEXT_PUBLIC_SUPABASE_URL
+  #   secret: SUPABASE_URL
+  # - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
+  #   secret: SUPABASE_ANON_KEY
+  # - variable: SUPABASE_SERVICE_ROLE_KEY
+  #   secret: SUPABASE_SERVICE_ROLE_KEY
   - variable: VAPID_PRIVATE_KEY
     secret: VAPID_PRIVATE_KEY
   - variable: FB_ADMIN_PRIVATE_KEY

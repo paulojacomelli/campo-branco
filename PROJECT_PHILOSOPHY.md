@@ -10,8 +10,8 @@ O aplicativo deve funcionar impecavelmente mesmo sob condições adversas (redes
 * **Logs Limpos:** Erros externos (como injeções de extensões de navegador) devem ser filtrados. Apenas erros reais do sistema devem ser armazenados e notificados.
 
 ## 2. Otimização Extrema (Velocidade e Banco de Dados)
-Sendo um projeto voluntário com recursos limitados de servidor, a comunicação com o banco de dados (Supabase) deve ser cirúrgica.
-* **Otimização de Consultas:** Evite o problema "N+1". Relacionamentos devem ser resolvidos diretamente no banco com `JOINs` (ou selects integrados no Supabase) em vez de múltiplos laços `for` no front-end.
+Sendo um projeto voluntário com recursos limitados de servidor, a comunicação com o banco de dados (Firebase) deve ser cirúrgica.
+* **Otimização de Consultas:** Evite o problema "N+1". Relacionamentos devem ser resolvidos diretamente no banco com `JOINs` (ou selects integrados no Firebase) em vez de múltiplos laços `for` no front-end.
 * **Tempo Real Ponderado:** Use `subscriptions` (Websockets) apenas onde for necessário para a experiência em tempo real pontual. Garanta sempre o `unsubscribe` na desmontagem dos componentes para economizar conexões simultâneas.
 * **Cache Inteligente:** Sempre que possível, utilize cache no lado do cliente ou requisições deduplicadas para evitar ir ao servidor buscar o mesmo dado repetidas vezes.
 
