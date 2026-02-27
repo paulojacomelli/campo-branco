@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Força ADMIN para o email principal caso o banco esteja limpo
                 if (currentUser.email === 'campobrancojw@gmail.com' && data.role !== 'ADMIN') {
                     await setDoc(userRef, {
-                        name: 'Super Admin',
+                        name: 'Admin',
                         email: currentUser.email,
                         role: 'ADMIN',
                         congregationId: null,
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     }, { merge: true });
                     setActualRole('ADMIN');
                     setCongregationId(null);
-                    setProfileName('Super Admin');
+                    setProfileName('Admin');
                 } else {
                     setActualRole(data.role || 'PUBLICADOR');
                     setCongregationId(data.congregationId || null);
@@ -146,14 +146,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Primeiro login
                 if (currentUser.email === 'campobrancojw@gmail.com') {
                     await setDoc(userRef, {
-                        name: 'Super Admin',
+                        name: 'Admin',
                         email: currentUser.email,
                         role: 'ADMIN',
                         congregationId: null,
                         updatedAt: serverTimestamp(),
                         createdAt: serverTimestamp()
                     });
-                    setProfileName('Super Admin');
+                    setProfileName('Admin');
                     setActualRole('ADMIN');
                 } else {
                     setProfileName(currentUser.displayName || currentUser.email);
@@ -217,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    // Permite que Super Admins simulem outros papéis para testar permissões
+    // Permite que Admins simulem outros papéis para testar permissões
     const simulateRole = (newRole: string | null) => {
         if (actualRole === 'ADMIN') {
             setSimulatedRole(newRole);

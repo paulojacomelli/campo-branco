@@ -1,61 +1,59 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/users/list/route.ts
+// Lista usuários (membros) de uma congregação no Firestore
+// Requer autenticação e permissão de acesso à congregação
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const currentUser = await getUserFromToken(token) as any;
 
-        if (authError || !currentUser) {
+        if (!currentUser) {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
 
         const url = new URL(req.url);
-        const congregation_id = url.searchParams.get('congregationId');
+        const congregationId = url.searchParams.get('congregationId');
 
-        if (!congregation_id) {
+        if (!congregationId) {
             return NextResponse.json({ error: 'ID da congregação ausente' }, { status: 400 });
         }
 
-        // Get members from public.users table
-        const { data: dbUsers, error: dbError } = await supabaseAdmin
-            .from('users')
-            .select('id, name, email')
-            .eq('congregation_id', congregation_id)
-            .order('name', { ascending: true });
-
-        if (dbError) throw dbError;
-
-        // Fetch auth users to get avatar_url from metadata
-        const { data: { users: authUsers }, error: authListError } = await supabaseAdmin.auth.admin.listUsers();
-
-        if (authListError) {
-            console.error("Auth list error:", authListError);
-            // Non-blocking but good to know
+        // Verifica permissão (Ancião do próprio congregação ou Admin)
+        if (currentUser.role !== 'ADMIN' && currentUser.congregationId !== congregationId) {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
-        const usersWithAvatars = (dbUsers || []).map(dbUser => {
-            const authUser = authUsers?.find(au => au.id === dbUser.id);
+        // Busca membros na coleção 'users' do Firestore
+        // Tenta campo novo e legado
+        let usersSnap = await adminDb.collection('users')
+            .where('congregationId', '==', congregationId)
+            .get();
+
+        if (usersSnap.empty) {
+            usersSnap = await adminDb.collection('users')
+                .where('congregation_id', '==', congregationId)
+                .get();
+        }
+
+        const users = usersSnap.docs.map(doc => {
+            const data = doc.data();
             return {
-                ...dbUser,
-                avatar_url: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || null
+                id: doc.id,
+                name: data.name || 'Sem nome',
+                email: data.email || '',
+                avatar_url: data.photoURL || data.avatar_url || data.picture || null,
+                role: data.role
             };
-        });
+        }).sort((a, b) => a.name.localeCompare(b.name));
 
-        // Debug log (server side)
-        console.log(`API Found ${dbUsers?.length} public users and mapped ${usersWithAvatars.length} for CID: ${congregation_id}`);
-
-        return NextResponse.json({
-            users: usersWithAvatars,
-            debug: {
-                dbCount: dbUsers?.length,
-                authCount: authUsers?.length,
-                cid: congregation_id
-            }
-        });
+        return NextResponse.json({ users });
     } catch (error: any) {
         console.error("List users API error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });

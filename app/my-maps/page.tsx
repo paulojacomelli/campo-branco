@@ -17,7 +17,6 @@ import {
     MoreVertical
 } from 'lucide-react';
 import BottomNav from '@/app/components/BottomNav';
-import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
@@ -47,15 +46,15 @@ export default function CongregationListPage() {
         }
     }, [user, authLoading, isServant, router]);
 
-    // Automatic Redirection for Superadmins or Servants
+    // Automatic Redirection for Admins or Servants
     useEffect(() => {
         if (!authLoading && user && isServant) {
-            if (congregationId) {
-                // If has a congregation, go directly to their city list
-                router.replace(`/my-maps/city?congregationId=${congregationId}`);
-            } else if (isAdminRoleGlobal) {
-                // If Superadmin without congregation, go to admin panel
+            if (isAdminRoleGlobal && !congregationId) {
+                // Admin sem congregação vai para o painel de gestão
                 router.replace('/admin/congregations');
+            } else {
+                // Admin com congregação ou Servos/Anciãos vão para a lista de cidades
+                router.replace(`/my-maps/city?congregationId=${congregationId || ''}`);
             }
         }
     }, [user, authLoading, congregationId, isAdminRoleGlobal, isServant, router]);

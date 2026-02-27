@@ -18,7 +18,7 @@ const CONG_ID = 'fe01ce2a-7fba-48fa-aaed-7c982a04e229';
 const USERS = [
     { id: 'cd27ebfa-68fe-4c9f-a9cf-df033bc5944d', name: 'Superintendente' },
     { id: 'ab31b0d9-19ef-4173-a152-da9a6e8a4489', name: 'Paulo Henrique' },
-    { id: '057a14a2-73a8-482a-a4e7-831681d91aec', name: 'SuperAdmin' },
+    { id: '057a14a2-73a8-482a-a4e7-831681d91aec', name: 'Admin' },
     { id: 'd3ca558f-e8e0-42c6-b02b-3caf9b358267', name: 'Paulo (User)' }
 ];
 

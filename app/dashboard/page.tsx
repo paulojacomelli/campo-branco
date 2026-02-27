@@ -216,7 +216,7 @@ export default function DashboardPage() {
             } else if (role !== 'ADMIN') {
                 return; // Protection for normal users
             } else {
-                // Superadmin without congregation: force empty results
+                // Admin without congregation: force empty results
                 query = query.eq('id', '00000000-0000-0000-0000-000000000000');
             }
 

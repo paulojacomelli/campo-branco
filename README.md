@@ -27,7 +27,7 @@ Este aplicativo é uma iniciativa **independente e open source**. Ele **não** �
 - **Dados Sensíveis:** Tratamento especial e protegido para informações sensíveis.
 
 ### 👥 Controle de Acesso
-- **Super Admin:** Gestão global do sistema.
+- **Admin:** Gestão global do sistema.
 - **Anciãos:** Gestão de territórios e campanhas.
 - **Servos:** Manutenção e distribuição.
 - **Publicadores:** Acesso restrito aos seus próprios territórios.
@@ -55,8 +55,8 @@ Este aplicativo é uma iniciativa **independente e open source**. Ele **não** �
 
 ### 2. Instalação
 ```bash
-git clone https://github.com/paulojacomelli/campo-branco.git
-cd campo-branco
+git clone https://github.com/campobranco/campobranco.git
+cd campobranco
 npm install
 ```
 

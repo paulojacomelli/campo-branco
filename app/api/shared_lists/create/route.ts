@@ -1,69 +1,83 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/shared_lists/create/route.ts
+// Cria uma lista de compartilhamento e salva snapshots dos itens no Firestore
+
 import { NextResponse } from 'next/server';
+import { adminDb, FieldValue } from '@/lib/firestore';
 
 export async function POST(req: Request) {
     try {
         const body = await req.json();
         const { listData, territories } = body;
 
-        // 1. Insert into shared_lists using Supabase Admin to bypass RLS
-        const { data: shareData, error: shareError } = await supabaseAdmin
-            .from('shared_lists')
-            .insert(listData)
-            .select()
-            .single();
+        // 1. Inserir em 'shared_lists' no Firestore
+        // Mapear campos snake_case se existirem
+        const finalData = {
+            ...listData,
+            congregationId: listData.congregationId || listData.congregation_id,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp()
+        };
 
-        if (shareError) {
-            console.error("Error creating shared list:", shareError);
-            throw shareError;
-        }
+        // Remover campo legado se presente no mapeamento acima
+        delete finalData.congregation_id;
 
-        // 2. Create snapshots (Territories + Addresses in one go using supabaseAdmin)
-        const snapshotEntries = [];
+        const shareDoc = await adminDb.collection('shared_lists').add(finalData);
+        const shareId = shareDoc.id;
 
-        // Snapshot Territories
+        // 2. Criar snapshots (Territórios + Endereços)
         if (territories && Array.isArray(territories)) {
-            for (const t of territories) {
-                snapshotEntries.push({
-                    shared_list_id: shareData.id,
-                    item_id: t.id,
+            const batch = adminDb.batch();
+            const snapshotsRef = adminDb.collection('shared_list_snapshots');
+
+            // Snapshot dos Territórios
+            territories.forEach((t: any) => {
+                const snapRef = snapshotsRef.doc();
+                batch.set(snapRef, {
+                    sharedListId: shareId,
+                    itemId: t.id,
+                    type: 'territory',
                     data: {
                         ...t,
                         visit_status: 'none'
-                    }
+                    },
+                    createdAt: FieldValue.serverTimestamp()
                 });
-            }
+            });
 
-            // Snapshot Addresses
+            // Buscar Endereços vinculados para snapshot
             const territoryIds = territories.map((t: any) => t.id);
-            const { data: addresses, error: addrError } = await supabaseAdmin
-                .from('addresses')
-                .select('*')
-                .in('territory_id', territoryIds);
+            if (territoryIds.length > 0) {
+                // Firestore limit 30 in 'in' query
+                const chunks = [];
+                for (let i = 0; i < territoryIds.length; i += 30) {
+                    chunks.push(territoryIds.slice(i, i + 30));
+                }
 
-            if (addresses && !addrError) {
-                for (const addr of addresses) {
-                    snapshotEntries.push({
-                        shared_list_id: shareData.id,
-                        item_id: addr.id,
-                        data: {
-                            ...addr,
-                            visit_status: 'none'
-                        }
+                for (const chunk of chunks) {
+                    const addrSnap = await adminDb.collection('addresses')
+                        .where('territoryId', 'in', chunk)
+                        .get();
+
+                    addrSnap.docs.forEach(doc => {
+                        const snapRef = snapshotsRef.doc();
+                        batch.set(snapRef, {
+                            sharedListId: shareId,
+                            itemId: doc.id,
+                            type: 'address',
+                            data: {
+                                ...doc.data(),
+                                visit_status: 'none'
+                            },
+                            createdAt: FieldValue.serverTimestamp()
+                        });
                     });
                 }
             }
 
-            if (snapshotEntries.length > 0) {
-                const { error: snapError } = await supabaseAdmin
-                    .from('shared_list_snapshots')
-                    .insert(snapshotEntries);
-
-                if (snapError) console.warn("[SNAPSHOT] Failed to save snapshots:", snapError);
-            }
+            await batch.commit();
         }
 
-        return NextResponse.json({ shareData });
+        return NextResponse.json({ shareData: { id: shareId, ...finalData } });
     } catch (error: any) {
         console.error("Shared List API Error:", error);
         return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });

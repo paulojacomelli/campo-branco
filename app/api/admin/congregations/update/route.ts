@@ -1,53 +1,60 @@
 
-import { createClient } from '@supabase/supabase-js';
-import { NextRequest, NextResponse } from 'next/server';
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
+import { NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
     try {
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
+
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+        } catch (e) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        // 1. Verificar permissões do administrador solicitante no Firestore
+        const adminDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const adminData = adminDoc.data();
+
+        if (!adminData || adminData.role !== 'ADMIN') {
+            return NextResponse.json({ error: 'Você não tem permissão para realizar esta ação.' }, { status: 403 });
+        }
+
         const body = await req.json();
         const { id, ...updates } = body;
 
         if (!id) {
-            return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+            return NextResponse.json({ error: 'ID da congregação é obrigatório.' }, { status: 400 });
         }
 
-        // Use service role key to bypass RLS
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+        console.log(`DEBUG - Atualizando congregação ${id} via Firebase Admin`);
 
-        if (!supabaseServiceKey) {
-            console.error("Missing SUPABASE_SERVICE_ROLE_KEY");
-            // Fallback to anon key if service key is missing, potentially hitting same RLS issue but worth a try if misconfigured
-            // actually if service key is missing we can't do admin bypass.
-            return NextResponse.json({ error: 'Server configuration error: Missing service role key' }, { status: 500 });
-        }
+        // 2. Atualizar no Firestore
+        // Removemos o ID do corpo de atualizações para não duplicar campos se necessário
+        delete updates.id;
 
-        const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false
-            }
-        });
+        // Adicionamos timestamp de atualização
+        updates.updatedAt = FieldValue.serverTimestamp();
 
-        const { data, error, count } = await supabase
-            .from('congregations')
-            .update(updates)
-            .eq('id', id)
-            .select();
+        await adminDb.collection('congregations').doc(id).update(updates);
 
-        if (error) {
-            console.error("Supabase update error:", error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-
-        if (!data || data.length === 0) {
-            // Even with service role, if ID is wrong it returns 0 rows.
-            return NextResponse.json({ error: 'Congregation not found or update failed' }, { status: 404 });
-        }
-
-        return NextResponse.json({ success: true, data });
+        return NextResponse.json({ success: true });
     } catch (error: any) {
-        console.error("API update error:", error);
-        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+        console.error('Congregation Update API Critical Error:', error);
+        return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
     }
 }

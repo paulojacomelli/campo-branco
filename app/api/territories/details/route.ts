@@ -1,13 +1,18 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/territories/details/route.ts
+// Busca detalhes de um ou mais territórios no Firestore
+// Requer autenticação e permissão sobre a congregação
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token) as any;
 
-        if (authError || !currentUser) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -20,35 +25,29 @@ export async function GET(req: Request) {
 
         const ids = idsParam.split(',').filter(Boolean);
 
-        // 1. Get user details to check congregation
-        const { data: userData, error: userError } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
+        // 1. Busca os territórios no Firestore
+        // O Firestore não tem um "where in" para documentos individuais se forem muitos, 
+        // mas para IDs usamos documentos específicos ou queries.
+        const territories: any[] = [];
+        const promises = ids.map(id => adminDb.collection('territories').doc(id).get());
+        const snapshots = await Promise.all(promises);
 
-        if (userError || !userData) {
-            return NextResponse.json({ error: 'Perfil de usuário não encontrado' }, { status: 403 });
-        }
+        snapshots.forEach(snap => {
+            if (snap.exists) {
+                territories.push({ id: snap.id, ...snap.data() });
+            }
+        });
 
-        // 2. Fetch territories using admin client to bypass RLS
-        const { data: territories, error: tErr } = await supabaseAdmin
-            .from('territories')
-            .select('*')
-            .in('id', ids);
-
-        if (tErr) {
-            return NextResponse.json({ error: 'Erro ao buscar territórios', details: tErr.message }, { status: 500 });
-        }
-
-        if (!territories || territories.length === 0) {
+        if (territories.length === 0) {
             return NextResponse.json({ success: true, territories: [] });
         }
 
-        // 3. SECURE: Verify that ALL territories belong to the same congregation as the user
-        // (Unless the user is a ADMIN)
-        if (userData.role !== 'ADMIN') {
-            const hasUnauthorized = territories.some(t => t.congregation_id !== userData.congregation_id);
+        // 2. SECURE: Verificar permissão (deve pertencer à congregação do usuário)
+        if (user.role !== 'ADMIN') {
+            const hasUnauthorized = territories.some(t => {
+                const congId = t.congregationId || t.congregation_id;
+                return congId !== user.congregationId;
+            });
             if (hasUnauthorized) {
                 return NextResponse.json({ error: 'Você não tem permissão para acessar alguns dos territórios solicitados.' }, { status: 403 });
             }

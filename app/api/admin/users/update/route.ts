@@ -1,13 +1,27 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !currentUser) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+        } catch (e) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -17,69 +31,59 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'ID do usuário é obrigatório.' }, { status: 400 });
         }
 
-        // 1. Verificar permissões do administrador
-        const { data: adminData } = await supabase
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
+        // 1. Verificar permissões do administrador solicitante no Firestore
+        const adminDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const adminData = adminDoc.data();
 
         if (!adminData || (adminData.role !== 'ADMIN' && adminData.role !== 'ANCIAO' && adminData.role !== 'SERVO')) {
             return NextResponse.json({ error: 'Você não tem permissão para atualizar usuários.' }, { status: 403 });
         }
 
-        // 2. Verificar o usuário alvo
-        const { data: targetUser } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', userId)
-            .single();
-
-        if (!targetUser) {
+        // 2. Buscar o usuário alvo no Firestore
+        const targetUserDoc = await adminDb.collection('users').doc(userId).get();
+        if (!targetUserDoc.exists) {
             return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
         }
+        const targetUserData = targetUserDoc.data();
 
-        // 3. Regras de segurança adicionais
+        // 3. Regras de segurança
         if (adminData.role !== 'ADMIN') {
             // Se for Ancião ou Servo, só edita da própria congregação
-            if (targetUser.congregation_id !== adminData.congregation_id) {
+            if (targetUserData?.congregationId !== adminData.congregationId) {
                 return NextResponse.json({ error: 'Você só pode editar usuários da sua congregação.' }, { status: 403 });
             }
-            if (targetUser.role === 'ADMIN') {
-                return NextResponse.json({ error: 'Você não pode editar um Super Admin.' }, { status: 403 });
+            if (targetUserData?.role === 'ADMIN') {
+                return NextResponse.json({ error: 'Você não pode editar um Admin.' }, { status: 403 });
             }
             if (role === 'ADMIN') {
-                return NextResponse.json({ error: 'Você não pode promover alguém a Super Admin.' }, { status: 403 });
+                return NextResponse.json({ error: 'Você não pode promover alguém a Admin.' }, { status: 403 });
             }
         }
 
-        console.log(`DEBUG - Iniciando atualização via Admin de usuário ${userId} por admin ${currentUser.id}`);
+        console.log(`DEBUG - Atualizando usuário ${userId} via Firebase Admin`);
 
-        // 4. Atualizar na tabela pública via Admin (bypasses RLS)
-        const { error: publicUpdateError } = await supabaseAdmin
-            .from('users')
-            .update({
-                name: name,
-                role: role,
-                congregation_id: congregation_id
-            })
-            .eq('id', userId);
+        // 4. Atualizar no Firestore
+        await adminDb.collection('users').doc(userId).update({
+            name: name || targetUserData?.name,
+            role: role || targetUserData?.role,
+            congregationId: congregation_id || targetUserData?.congregationId || null,
+            updatedAt: new Date()
+        });
 
-        if (publicUpdateError) {
-            console.error('Public User Update API Error:', publicUpdateError);
-            return NextResponse.json({ error: publicUpdateError.message }, { status: 500 });
-        }
-
-        // 5. Atualizar nome no auth (opcional, mas recomendado)
+        // 5. Atualizar nome no Firebase Auth
         if (name) {
-            await supabaseAdmin.auth.admin.updateUserById(userId, {
-                user_metadata: { name: name }
-            });
+            try {
+                await adminAuth.updateUser(userId, {
+                    displayName: name
+                });
+            } catch (e) {
+                console.warn("Auth displayName update failed (non-critical):", e);
+            }
         }
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error('User Update API Critical Error:', error);
-        return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
     }
 }

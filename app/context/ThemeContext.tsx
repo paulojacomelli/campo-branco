@@ -1,7 +1,8 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
-import { supabase } from "@/lib/supabase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export type ThemeMode = 'light' | 'dark' | 'auto' | 'system';
 
@@ -93,23 +94,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setLoaded(true);
     }, []);
 
-    // Sync from Supabase (authoritative)
+    // Sincroniza preferências do Firestore (fonte authoritative, sobrepõe LocalStorage)
     useEffect(() => {
         let isMounted = true;
         if (user && loaded) {
             const fetchPrefs = async () => {
                 try {
-                    const { data, error } = await supabase
-                        .from('users')
-                        .select('preferences')
-                        .eq('id', user.id)
-                        .maybeSingle();
+                    // Busca o campo 'preferences' do documento do usuário no Firestore
+                    const userRef = doc(db, 'users', user.uid);
+                    const userSnap = await getDoc(userRef);
 
-                    if (isMounted && !error && data?.preferences) {
-                        const prefs = data.preferences as any;
-                        if (prefs.textSize) setTextSize(prefs.textSize);
-                        if (prefs.displayScale) setDisplayScale(prefs.displayScale);
-                        if (prefs.themeMode) setThemeMode(prefs.themeMode);
+                    if (isMounted && userSnap.exists()) {
+                        const prefs = userSnap.data()?.preferences as any;
+                        if (prefs) {
+                            if (prefs.textSize) setTextSize(prefs.textSize);
+                            if (prefs.displayScale) setDisplayScale(prefs.displayScale);
+                            if (prefs.themeMode) setThemeMode(prefs.themeMode);
+                        }
                     }
                 } catch (error) {
                     console.error("Error fetching preferences:", error);
@@ -133,14 +134,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
         localStorage.setItem("app-preferences", JSON.stringify(prefsObject));
 
+        // Salva as preferências no Firestore para sincronizar entre dispositivos
         if (user) {
             try {
-                await supabase
-                    .from('users')
-                    .update({
-                        preferences: prefsObject
-                    })
-                    .eq('id', user.id);
+                await updateDoc(doc(db, 'users', user.uid), {
+                    preferences: prefsObject
+                });
             } catch (error) {
                 console.error("Error saving preferences:", error);
             }

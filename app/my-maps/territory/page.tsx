@@ -143,7 +143,7 @@ function TerritoryListContent() {
             return;
         }
         try {
-            const response = await fetch(`/api/territories/list?cityId=${cityId}&congregationId=${congregationId}`);
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/territories/list?cityId=${cityId}&congregationId=${congregationId}`);
             const data = await response.json();
 
             if (!data.success) {
@@ -200,7 +200,7 @@ function TerritoryListContent() {
     const fetchAddresses = async () => {
         if (!congregationId || !cityId) return;
         try {
-            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}`);
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}`);
             const resData = await response.json();
 
             if (!resData.success) {
@@ -267,7 +267,7 @@ function TerritoryListContent() {
             const sharedMap: Record<string, boolean> = {};
             // const completionMap: Record<string, Date> = {}; // TODO: Logic for completion history
 
-            data?.forEach(list => {
+            data?.forEach((list: any) => {
                 if (list.type === 'territory' && list.items && Array.isArray(list.items)) {
                     // Active
                     if (list.status !== 'completed') {
@@ -301,7 +301,7 @@ function TerritoryListContent() {
         if (!newTerritoryName.trim() || !cityId || !congregationId) return;
 
         try {
-            const response = await fetch('/api/territories/create', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/territories/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -338,7 +338,7 @@ function TerritoryListContent() {
         if (!editingTerritory || !editName.trim()) return;
 
         try {
-            const response = await fetch('/api/territories/update', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/territories/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -374,7 +374,7 @@ function TerritoryListContent() {
         setIsDeleteDialogOpen(false);
         setLoading(true);
         try {
-            const response = await fetch('/api/territories/delete', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/territories/delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, mode: deleteMode })
@@ -440,7 +440,7 @@ function TerritoryListContent() {
 
     if (authLoading || loading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-10 h-10 text-primary animate-spin" /></div>;
 
-    // Role Guard: Only Servants, Elders and SuperAdmins can see this page
+    // Role Guard: Only Servants, Elders and Admins can see this page
     if (user && !isServant) {
         router.replace('/dashboard');
         return null;

@@ -40,7 +40,7 @@ export default function LegalConsentPage() {
                 .update({
                     terms_accepted_at: new Date().toISOString()
                 })
-                .eq('id', user.id);
+                .eq('id', user.uid);
 
             if (error) throw error;
 

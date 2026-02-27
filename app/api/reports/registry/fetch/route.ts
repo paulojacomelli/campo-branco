@@ -1,59 +1,58 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (!user) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
 
-        // Get user's congregation and role from profile
-        const { data: profile } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', user.id)
-            .single();
+        const decodedToken = await adminAuth.verifyIdToken(token);
+
+        // Get user's congregation and role from profile (Firestore)
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const profile = userDoc.data();
 
         const { searchParams } = new URL(req.url);
         let congregationId = searchParams.get('congregationId');
 
-        // Force congregationId to be the user's congregation for non-superadmins
-        // Or if the user is a superadmin but we want to stick to their own for operational views
+        // Force congregationId to be the user's congregation for non-admins
         if (profile?.role !== 'ADMIN' || !congregationId) {
-            congregationId = profile?.congregation_id || null;
+            congregationId = profile?.congregationId || null;
         }
 
         if (!congregationId) {
-            return NextResponse.json({ error: 'Congregacão não identificada' }, { status: 400 });
+            return NextResponse.json({ error: 'Congregação não identificada' }, { status: 400 });
         }
 
         // Fetch Territories
-        const { data: territories, error: terrError } = await supabaseAdmin
-            .from('territories')
-            .select('*')
-            .eq('congregation_id', congregationId);
-
-        if (terrError) throw terrError;
+        const territoriesSnap = await adminDb.collection('territories')
+            .where('congregationId', '==', congregationId)
+            .get();
+        const territories = territoriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         // Fetch Cities
-        const { data: cities, error: cityError } = await supabaseAdmin
-            .from('cities')
-            .select('*')
-            .eq('congregation_id', congregationId);
-
-        if (cityError) throw cityError;
+        const citiesSnap = await adminDb.collection('cities')
+            .where('congregationId', '==', congregationId)
+            .get();
+        const cities = citiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         // Fetch Shared Lists (History)
-        const { data: sharedLists, error: listError } = await supabaseAdmin
-            .from('shared_lists')
-            .select('*')
-            .eq('congregation_id', congregationId);
-
-        if (listError) throw listError;
+        const sharedListsSnap = await adminDb.collection('shared_lists')
+            .where('congregationId', '==', congregationId)
+            .get();
+        const sharedLists = sharedListsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         return NextResponse.json({
             territories: territories || [],

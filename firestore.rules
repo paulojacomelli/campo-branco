@@ -23,15 +23,9 @@ service cloud.firestore {
 
     // Role checks (SECURE LOCK STRATEGY)
     function isAdmin() {
-      // 1. First, check if the lock document says this user is the Super Admin
-      let lockPath = /databases/$(database)/documents/config/security;
-      let lockExists = exists(lockPath);
-      let isLockedOwner = lockExists && get(lockPath).data.adminUid == request.auth.uid;
-      
-      // STRICT LOCK STRATEGY: Only trust the lock document.
-      // If the lock document exists, you MUST be the owner.
-      // We do not trust the 'role' field in the user document for Super Admin privileges.
-      return lockExists && isLockedOwner;
+      // Simplificado: Confia no claim de role do token (setado via Admin SDK/AuthContext)
+      // ou permite acesso inicial se for o email master
+      return request.auth.token.role == 'ADMIN' || request.auth.token.email == 'campobrancojw@gmail.com';
     }
     
     function isElder() {
@@ -49,7 +43,7 @@ service cloud.firestore {
     // Verify if the requested data belongs to the user's congregation
     function belongsToUserCongregation(docData) {
       let auth = getAuthContext();
-      // Super Admin bypasses isolation
+      // Admin bypasses isolation
       let hasPower = isAdmin(); 
       // Strict check: doc must have congregationId and it must match user's
       return isAuthenticated() && (hasPower || (docData.congregationId == auth.congregationId && auth.congregationId != ""));
@@ -82,6 +76,9 @@ service cloud.firestore {
 
     // 2. Users (Strict Access)
     match /users/{userId} {
+      // MASTER ACCESS (Emergency / First Login)
+      allow read, write: if isAuthenticated() && request.auth.token.email == 'campobrancojw@gmail.com';
+
       // Individual document access
       allow get: if isAuthenticated() && (
         request.auth.uid == userId || 
@@ -110,11 +107,12 @@ service cloud.firestore {
       );
       
       // Create: Allow standard creation, but 'role' should default to PUBLICADOR logic from client. 
-      // We can restrict role creation here too, but client typically sets it to PUBLICADOR.
+      // We allow the master email to create itself as ADMIN.
       allow create: if isAuthenticated() && (
-        request.resource.data.role == "PUBLICADOR" &&
-        (!('roles' in request.resource.data) || request.resource.data.roles.size() == 0) &&
-        (!('congregationId' in request.resource.data) || request.resource.data.congregationId == "")
+        (request.resource.data.role == "PUBLICADOR" &&
+         (!('roles' in request.resource.data) || request.resource.data.roles.size() == 0) &&
+         (!('congregationId' in request.resource.data) || request.resource.data.congregationId == "")) ||
+        (request.auth.token.email == 'campobrancojw@gmail.com' && request.auth.uid == userId)
       );
       allow delete: if isAuthenticated() && (isAdmin() || request.auth.uid == userId);
     }
@@ -137,7 +135,7 @@ service cloud.firestore {
     }
 
     match /addresses/{id} {
-        // READ: Allow Super Admin, Elder, or Servant
+        // READ: Allow Admin, Elder, or Servant
         // Using direct token check to avoid getAuthContext issues
         allow read: if isAuthenticated() && (
             isAdmin() ||

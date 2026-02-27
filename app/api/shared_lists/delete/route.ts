@@ -1,52 +1,42 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/shared_lists/delete/route.ts
+// Exclui uma lista compartilhada no Firestore
+// Requer autenticação e permissão de ancião ou admin
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token) as any;
 
         if (!user) {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
 
-        const body = await req.json();
-        const { id } = body;
+        const { id } = await req.json();
 
         if (!id) {
             return NextResponse.json({ error: 'ID não fornecido' }, { status: 400 });
         }
 
-        // Get user profile for verification
-        const { data: profile } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', user.id)
-            .single();
+        // Busca o documento da lista para verificação
+        const listDoc = await adminDb.collection('shared_lists').doc(id).get();
+        const existingList = listDoc.data();
 
-        // Security: Verify that the item to be deleted belongs to the user's congregation
-        // unless they are a superadmin (and even then, we want to restrict them in operational views)
-        const { data: existingList, error: fetchError } = await supabaseAdmin
-            .from('shared_lists')
-            .select('congregation_id')
-            .eq('id', id)
-            .single();
-
-        if (fetchError || !existingList) {
+        if (!listDoc.exists || !existingList) {
             return NextResponse.json({ error: 'Registro não encontrado' }, { status: 404 });
         }
 
-        if (profile?.role !== 'ADMIN' && existingList.congregation_id !== profile?.congregation_id) {
+        const listCongregationId = existingList.congregationId || existingList.congregation_id;
+
+        if (user.role !== 'ADMIN' && listCongregationId !== user.congregationId) {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
-        const { error } = await supabaseAdmin
-            .from('shared_lists')
-            .delete()
-            .eq('id', id);
-
-        if (error) throw error;
+        await adminDb.collection('shared_lists').doc(id).delete();
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

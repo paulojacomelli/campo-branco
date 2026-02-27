@@ -1,13 +1,17 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/admin/fix-duplicates/route.ts
+// Mescla territórios com nomes duplicados (ex: '1' e '01') no Firestore
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token) as any;
 
-        if (authError || !currentUser) {
+        if (!user || user.role !== 'ADMIN') {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
 
@@ -18,27 +22,28 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Congregacão não informada' }, { status: 400 });
         }
 
-        // 1. Fetch all territories for this congregation
-        const { data: territories, error: tErr } = await supabaseAdmin
-            .from('territories')
-            .select('id, name, city_id')
-            .eq('congregation_id', congregationId);
+        // 1. Buscar todos os territórios desta congregação
+        const terrSnap = await adminDb.collection('territories')
+            .where('congregationId', '==', congregationId)
+            .get();
 
-        if (tErr) throw tErr;
-        if (!territories) return NextResponse.json({ success: true, merged: 0 });
+        const territories = terrSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+
+        if (territories.length === 0) return NextResponse.json({ success: true, merged: 0 });
 
         const stats = { found: 0, merged: 0, errors: [] as string[] };
-        const territoriesByCity: Record<string, typeof territories> = {};
+        const territoriesByCity: Record<string, any[]> = {};
 
         territories.forEach(t => {
-            if (!territoriesByCity[t.city_id]) territoriesByCity[t.city_id] = [];
-            territoriesByCity[t.city_id].push(t);
+            const cityId = t.cityId || t.city_id;
+            if (!territoriesByCity[cityId]) territoriesByCity[cityId] = [];
+            territoriesByCity[cityId].push(t);
         });
 
         for (const [cityId, cityTerrs] of Object.entries(territoriesByCity)) {
             for (const t of cityTerrs) {
-                const name = t.name.trim();
-                // Check if it's a single digit (e.g., "1")
+                const name = (t.name || '').trim();
+                // Verifica se é um único dígito (ex: "1")
                 if (/^\d+$/.test(name) && name.length === 1) {
                     const normalizedName = name.padStart(2, '0'); // "01"
                     const target = cityTerrs.find(targetT => targetT.name === normalizedName);
@@ -46,21 +51,24 @@ export async function POST(req: Request) {
                     if (target && target.id !== t.id) {
                         stats.found++;
                         try {
-                            // 2. Move addresses from source (t.id) to target (target.id)
-                            const { error: moveErr } = await supabaseAdmin
-                                .from('addresses')
-                                .update({ territory_id: target.id })
-                                .eq('territory_id', t.id);
+                            // 2. Mover endereços do origem (t.id) para o destino (target.id) via batch
+                            const addrSnap = await adminDb.collection('addresses')
+                                .where('territoryId', '==', t.id)
+                                .get();
 
-                            if (moveErr) throw moveErr;
+                            if (!addrSnap.empty) {
+                                const batch = adminDb.batch();
+                                addrSnap.docs.forEach(doc => {
+                                    batch.update(doc.ref, {
+                                        territoryId: target.id,
+                                        updatedAt: new Date().toISOString()
+                                    });
+                                });
+                                await batch.commit();
+                            }
 
-                            // 3. Delete source territory
-                            const { error: delErr } = await supabaseAdmin
-                                .from('territories')
-                                .delete()
-                                .eq('id', t.id);
-
-                            if (delErr) throw delErr;
+                            // 3. Excluir território de origem
+                            await adminDb.collection('territories').doc(t.id).delete();
 
                             stats.merged++;
                         } catch (err: any) {

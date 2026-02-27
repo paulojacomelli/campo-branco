@@ -64,7 +64,7 @@ function CardsContent() {
 
             // SCOPE: MINE
             if (scope === 'mine') {
-                query = query.eq("assigned_to", user.id);
+                query = query.eq("assigned_to", user.uid);
             }
             // SCOPE: MANAGED (Sent/All)
             else if (scope === 'managed') {
@@ -75,7 +75,7 @@ function CardsContent() {
                     setLoading(false);
                     return;
                 }
-                // Super admin sees all, limited for safety
+                // Admin sees all, limited for safety
                 if (role === 'ADMIN') {
                     query = query.limit(100);
                 }
@@ -102,8 +102,8 @@ function CardsContent() {
 
             // Filter for Publisher in Managed View
             if (scope === 'managed' && !isElder && !isServant && !isAdminRoleGlobal) {
-                const userName = profileName || user?.user_metadata?.full_name || user?.email?.split('@')[0];
-                rawLists = rawLists.filter(l => l.assignedName === userName || l.assignedTo === user.id);
+                const userName = profileName || user?.displayName || user?.email?.split('@')[0];
+                rawLists = rawLists.filter(l => l.assignedName === userName || l.assignedTo === user.uid);
             }
 
             // Only show active active ones for 'mine'

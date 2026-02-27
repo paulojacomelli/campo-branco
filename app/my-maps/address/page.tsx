@@ -203,7 +203,7 @@ function AddressListContent() {
             setLoading(true);
             try {
                 // Fetch context over bypass RLS API to avoid 404 block for cities and territories selection
-                const response = await fetch(`/api/maps/context?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/maps/context?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
                 const resData = await response.json();
 
                 if (!resData.success) {
@@ -256,7 +256,7 @@ function AddressListContent() {
         if (!congregationId || !territoryId) return;
 
         try {
-            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
             const resData = await response.json();
 
             if (!response.ok) {
@@ -376,7 +376,7 @@ function AddressListContent() {
                 observations
             };
 
-            const response = await fetch('/api/addresses/save', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(addressData)
@@ -549,7 +549,7 @@ function AddressListContent() {
                 inactivated_at: new Date().toISOString()
             };
 
-            const response = await fetch('/api/addresses/save', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(addressData)
@@ -578,7 +578,7 @@ function AddressListContent() {
 
             if (fetchErr || !latestVisit) throw new Error("Não foi possível encontrar a visita relacionada.");
 
-            const response = await fetch('/api/visits/delete', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/visits/delete`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ visitId: latestVisit.id })
@@ -602,7 +602,7 @@ function AddressListContent() {
                 inactivated_at: !addr.is_active ? new Date().toISOString() : null
             };
 
-            const response = await fetch('/api/addresses/save', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(addressData)

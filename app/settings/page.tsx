@@ -6,6 +6,9 @@ import Image from 'next/image';
 import { useAuth } from '@/app/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { updateProfile } from 'firebase/auth';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import {
     LogOut,
     User,
@@ -281,28 +284,39 @@ export default function SettingsPage() {
     };
 
     const handleSaveProfile = async () => {
-        if (!user || (!user.email && !user.id)) return;
+        if (!user || (!user.email && !user.uid)) return;
         setSaving(true);
         try {
-            // Update Supabase 'users' table
-            const { error } = await supabase.from('users').update({
+            // 1. Atualiza a tabela 'users' no Supabase (Secundário/Legado)
+            const { error: supabaseError } = await supabase.from('users').update({
                 name: editName,
-            }).eq('id', user.id);
+            }).eq('id', user.uid);
 
-            if (error) throw error;
+            if (supabaseError) console.warn("Supabase update failed (Secondary):", supabaseError);
 
-            // Update Supabase Auth metadata
-            const { error: authError } = await supabase.auth.updateUser({
-                data: { full_name: editName }
+            // 2. Atualiza o documento no Firestore (Principal)
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, {
+                name: editName,
+                updatedAt: serverTimestamp()
             });
 
-            if (authError) throw authError;
+            // 3. Atualiza o perfil no Firebase Auth (Principal para a UI)
+            await updateProfile(user, {
+                displayName: editName
+            });
 
             setShowEditModal(false);
-            window.location.reload();
-        } catch (error) {
+            toast.success("Perfil atualizado com sucesso!");
+
+            // Forçamos o recarregamento para que o AuthContext e o navegador peguem os novos dados
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        } catch (error: any) {
             console.error("Error updating profile:", error);
-            toast.error("Erro ao atualizar perfil.");
+            // Transformamos alerts em notificações internas conforme regra global
+            toast.error("Erro ao atualizar perfil: " + (error.message || "Tente novamente"));
         } finally {
             setSaving(false);
         }
@@ -360,20 +374,20 @@ export default function SettingsPage() {
                     <div className="bg-surface p-6 rounded-lg shadow-sm border border-surface-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                         <div className="flex items-center gap-4">
                             <div className="w-16 h-16 bg-background dark:bg-surface-highlight rounded-full flex items-center justify-center text-muted text-xl font-bold border-2 border-surface dark:border-surface shadow-sm ring-1 ring-surface-border">
-                                {user.user_metadata?.avatar_url ? (
-                                    <Image src={user.user_metadata.avatar_url} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
+                                {user.photoURL ? (
+                                    <Image src={user.photoURL} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
                                 ) : (
                                     <User className="w-8 h-8" />
                                 )}
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-main">{profileName || user.user_metadata?.full_name || 'Usuário'}</h3>
+                                <h3 className="text-lg font-bold text-main">{profileName || user.displayName || 'Usuário'}</h3>
                                 <p className="text-muted text-sm">{user.email}</p>
                                 <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-primary-light/50 text-primary-dark dark:bg-primary-dark/30 dark:text-primary-light">
                                     <Shield className="w-3 h-3" />
                                     {(() => {
                                         switch (role) {
-                                            case 'ADMIN': return 'Super Admin';
+                                            case 'ADMIN': return 'Admin';
                                             case 'ANCIAO': return 'Superintendente de Serviço';
                                             case 'SERVO': return 'Servo de Territórios';
                                             default: return 'Publicador';
@@ -386,7 +400,7 @@ export default function SettingsPage() {
                         <div className="flex flex-col gap-2 w-full md:w-auto">
                             <button
                                 onClick={() => {
-                                    setEditName(profileName || user.user_metadata?.full_name || '');
+                                    setEditName(profileName || user.displayName || '');
                                     setShowEditModal(true);
                                 }}
                                 className="bg-surface hover:bg-background text-main border border-surface-border font-bold py-3 px-6 rounded-lg flex items-center gap-2 transition-colors justify-center"
@@ -654,8 +668,8 @@ export default function SettingsPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Actions - Only Elders can manage, Super Admin manages everyone */}
-                                            {(isAdminRoleGlobal || (isElder && member.role !== 'ADMIN' && member.role !== 'ANCIAO')) && member.id !== user?.id && (
+                                            {/* Actions - Only Elders can manage, Admin manages everyone */}
+                                            {(isAdminRoleGlobal || (isElder && member.role !== 'ADMIN' && member.role !== 'ANCIAO')) && member.id !== user?.uid && (
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => {
@@ -709,7 +723,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* Simulation Mode (Super Admin Only) */}
+                            {/* Simulation Mode (Admin Only) */}
                             {isAdminRoleGlobal && (
                                 <div className="bg-gradient-to-br from-primary-light/20 to-surface dark:from-primary-dark/10 dark:to-surface p-6 rounded-lg shadow-sm border border-primary-light/30 dark:border-primary-dark/30 mb-6 relative overflow-hidden">
                                     <div className="flex items-center gap-3 mb-4">
@@ -753,7 +767,7 @@ export default function SettingsPage() {
                                 </div>
                             )}
 
-                            {/* Super Admin - All Congregations */}
+                            {/* Admin - All Congregations */}
                             {isAdminRoleGlobal && (
                                 <div className="bg-surface p-6 rounded-lg shadow-sm border border-primary-light dark:border-primary-dark/30 mb-6 relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -765,7 +779,7 @@ export default function SettingsPage() {
                                         </div>
                                         <div>
                                             <h3 className="font-bold text-main">Gestão Global</h3>
-                                            <p className="text-xs text-muted">Super Admin (Acesso Total)</p>
+                                            <p className="text-xs text-muted">Admin (Acesso Total)</p>
                                         </div>
                                     </div>
                                     <p className="text-sm text-muted mb-4">Você tem permissão para gerenciar todas as congregações e usuários do sistema.</p>
@@ -912,8 +926,8 @@ export default function SettingsPage() {
                                                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                                                 try {
                                                     // 1. Delete Public Profile
-                                                    if (user?.id) {
-                                                        const { error: deleteError } = await supabase.from("users").delete().eq("id", user.id);
+                                                    if (user?.uid) {
+                                                        const { error: deleteError } = await supabase.from("users").delete().eq("id", user.uid);
                                                         if (deleteError) throw deleteError;
                                                     }
 
@@ -940,7 +954,7 @@ export default function SettingsPage() {
 
                 <div className="pt-8 pb-12 flex flex-col items-center gap-4">
                     <a
-                        href="https://github.com/paulojacomelli/campo-branco"
+                        href="https://github.com/campobranco/campobranco"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="group flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-all duration-300"
@@ -951,7 +965,7 @@ export default function SettingsPage() {
                         </div>
 
                         <Image
-                            src="https://img.shields.io/github/stars/paulojacomelli/campo-branco?style=social"
+                            src="https://img.shields.io/github/stars/campobranco/campobranco?style=social"
                             alt="GitHub Repo stars"
                             width={0}
                             height={0}

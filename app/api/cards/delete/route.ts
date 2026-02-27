@@ -1,13 +1,18 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+// app/api/cards/delete/route.ts
+// Exclui múltiplos cartões (listas compartilhadas) no Firestore
+// Requer autenticação e permissão de administrador ou ancião
+
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb, getUserFromToken, isAdminRole } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token) as any;
 
-        if (authError || !user) {
+        if (!user) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -18,37 +23,25 @@ export async function POST(req: Request) {
         }
 
         // 1. Verificar permissões do usuário
-        const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', user.id)
-            .single();
-
-        if (userError || !userData) {
-            console.error('User check error:', userError);
-            return NextResponse.json({ error: 'Erro ao verificar permissões.' }, { status: 500 });
-        }
-
-        const isAuthorized = userData.role === 'ADMIN' ||
-            userData.role === 'ADMIN' ||
-            userData.role === 'ELDER' ||
-            userData.role === 'SERVANT';
-
-        if (!isAuthorized) {
+        if (!isAdminRole(user.role)) {
             return NextResponse.json({ error: 'Você não tem permissão para realizar exclusões em massa.' }, { status: 403 });
         }
 
         console.log(`DEBUG - Iniciando exclusão via Admin de ${ids.length} cartões por usuário ${user.id}`);
 
-        // 2. Executar delete via Admin Client (ignora RLS)
-        const { error: deleteError } = await supabaseAdmin
-            .from('shared_lists')
-            .delete()
-            .in('id', ids);
+        // 2. Executar delete em batch no Firestore
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += 400) {
+            chunks.push(ids.slice(i, i + 400));
+        }
 
-        if (deleteError) {
-            console.error('Delete API Error:', deleteError);
-            return NextResponse.json({ error: deleteError.message }, { status: 500 });
+        for (const chunk of chunks) {
+            const batch = adminDb.batch();
+            chunk.forEach(id => {
+                const docRef = adminDb.collection('shared_lists').doc(id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
         }
 
         console.log(`DEBUG - Sucesso! ${ids.length} cartões excluídos.`);

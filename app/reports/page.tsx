@@ -25,7 +25,8 @@ import {
     Plus,
 } from "lucide-react";
 import { getServiceYear, getServiceYearLabel, getServiceYearRange } from "@/lib/serviceYearUtils";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
 export default function ReportsPage() {
@@ -34,12 +35,16 @@ export default function ReportsPage() {
     const [loading, setLoading] = useState(true);
     const [selectedCongregationId, setSelectedCongregationId] = useState<string | null>(null);
 
-    // Redirect if not Elder/Servant
+    // Redirect if not Elder/Servant or if Admin has no congregation
     useEffect(() => {
-        if (!authLoading && user && (!isElder && !isServant)) {
-            router.replace('/dashboard');
+        if (!authLoading && user) {
+            if (isAdminRoleGlobal && !userCongregationId) {
+                router.replace('/admin/congregations');
+            } else if (!isElder && !isServant) {
+                router.replace('/dashboard');
+            }
         }
-    }, [user, authLoading, isElder, isServant, router]);
+    }, [user, authLoading, isElder, isServant, isAdminRoleGlobal, userCongregationId, router]);
     const [selectedServiceYear, setSelectedServiceYear] = useState<number>(getServiceYear());
     const [error, setError] = useState<string | null>(null);
 
@@ -239,18 +244,17 @@ export default function ReportsPage() {
                 setInsights(newInsights);
                 setStuckMapsList(stuckMaps);
 
-                // --- VISITS BY PERIOD (Supabase) ---
-                const { data: visits, error: visitsError } = await supabase
-                    .from('visits')
-                    .select('*')
-                    .eq('congregation_id', targetCongId)
-                    .gte('date', syStart.toISOString())
-                    .lte('date', syEnd.toISOString());
+                // --- VISITS BY PERIOD (Firestore) ---
+                const visitsRef = collection(db, 'visits');
+                const visitsQuery = query(
+                    visitsRef,
+                    where('congregationId', '==', targetCongId),
+                    where('date', '>=', syStart.toISOString()),
+                    where('date', '<=', syEnd.toISOString())
+                );
 
-                if (visitsError) {
-                    console.error("Error fetching visits:", JSON.stringify(visitsError, null, 2));
-                    throw visitsError;
-                }
+                const visitsSnap = await getDocs(visitsQuery);
+                const visits = visitsSnap.docs.map(doc => doc.data());
 
                 let morningArr = { total: 0, found: 0 };
                 let afternoonArr = { total: 0, found: 0 };

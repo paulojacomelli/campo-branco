@@ -10,7 +10,7 @@ export default function BottomNav() {
     const { congregationId, isAdminRoleGlobal, isElder, isServant } = useAuth();
 
     // Determine path for Maps link
-    // Super Admins go to the Congregation List (/my-maps)
+    // Admins go to the Congregation List (/my-maps)
     // Assigned users go directly to their congregation
     const mapsPath = isAdminRoleGlobal ? '/my-maps' : (congregationId ? `/my-maps/city?congregationId=${congregationId}` : '/my-maps');
 
@@ -33,7 +33,7 @@ export default function BottomNav() {
         { id: 'config', label: 'CONFIG', icon: Settings, path: '/settings' },
     ];
 
-    // Filter reports and maps for pure Publishers (not Elder, not Servant, not SuperAdmin)
+    // Filter reports and maps for pure Publishers (not Elder, not Servant, not Admin)
     if (!isServant) {
         menuItems = menuItems.filter(item => item.id !== 'reports' && item.id !== 'maps');
     }

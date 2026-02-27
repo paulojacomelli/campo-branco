@@ -1,70 +1,64 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !user) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
-        // 1. Verificar se é Super Admin
-        const { data: profile } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-
-        if (profile?.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-        }
-
+        const decodedToken = await adminAuth.verifyIdToken(token);
         const { oldId, newId } = await req.json();
 
         if (!oldId || !newId || oldId === newId) {
             return NextResponse.json({ error: 'IDs inválidos' }, { status: 400 });
         }
 
+        // 1. Verificar se é Admin
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const userData = userDoc.data();
+
+        if (userData?.role !== 'ADMIN' && decodedToken.role !== 'ADMIN') {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        }
+
         console.log(`DEBUG - Iniciando migração de congregação: ${oldId} -> ${newId}`);
 
         // 2. Buscar a congregação original
-        const { data: originalCong, error: fetchError } = await supabaseAdmin
-            .from('congregations')
-            .select('*')
-            .eq('id', oldId)
-            .single();
+        const oldCongDoc = await adminDb.collection('congregations').doc(oldId).get();
 
-        if (fetchError || !originalCong) {
+        if (!oldCongDoc.exists) {
             return NextResponse.json({ error: 'Congregação original não encontrada.' }, { status: 404 });
         }
 
+        const originalCong = oldCongDoc.data();
+
         // 3. Criar a nova congregação com o novo ID (Cópia) se ela não existir
-        const { data: existingTarget } = await supabaseAdmin
-            .from('congregations')
-            .select('id')
-            .eq('id', newId)
-            .single();
+        const newCongDoc = await adminDb.collection('congregations').doc(newId).get();
 
-        if (!existingTarget) {
+        if (!newCongDoc.exists) {
             console.log(`DEBUG - Criando nova congregação ${newId}...`);
-            const newCongData = { ...originalCong, id: newId };
-            const { error: insertError } = await supabaseAdmin
-                .from('congregations')
-                .insert(newCongData);
-
-            if (insertError) {
-                console.error('Migration insert error:', insertError);
-                return NextResponse.json({ error: 'Erro ao criar nova congregação: ' + insertError.message }, { status: 500 });
-            }
+            await adminDb.collection('congregations').doc(newId).set({
+                ...originalCong,
+                updatedAt: new Date()
+            });
         } else {
-            console.log(`DEBUG - Congregação de destino ${newId} já existe. Procedendo apenas com a transferência de dados.`);
+            console.log(`DEBUG - Congregação de destino ${newId} já existe. Transferindo dados...`);
         }
 
-        // 4. Atualizar todas as tabelas vinculadas
-        const tables = [
+        // 4. Atualizar todas as coleções vinculadas
+        const collections = [
             'cities',
             'users',
             'territories',
@@ -74,34 +68,26 @@ export async function POST(req: Request) {
             'visits'
         ];
 
-        for (const table of tables) {
-            console.log(`DEBUG - Migrando tabela ${table}...`);
-            const { error: updateError } = await supabaseAdmin
-                .from(table)
-                .update({ congregation_id: newId })
-                .eq('congregation_id', oldId);
+        for (const collName of collections) {
+            console.log(`DEBUG - Migrando coleção ${collName}...`);
+            const snapshot = await adminDb.collection(collName).where('congregationId', '==', oldId).get();
 
-            if (updateError) {
-                console.error(`Error migrating table ${table}:`, updateError);
-                // NOTA: Em um cenário ideal, faríamos rollback. 
-                // Mas no Supabase JS sem RPC, vamos continuar e logar.
-            }
+            if (snapshot.empty) continue;
+
+            const batch = adminDb.batch();
+            snapshot.docs.forEach(doc => {
+                batch.update(doc.ref, { congregationId: newId });
+            });
+            await batch.commit();
         }
 
         // 5. Remover a congregação antiga
-        const { error: deleteError } = await supabaseAdmin
-            .from('congregations')
-            .delete()
-            .eq('id', oldId);
-
-        if (deleteError) {
-            console.warn('Erro ao remover congregação antiga (podem haver vínculos residuais):', deleteError.message);
-        }
+        await adminDb.collection('congregations').doc(oldId).delete();
 
         return NextResponse.json({ success: true, message: 'Migração concluída com sucesso!' });
 
     } catch (error: any) {
         console.error('Migration API Critical Error:', error);
-        return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
     }
 }

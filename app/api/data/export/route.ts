@@ -1,26 +1,21 @@
+// app/api/data/export/route.ts
+// Exporta dados do Firestore para CSV compatível com o importador
+// Requer autenticação e permissão de administrador ou ancião
 
-import { supabaseAdmin } from '@/lib/supabase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { adminDb } from '@/lib/firebase-admin';
+import { getUserFromToken, canAccessCongregation, isAdminRole } from '@/lib/firestore';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
-// -------------------------------------------------------
-// EXPORTAÇÃO DE DADOS - Gera CSV compatível com o importador
-//
-// Formato de saída (separado por ponto e vírgula):
-// Nome da cidade;UF;Número do Mapa;Descrição;Endereço;
-// Número de residentes;Nome;Link do Maps;Link do Waze;
-// Status;Surdo;Menor de idade;Estudante;Neurodivergente;
-// Gênero;Observação;visit_status;sort_order
-// -------------------------------------------------------
-
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const cookieStore = await cookies();
+        const token = cookieStore.get('__session')?.value;
+        const user = await getUserFromToken(token) as any;
 
-        if (authError || !currentUser) {
+        if (!user) {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
 
@@ -33,135 +28,86 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Congregação não informada' }, { status: 400 });
         }
 
-        // Verificar permissão do usuário na congregação
-        const { data: adminData } = await supabase
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
-
-        if (!adminData || (adminData.role !== 'ADMIN' && adminData.congregation_id !== congregationId)) {
+        // Verificar permissão
+        if (!canAccessCongregation(user, congregationId) || !isAdminRole(user.role)) {
             return NextResponse.json({ error: 'Acesso negado à congregação.' }, { status: 403 });
         }
 
-        // Buscar endereços sem join aninhado (territories→cities não está no schema cache)
-        let addrQuery = supabaseAdmin
-            .from('addresses')
-            .select(`
-                id,
-                territory_id,
-                city_id,
-                street,
-                residents_count,
-                resident_name,
-                google_maps_link,
-                waze_link,
-                is_active,
-                is_deaf,
-                is_minor,
-                is_student,
-                is_neurodivergent,
-                gender,
-                observations,
-                visit_status,
-                last_visited_at,
-                sort_order
-            `)
-            .eq('congregation_id', congregationId);
+        // 1. Buscar endereços no Firestore
+        let addrQuery = adminDb.collection('addresses')
+            .where('congregationId', '==', congregationId);
 
         if (territoryId) {
-            addrQuery = addrQuery.eq('territory_id', territoryId);
+            addrQuery = addrQuery.where('territoryId', '==', territoryId);
         } else if (cityId) {
-            addrQuery = addrQuery.eq('city_id', cityId);
+            addrQuery = addrQuery.where('cityId', '==', cityId);
         }
 
-        const { data: addresses, error: addrError } = await addrQuery
-            .order('territory_id', { ascending: true })
-            .order('sort_order', { ascending: true });
+        const addrSnap = await addrQuery.get();
+        const addresses = addrSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        if (addrError) {
-            console.error("Export Addresses Error:", addrError);
-            throw addrError;
+        if (addresses.length === 0) {
+            // Tenta buscar usando campo legado 'congregation_id' para garantir que nada fique para trás
+            const addrSnapLegacy = await adminDb.collection('addresses')
+                .where('congregation_id', '==', congregationId)
+                .get();
+            addresses.push(...addrSnapLegacy.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }
 
         // Coletar IDs únicos de territórios e cidades para lookup
-        const territoryIds = Array.from(new Set((addresses || []).map(a => a.territory_id).filter(Boolean)));
-        const cityIds = Array.from(new Set((addresses || []).map(a => a.city_id).filter(Boolean)));
+        const territoryIds = Array.from(new Set(addresses.map((a: any) => a.territoryId || a.territory_id).filter(Boolean)));
+        const cityIds = Array.from(new Set(addresses.map((a: any) => a.cityId || a.city_id).filter(Boolean)));
 
-        // Mapas de lookup: id → dados
-        const territoryMap: Record<string, { name: string; notes: string }> = {};
-        const cityMap: Record<string, { name: string; uf: string }> = {};
+        const territoryMap: Record<string, any> = {};
+        const cityMap: Record<string, any> = {};
 
-        if (territoryIds.length > 0) {
-            const { data: territories } = await supabaseAdmin
-                .from('territories')
-                .select('id, name, notes')
-                .in('id', territoryIds);
-            (territories || []).forEach(t => {
-                territoryMap[t.id] = { name: t.name || '', notes: t.notes || '' };
-            });
-        }
+        // Busca em paralelo para performance
+        await Promise.all([
+            ...territoryIds.map(async (tid: any) => {
+                const doc = await adminDb.collection('territories').doc(tid).get();
+                if (doc.exists) territoryMap[tid] = doc.data();
+            }),
+            ...cityIds.map(async (cid: any) => {
+                const doc = await adminDb.collection('cities').doc(cid).get();
+                if (doc.exists) cityMap[cid] = doc.data();
+            })
+        ]);
 
-        if (cityIds.length > 0) {
-            const { data: cities } = await supabaseAdmin
-                .from('cities')
-                .select('id, name, uf')
-                .in('id', cityIds);
-            (cities || []).forEach(c => {
-                cityMap[c.id] = { name: c.name || '', uf: c.uf || '' };
-            });
-        }
-
-        // Cabeçalho do CSV conforme formato padrão de importação
+        // Cabeçalho do CSV
         const headers = [
-            'Cidade',
-            'UF',
-            'Número do Mapa',
-            'Descrição',
-            'Endereço',
-            'Quantidade de residentes',
-            'Nome',
-            'Link do Maps',
-            'Link do Waze',
-            'Status',
-            'Surdo',
-            'Menor de idade',
-            'Estudante',
-            'Neurodivergente',
-            'Gênero',
-            'Observações',
-            'Resultado da ultima visita',
-            'Ordem na listagem'
+            'Cidade', 'UF', 'Número do Mapa', 'Descrição', 'Endereço',
+            'Quantidade de residentes', 'Nome', 'Link do Maps', 'Link do Waze',
+            'Status', 'Surdo', 'Menor de idade', 'Estudante', 'Neurodivergente',
+            'Gênero', 'Observações', 'Resultado da ultima visita', 'Ordem na listagem'
         ];
 
-        const rows = (addresses || []).map(addr => {
-            // Buscar cidade e território nos mapas de lookup
-            const city = cityMap[addr.city_id] || { name: '', uf: '' };
-            const territory = territoryMap[addr.territory_id] || { name: '', notes: '' };
+        const rows = addresses.map((addr: any) => {
+            const city = cityMap[addr.cityId || addr.city_id] || { name: '', uf: '' };
+            const territory = territoryMap[addr.territoryId || addr.territory_id] || { name: '', notes: '' };
 
             return [
-                city.name,
+                city.name || '',
                 city.uf || '',
-                territory.name || '',       // número/nome do território
-                territory.notes || '',      // descrição do território
-                addr.street,
-                addr.residents_count ?? 1,
-                addr.resident_name || '',
-                addr.google_maps_link || '',
-                addr.waze_link || '',
-                addr.is_active !== false ? 'true' : 'false',
-                addr.is_deaf ? 'true' : 'false',
-                addr.is_minor ? 'true' : 'false',
-                addr.is_student ? 'true' : 'false',
-                addr.is_neurodivergent ? 'true' : 'false',
+                territory.name || '',
+                territory.notes || '',
+                addr.street || '',
+                addr.residentsCount || addr.residents_count || 1,
+                addr.residentName || addr.resident_name || '',
+                addr.googleMapsLink || addr.google_maps_link || '',
+                addr.wazeLink || addr.waze_link || '',
+                (addr.isActive ?? addr.is_active) !== false ? 'true' : 'false',
+                (addr.isDeaf ?? addr.is_deaf) ? 'true' : 'false',
+                (addr.isMinor ?? addr.is_minor) ? 'true' : 'false',
+                (addr.isStudent ?? addr.is_student) ? 'true' : 'false',
+                (addr.isNeurodivergent ?? addr.is_neurodivergent) ? 'true' : 'false',
                 addr.gender || '',
                 addr.observations || '',
-                addr.visit_status || 'not_contacted',
-                addr.sort_order ?? 0
+                addr.visitStatus || addr.visit_status || 'not_contacted',
+                addr.sortOrder ?? addr.sort_order ?? 0
             ];
         });
 
-        // Escapar campos que contêm ponto e vírgula ou quebras de linha
+        // Escapar e formatar CSV
         const escapeCell = (cell: any): string => {
             const text = String(cell ?? '');
             if (text.includes(';') || text.includes('"') || text.includes('\n')) {
@@ -170,13 +116,12 @@ export async function GET(req: Request) {
             return text;
         };
 
-        // Montar CSV com separador ponto e vírgula
         const csvContent = [
             headers.join(';'),
             ...rows.map(row => row.map(escapeCell).join(';'))
         ].join('\n');
 
-        // UTF-8 BOM para compatibilidade com Excel
+        // UTF-8 BOM
         const BOM = '\ufeff';
         const encoder = new TextEncoder();
         const csvBytes = encoder.encode(csvContent);

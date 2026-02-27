@@ -17,7 +17,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 DO $$ BEGIN
     CREATE TYPE user_role AS ENUM (
         'ADMIN', 
-        'ADMIN', 
         'ANCIAO', 
         'SERVO', 
         'PUBLICADOR'
@@ -66,9 +65,12 @@ CREATE TABLE IF NOT EXISTS public.cities (
 
 -- CONGREGAÇÕES
 CREATE TABLE IF NOT EXISTS public.congregations (
-    id TEXT PRIMARY KEY, -- Alterado para TEXT para permitir IDs personalizados
+    id TEXT PRIMARY KEY, -- ID personalizado ou UUID em formato texto
     name TEXT NOT NULL,
     number TEXT,
+    city TEXT,          -- Cidade como texto direto (simplificado)
+    category TEXT,       -- Categoria (SIGN_LANGUAGE, etc)
+    term_type TEXT DEFAULT 'city', -- city ou neighborhood
     city_id UUID REFERENCES public.cities(id),
     type congregation_type DEFAULT 'TRADITIONAL',
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -221,8 +223,8 @@ CREATE POLICY "Gerenciar listas compartilhadas" ON public.shared_lists FOR ALL T
 );
 
 -- POLÍTICAS PARA 'VISITS'
-DROP POLICY IF EXISTS "Ver visitas (Superadmin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits;
-CREATE POLICY "Ver visitas (Superadmin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits FOR SELECT TO authenticated USING (
+DROP POLICY IF EXISTS "Ver visitas (Admin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits;
+CREATE POLICY "Ver visitas (Admin/Ancião/Servo vêm tudo, Publicador vê suas próprias)" ON public.visits FOR SELECT TO authenticated USING (
     (select public.get_auth_role()) IN ('ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'ADMIN')
     OR
     user_id = (select auth.uid())
@@ -234,16 +236,16 @@ CREATE POLICY "Inserir visitas (Todos authenticated)" ON public.visits FOR INSER
 );
 
 -- POLÍTICAS PARA 'CITIES'
-DROP POLICY IF EXISTS "SuperAdmins conseguem tudo em cidades" ON public.cities;
-CREATE POLICY "SuperAdmins conseguem tudo em cidades" ON public.cities FOR ALL TO authenticated USING (
+DROP POLICY IF EXISTS "Admins conseguem tudo em cidades" ON public.cities;
+CREATE POLICY "Admins conseguem tudo em cidades" ON public.cities FOR ALL TO authenticated USING (
     (select public.get_auth_role()) = 'ADMIN'
 );
 DROP POLICY IF EXISTS "Qualquer autenticado lê cidades" ON public.cities;
 CREATE POLICY "Qualquer autenticado lê cidades" ON public.cities FOR SELECT TO authenticated USING (true);
 
 -- POLÍTICAS PARA 'CONGREGATIONS'
-DROP POLICY IF EXISTS "SuperAdmins conseguem tudo em congregações" ON public.congregations;
-CREATE POLICY "SuperAdmins conseguem tudo em congregações" ON public.congregations FOR ALL TO authenticated USING (
+DROP POLICY IF EXISTS "Admins conseguem tudo em congregações" ON public.congregations;
+CREATE POLICY "Admins conseguem tudo em congregações" ON public.congregations FOR ALL TO authenticated USING (
     (select public.get_auth_role()) = 'ADMIN'
 );
 DROP POLICY IF EXISTS "Membros leem sua própria congregação" ON public.congregations;
@@ -254,8 +256,8 @@ CREATE POLICY "Membros leem sua própria congregação" ON public.congregations 
 -- POLÍTICAS PARA 'USERS'
 DROP POLICY IF EXISTS "Usuário vê seu próprio perfil" ON public.users;
 CREATE POLICY "Usuário vê seu próprio perfil" ON public.users FOR SELECT TO authenticated USING (id = (select auth.uid()));
-DROP POLICY IF EXISTS "SuperAdmins veem todos os usuários" ON public.users;
-CREATE POLICY "SuperAdmins veem todos os usuários" ON public.users FOR SELECT TO authenticated USING (
+DROP POLICY IF EXISTS "Admins veem todos os usuários" ON public.users;
+CREATE POLICY "Admins veem todos os usuários" ON public.users FOR SELECT TO authenticated USING (
     (select public.get_auth_role()) = 'ADMIN'
 );
 DROP POLICY IF EXISTS "Anciãos e Servos veem usuários da congregação" ON public.users;
@@ -266,14 +268,14 @@ CREATE POLICY "Anciãos e Servos veem usuários da congregação" ON public.user
 
 -- POLÍTICAS PARA 'TERRITORIES'
 DROP POLICY IF EXISTS "Ver territórios da congregação" ON public.territories;
-CREATE POLICY "Ver territórios (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.territories FOR SELECT TO authenticated USING (
+CREATE POLICY "Ver territórios (Admin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.territories FOR SELECT TO authenticated USING (
     (select public.get_auth_role()) IN ('ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'ADMIN')
     OR
     assigned_to = (select auth.uid())
 );
 
 DROP POLICY IF EXISTS "Editar territórios (Anciãos/Servos/Admins)" ON public.territories;
-CREATE POLICY "Gerenciar territórios (Ancião/Servo/Superadmin)" ON public.territories FOR ALL TO authenticated USING (
+CREATE POLICY "Gerenciar territórios (Ancião/Servo/Admin)" ON public.territories FOR ALL TO authenticated USING (
     ((congregation_id = (select public.get_auth_congregation()) AND
      (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
     (select public.get_auth_role()) = 'ADMIN'
@@ -281,14 +283,14 @@ CREATE POLICY "Gerenciar territórios (Ancião/Servo/Superadmin)" ON public.terr
 
 -- POLÍTICAS PARA 'ADDRESSES'
 DROP POLICY IF EXISTS "Ver endereços da congregação" ON public.addresses;
-CREATE POLICY "Ver endereços (Superadmin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.addresses FOR SELECT TO authenticated USING (
+CREATE POLICY "Ver endereços (Admin/Ancião/Servo vêm tudo, Publicador vê seus próprios)" ON public.addresses FOR SELECT TO authenticated USING (
     (select public.get_auth_role()) IN ('ADMIN', 'ADMIN', 'ANCIAO', 'SERVO') AND (congregation_id = (select public.get_auth_congregation()) OR (select public.get_auth_role()) = 'ADMIN')
     OR
     territory_id IN (SELECT id FROM public.territories WHERE assigned_to = (select auth.uid()))
 );
 
 DROP POLICY IF EXISTS "Gerenciar endereços (Anciãos/Servos/Admins)" ON public.addresses;
-CREATE POLICY "Gerenciar endereços (Ancião/Servo/Superadmin)" ON public.addresses FOR ALL TO authenticated USING (
+CREATE POLICY "Gerenciar endereços (Ancião/Servo/Admin)" ON public.addresses FOR ALL TO authenticated USING (
     ((congregation_id = (select public.get_auth_congregation()) AND
      (select public.get_auth_role()) IN ('ADMIN', 'ANCIAO', 'SERVO'))) OR
     (select public.get_auth_role()) = 'ADMIN'
@@ -384,6 +386,6 @@ DROP POLICY IF EXISTS "Usuários veem seus próprios reports" ON public.bug_repo
 CREATE POLICY "Usuários veem seus próprios reports" ON public.bug_reports 
 FOR SELECT TO authenticated USING ((select auth.uid()) = user_id);
 
-DROP POLICY IF EXISTS "SuperAdmins gerenciam tudo em bugs" ON public.bug_reports;
-CREATE POLICY "SuperAdmins gerenciam tudo em bugs" ON public.bug_reports 
+DROP POLICY IF EXISTS "Admins gerenciam tudo em bugs" ON public.bug_reports;
+CREATE POLICY "Admins gerenciam tudo em bugs" ON public.bug_reports 
 FOR ALL TO authenticated USING ((select public.get_auth_role()) = 'ADMIN');

@@ -1,19 +1,24 @@
 const pkg = require('./package.json');
 
 /** @type {import('next').NextConfig} */
+const isGithubActions = process.env.GITHUB_ACTIONS === 'true';
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
-    // output: 'export', // Desabilitado para App Hosting (modo dinâmico)
-    // Habilitar apenas para geração de APK/build estático.
-    // eslint config removed as it is not supported in next.config.js options
+    output: isGithubActions ? 'export' : undefined,
+    trailingSlash: true, // Adicionado para compatibilidade com GitHub Pages
+    // Se o seu domínio for campobranco.github.io/campobranco, descomente a linha abaixo:
+    // basePath: isGithubActions ? '/campobranco' : '',
     typescript: {
         ignoreBuildErrors: true,
     },
-    turbopack: {},
     images: {
-        unoptimized: true, // Required for static export
+        unoptimized: true,
     },
     env: {
         NEXT_PUBLIC_APP_VERSION: pkg.version,
+        // Define a URL base para as APIs. No GitHub, aponta para o Firebase.
+        NEXT_PUBLIC_API_BASE_URL: isGithubActions ? 'https://campo-branco.web.app' : '',
     },
 };
 

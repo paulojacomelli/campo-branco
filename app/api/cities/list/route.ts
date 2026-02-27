@@ -1,61 +1,70 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !currentUser) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+        } catch (e) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
         const url = new URL(req.url);
         let congregationId = url.searchParams.get('congregationId');
 
-        // Tenta buscar o perfil do usuário
-        let { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id, email')
-            .eq('id', currentUser.id)
-            .single();
-
-        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
-            const { data: fallbackData } = await supabaseAdmin
-                .from('users')
-                .select('role, congregation_id, email')
-                .eq('email', currentUser.email)
-                .single();
-            if (fallbackData) adminData = fallbackData;
-        }
+        // Busca o perfil do usuário no Firestore
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const adminData = userDoc.data();
 
         // Security: Force congregationId to be the user's congregation for operational views
-        // Superadmins can no longer jump between congregations in these views.
         if (adminData?.role !== 'ADMIN' || !congregationId) {
-            congregationId = adminData?.congregation_id || null;
+            congregationId = adminData?.congregationId || null;
         }
 
         const isAllowed = adminData && (
             adminData.role === 'ADMIN' ||
-            (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
+            (['ELDER', 'SERVANT', 'ANCIAO', 'SERVO'].includes(adminData.role || ''))
         );
 
         if (!isAllowed || !congregationId) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
-        // Usa o supabaseAdmin (Service Key) para forçar o bypass do RLS para Select
-        const { data: cities, error: tErr } = await supabaseAdmin
-            .from('cities')
-            .select('*')
-            .eq('congregation_id', congregationId)
-            .order('name');
+        // Busca as cidades da congregação no Firestore (Tenta ambos os campos por segurança)
+        let citiesSnapshot = await adminDb.collection('cities')
+            .where('congregationId', '==', congregationId)
+            .get();
 
-        if (tErr) throw tErr;
+        if (citiesSnapshot.empty) {
+            citiesSnapshot = await adminDb.collection('cities')
+                .where('congregation_id', '==', congregationId)
+                .get();
+        }
+
+        const cities = citiesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
         return NextResponse.json({ success: true, cities });
     } catch (error: any) {
+        console.error("Cities List API Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -1,13 +1,30 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
-import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
+import { NextResponse } from 'next/server';
+
+// API para buscar o contexto de navegação (congregação, cidade, território)
+// Utilizada para montar o breadcrumb e as informações de cabeçalho em páginas de mapas
 export async function GET(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        // Extrai o token de autenticação do header ou cookie
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !currentUser) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+        } catch (e) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
@@ -16,50 +33,46 @@ export async function GET(req: Request) {
         const cityId = url.searchParams.get('cityId');
         const territoryId = url.searchParams.get('territoryId');
 
-        // Check auth for this congregation (Try ID + Email verification)
-        let { data: adminData } = await supabaseAdmin
-            .from('users')
-            .select('role, congregation_id, email')
-            .eq('id', currentUser.id)
-            .single();
+        // Busca o perfil do usuário e verifica permissões
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const userData = userDoc.data();
 
-        if (!adminData || (currentUser.email && adminData.email !== currentUser.email)) {
-            const { data: fallbackData } = await supabaseAdmin
-                .from('users')
-                .select('role, congregation_id, email')
-                .eq('email', currentUser.email)
-                .single();
-            if (fallbackData) adminData = fallbackData;
-        }
-
-        // Permite visualizar se for ADMIN ou se a congregationId bater com o registro do usuário
-        const userCong = String(adminData?.congregation_id || '').toLowerCase().trim();
+        const userCong = String(userData?.congregationId || userData?.congregation_id || '').toLowerCase().trim();
         const reqCong = String(congregationId || '').toLowerCase().trim();
 
-        const isAllowed = adminData && (
-            adminData.role === 'ADMIN' ||
-            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(adminData.role || '')))
+        // Valida se o usuário tem acesso à congregação solicitada
+        const isAllowed = userData && (
+            userData.role === 'ADMIN' ||
+            (userCong === reqCong && (['ELDER', 'SERVANT', 'ADMIN', 'ANCIAO', 'SERVO'].includes(userData.role || '')))
         );
 
         if (!isAllowed) {
             return NextResponse.json({ error: 'Você não tem acesso a essa congregação' }, { status: 403 });
         }
 
-        // Fetch using Admin to bypass RLS
-        const [congRes, cityRes, terrRes] = await Promise.all([
-            congregationId ? supabaseAdmin.from('congregations').select('name, term_type, category').eq('id', congregationId).single() : Promise.resolve({ data: null }),
-            cityId ? supabaseAdmin.from('cities').select('name, parent_city').eq('id', cityId).single() : Promise.resolve({ data: null }),
-            territoryId ? supabaseAdmin.from('territories').select('name, notes').eq('id', territoryId).single() : Promise.resolve({ data: null })
+        // Busca os dados de contexto em paralelo no Firestore
+        const [congData, cityData, terrData] = await Promise.all([
+            congregationId
+                ? adminDb.collection('congregations').doc(congregationId).get()
+                : Promise.resolve(null),
+            cityId
+                ? adminDb.collection('cities').doc(cityId).get()
+                : Promise.resolve(null),
+            territoryId
+                ? adminDb.collection('territories').doc(territoryId).get()
+                : Promise.resolve(null)
         ]);
 
         return NextResponse.json({
             success: true,
-            congregation: congRes.data,
-            city: cityRes.data,
-            territory: terrRes.data
+            // Normaliza os campos para manter compatibilidade com o front-end
+            congregation: congData?.exists ? { id: congData.id, ...congData.data() } : null,
+            city: cityData?.exists ? { id: cityData.id, ...cityData.data() } : null,
+            territory: terrData?.exists ? { id: terrData.id, ...terrData.data() } : null
         });
 
     } catch (error: any) {
+        console.error('Maps Context API Error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

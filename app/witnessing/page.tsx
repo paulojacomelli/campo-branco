@@ -27,13 +27,19 @@ export default function WitnessingPage() {
             return;
         }
 
-        // Always redirect to assigned congregation if it exists
+        // Sempre redireciona para a congregação atribuída se ela existir
         if (congregationId) {
             router.push(`/witnessing/congregation?congregationId=${congregationId}`);
             return;
         }
 
-        // If no congregation assigned, stop loading to show restricted view
+        // Admin sem congregação vai para o painel de gestão
+        if (isAdminRoleGlobal && !congregationId) {
+            router.replace('/admin/congregations');
+            return;
+        }
+
+        // Se não houver congregação atribuída, para o carregamento para mostrar a visualização restrita
         setLoading(false);
 
     }, [user, congregationId, authLoading, router]);

@@ -26,7 +26,7 @@ env:
     value: "mailto:admin@campo-branco.web.app"
   - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
     value: "BA7he-Uqiclqp1EtSMW9__Z73UyPogRQfUJxPWeJ5HLQ0N2bYxKqdqfMpmZVmCNPPP6GnCDY"
-  - variable: FIREBASE_CLIENT_EMAIL
+  - variable: FB_ADMIN_CLIENT_EMAIL
     secret: FIREBASE_CLIENT_EMAIL
   
   # --- Segredos Sensíveis (Devem existir no Secret Manager) ---
@@ -38,5 +38,5 @@ env:
     secret: SUPABASE_SERVICE_ROLE_KEY
   - variable: VAPID_PRIVATE_KEY
     secret: VAPID_PRIVATE_KEY
-  - variable: FIREBASE_PRIVATE_KEY
+  - variable: FB_ADMIN_PRIVATE_KEY
     secret: FIREBASE_PRIVATE_KEY

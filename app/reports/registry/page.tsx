@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { ChevronLeft, ChevronRight, Plus, Save, X, Edit2, Trash2, Calendar, User, FileText, Download, Printer, Building2 } from "lucide-react";
 import ConfirmationModal from '@/app/components/ConfirmationModal';
 import Link from 'next/link';
@@ -277,8 +278,8 @@ export default function RegistryPage() {
                 manual_last_completed_date: editingLegacy.date ? editingLegacy.date.toISOString() : null
             };
 
-            const { error } = await supabase.from("territories").update(updatePayload).eq("id", editingLegacy.territoryId);
-            if (error) throw error;
+            const territoryRef = doc(db, "territories", editingLegacy.territoryId);
+            await updateDoc(territoryRef, updatePayload);
 
             setIsLegacyModalOpen(false);
             setEditingLegacy(null);

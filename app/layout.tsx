@@ -63,6 +63,12 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning={true}>
       <head>
+        <script dangerouslySetInnerHTML={{
+          __html: `
+          if (typeof window !== 'undefined' && window.location.hostname === 'campobranco.github.io') {
+            window.location.replace('https://campo-branco.web.app' + window.location.pathname + window.location.search + window.location.hash);
+          }
+        ` }} />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossOrigin="" />
         <script
           src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

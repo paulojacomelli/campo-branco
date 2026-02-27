@@ -27,7 +27,20 @@ import { geocodeAddress } from '@/app/actions/geocoding';
 import CongregationSelector from '@/app/components/CongregationSelector';
 import BottomNav from '@/app/components/BottomNav';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import {
+    collection,
+    query,
+    where,
+    onSnapshot,
+    orderBy,
+    doc,
+    getDoc,
+    setDoc,
+    addDoc,
+    updateDoc,
+    deleteDoc
+} from 'firebase/firestore';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -109,7 +122,11 @@ function CityListContent() {
     const fetchCities = async () => {
         if (!congregationId) return;
         try {
-            const response = await fetch(`/api/cities/list?congregationId=${congregationId}`);
+            // Obtém o token de autenticação Firebase para enviar no header Authorization
+            const token = await user?.getIdToken();
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cities/list?congregationId=${congregationId}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
             const data = await response.json();
 
             if (!data.success) {
@@ -127,18 +144,26 @@ function CityListContent() {
     useEffect(() => {
         if (!congregationId) return;
 
-        fetchCities();
+        setLoading(true);
+        const q = query(
+            collection(db, 'cities'),
+            where('congregationId', '==', congregationId),
+            orderBy('name')
+        );
 
-        const channel = supabase
-            .channel('public:cities_list')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'cities', filter: `congregation_id=eq.${congregationId}` }, () => {
-                fetchCities();
-            })
-            .subscribe();
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const citiesData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as City[];
+            setCities(citiesData);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching cities:", error);
+            setLoading(false);
+        });
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => unsubscribe();
     }, [congregationId]);
 
     // Fetch Congregation Settings (TermType)
@@ -147,13 +172,10 @@ function CityListContent() {
 
         const fetchSettings = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('congregations')
-                    .select('term_type')
-                    .eq('id', congregationId)
-                    .single();
-                if (data && !error) {
-                    setLocalTermType(data.term_type || 'city');
+                const congRef = doc(db, 'congregations', congregationId);
+                const congSnap = await getDoc(congRef);
+                if (congSnap.exists()) {
+                    setLocalTermType(congSnap.data().term_type || 'city');
                 }
             } catch (err) {
                 console.error("Error fetching congregation termType:", err);
@@ -169,10 +191,22 @@ function CityListContent() {
 
         const fetchStats = async () => {
             try {
+                // Obtém o token de autenticação Firebase para a chamada à API de estatísticas
+                const token = await user?.getIdToken();
                 const currentYear = getServiceYear();
                 const { start, end } = getServiceYearRange(currentYear);
 
-                const res = await fetch(`/api/cities/stats?congregationId=${congregationId}&startDate=${start.toISOString()}&endDate=${end.toISOString()}`);
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cities/stats?congregationId=${congregationId}&startDate=${start.toISOString()}&endDate=${end.toISOString()}`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
+
+                // Verifica se a resposta é JSON antes de tentar parsear (evita crash com "Internal Server Error")
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    console.warn('API /cities/stats retornou resposta não-JSON:', res.status);
+                    return; // Ignora silenciosamente - estatísticas não são críticas para a UI
+                }
+
                 const data = await res.json();
 
                 if (!res.ok) throw new Error(data.error || 'Erro ao buscar estatísticas');
@@ -269,7 +303,7 @@ function CityListContent() {
         if (!newCityName.trim() || !congregationId) return;
 
         try {
-            const response = await fetch('/api/cities/create', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cities/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -307,7 +341,7 @@ function CityListContent() {
         if (!editingCity || !editingCity.name.trim()) return;
 
         try {
-            const response = await fetch('/api/cities/update', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cities/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -344,7 +378,7 @@ function CityListContent() {
         if (!cityToDelete) return;
         setIsDeleting(true);
         try {
-            const response = await fetch('/api/cities/delete', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cities/delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: cityToDelete.id })
@@ -389,7 +423,7 @@ function CityListContent() {
         );
     }
 
-    // Role Guard: Only Servants, Elders and SuperAdmins can see this page
+    // Role Guard: Only Servants, Elders and Admins can see this page
     if (user && !isServant) {
         router.replace('/dashboard');
         return null;

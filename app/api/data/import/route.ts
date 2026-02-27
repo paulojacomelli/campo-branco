@@ -1,31 +1,12 @@
-
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
-// -------------------------------------------------------
-// FORMATO DO CSV (separado por ponto e vírgula):
-// Nome da cidade;UF;Número do Mapa;Descrição;Endereço;
-// Número de residentes;Nome;Link do Maps;Link do Waze;
-// Status;Surdo;Menor de idade;Estudante;Neurodivergente;
-// Gênero;Observação;visit_status;sort_order
-//
-// Regras:
-// - Se "Endereço" estiver vazio → apenas cria/atualiza Cidade e Território (sem endereço)
-// - Upsert em cascata: Cidade → Território → Endereço
-// - Match de Cidade por nome + uf
-// - Match de Território por congregation_id + city_id + number
-// - Match de Endereço por territory_id + street (case-insensitive)
-// -------------------------------------------------------
-
-// Parser de booleano: aceita "true", "TRUE", "1", "t", "sim", "yes"
 function parseBool(val: string): boolean {
     return ['true', '1', 't', 'sim', 'yes'].includes((val || '').toLowerCase().trim());
 }
 
-// Normaliza nome do território: se for número de 1 a 9, adiciona zero à esquerda (ex: "1" -> "01")
 function normalizeTerritoryName(name: string): string {
     const trimmed = (name || '').trim();
     if (/^\d+$/.test(trimmed) && trimmed.length === 1) {
@@ -34,7 +15,6 @@ function normalizeTerritoryName(name: string): string {
     return trimmed;
 }
 
-// Parser de linha CSV com suporte a separador ponto e vírgula e aspas duplas
 function parseCSVLine(line: string, separator = ';'): string[] {
     const row: string[] = [];
     let current = '';
@@ -53,7 +33,6 @@ function parseCSVLine(line: string, separator = ';'): string[] {
     return row;
 }
 
-// Detecta o separador do CSV analisando a primeira linha
 function detectSeparator(headerLine: string): string {
     const semicolonCount = (headerLine.match(/;/g) || []).length;
     const commaCount = (headerLine.match(/,/g) || []).length;
@@ -62,11 +41,25 @@ function detectSeparator(headerLine: string): string {
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !currentUser) {
-            return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
+        }
+
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+        } catch (e) {
+            return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
         const url = new URL(req.url);
@@ -78,14 +71,12 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Congregação não informada' }, { status: 400 });
         }
 
-        // Verificar permissão do usuário na congregação
-        const { data: adminData } = await supabase
-            .from('users')
-            .select('role, congregation_id')
-            .eq('id', currentUser.id)
-            .single();
+        // Fetch User and Permissions
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const adminData = userDoc.data();
 
-        if (!adminData || (adminData.role !== 'ADMIN' && adminData.congregation_id !== congregationId)) {
+        // Admin pode inserir para qualquer um. Ancião/Servo apenas para a própria congregação
+        if (!adminData || (adminData.role !== 'ADMIN' && adminData.congregationId !== congregationId && adminData.congregation_id !== congregationId)) {
             return NextResponse.json({ error: 'Acesso negado à congregação.' }, { status: 403 });
         }
 
@@ -105,13 +96,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'CSV vazio ou sem dados' }, { status: 400 });
         }
 
-        // Remove BOM e detecta separador automaticamente
         const rawHeader = lines[0].replace(/^\ufeff/, '');
         const sep = detectSeparator(rawHeader);
         const header = parseCSVLine(rawHeader, sep);
 
-        // Mapeamento de colunas: índice de cada coluna pelo nome do cabeçalho
-        // Suporta tanto o header técnico quanto o amigável
         const COL: Record<string, string[]> = {
             cityName: ['Cidade', 'Nome da cidade (Cities name)', 'Nome da cidade'],
             uf: ['UF (Cities uf)', 'UF'],
@@ -133,7 +121,6 @@ export async function POST(req: Request) {
             sortOrder: ['Ordem na listagem', 'sort_order'],
         };
 
-        // Indexa as colunas do header por nome
         const colIndex: Record<string, number> = {};
         for (const [key, candidates] of Object.entries(COL)) {
             const idx = candidates.findIndex(c => header.some(h => h.trim() === c));
@@ -141,7 +128,6 @@ export async function POST(req: Request) {
             colIndex[key] = matchedHeader;
         }
 
-        // Valida que colunas obrigatórias estão presentes
         if (colIndex.cityName < 0 || colIndex.mapNum < 0) {
             return NextResponse.json({
                 error: `Cabeçalho inválido. Colunas obrigatórias: "Nome da cidade" e "Número do Mapa". Encontrado: ${header.join(' | ')}`
@@ -155,7 +141,6 @@ export async function POST(req: Request) {
             errors: [] as { line: number; reason: string }[]
         };
 
-        // Cache de cidades e territórios para evitar queries repetidas
         const cityCache: Record<string, string> = {};
         const territoryCache: Record<string, string> = {};
 
@@ -165,7 +150,6 @@ export async function POST(req: Request) {
             const lineNum = i + 2;
             const row = parseCSVLine(batch[i], sep);
 
-            // Helper para pegar valor de uma coluna por chave
             const get = (key: string): string => {
                 const idx = colIndex[key];
                 if (idx < 0 || idx >= row.length) return '';
@@ -173,85 +157,102 @@ export async function POST(req: Request) {
             };
 
             const cityName = get('cityName');
-            const uf = get('uf');
+            const uf = get('uf').toUpperCase();
             const mapNumRaw = get('mapNum');
             const mapNum = normalizeTerritoryName(mapNumRaw);
 
-            // Linhas sem cidade ou número do mapa são ignoradas
             if (!cityName || !mapNum) continue;
 
             try {
-                // --------------------------------------------------
-                // 1. UPSERT CIDADE
-                // --------------------------------------------------
-                const cityKey = `${uf.toUpperCase()}:${cityName.toLowerCase()}`;
+                // 1. CIDADE
+                const cityKey = `${uf}:${cityName.toLowerCase()}`;
                 let cityId = cityCache[cityKey];
 
                 if (!cityId) {
-                    const { data: city } = await supabaseAdmin
-                        .from('cities')
-                        .select('id')
-                        .ilike('name', cityName)
-                        .eq('uf', uf.toUpperCase())
-                        .eq('congregation_id', congregationId)
-                        .single();
+                    const citiesRef = adminDb.collection('cities');
+                    const snapshot = await citiesRef.where('congregationId', '==', congregationId)
+                        .where('uf', '==', uf)
+                        .get();
 
-                    if (city?.id) {
-                        cityId = city.id;
+                    let existingCity = undefined;
+                    // Procura case-insensitive
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.name && data.name.toLowerCase() === cityName.toLowerCase()) {
+                            existingCity = { id: doc.id, ...data };
+                        }
+                    });
+
+                    // Caso falhe, procura pelo campo legado 'congregation_id' para garantir a retrocompatibilidade
+                    if (!existingCity && snapshot.empty) {
+                        const snapshotLegacy = await citiesRef.where('congregation_id', '==', congregationId)
+                            .where('uf', '==', uf)
+                            .get();
+                        snapshotLegacy.forEach(doc => {
+                            const data = doc.data();
+                            if (data.name && data.name.toLowerCase() === cityName.toLowerCase()) {
+                                existingCity = { id: doc.id, ...data };
+                            }
+                        });
+                    }
+
+                    if (existingCity) {
+                        cityId = existingCity.id;
                     } else if (!simulate) {
-                        const { data: newCity, error: cityErr } = await supabaseAdmin
-                            .from('cities')
-                            .insert({ name: cityName, uf: uf.toUpperCase(), congregation_id: congregationId })
-                            .select('id').single();
-                        if (cityErr) throw cityErr;
-                        cityId = newCity.id;
+                        const newCityRef = await citiesRef.add({
+                            name: cityName,
+                            uf: uf,
+                            congregationId: congregationId,
+                            created_at: new Date().toISOString()
+                        });
+                        cityId = newCityRef.id;
                         results.created.cities++;
                     } else {
-                        // Em simulação, usa UUID fictício
                         cityId = `sim-city-${cityKey}`;
                         results.created.cities++;
                     }
                     cityCache[cityKey] = cityId;
                 }
 
-                // --------------------------------------------------
-                // 2. UPSERT TERRITÓRIO
-                // --------------------------------------------------
+                // 2. TERRITÓRIO
                 const territoryKey = `${congregationId}:${cityId}:${mapNum}`;
                 let territoryId = territoryCache[territoryKey];
                 const mapDesc = get('mapDesc');
 
                 if (!territoryId) {
-                    const { data: territory } = await supabaseAdmin
-                        .from('territories')
-                        .select('id, notes')
-                        .eq('congregation_id', congregationId)
-                        .eq('city_id', cityId)
-                        .eq('name', mapNum)
-                        .single();
+                    const terrRef = adminDb.collection('territories');
+                    let snapshot = await terrRef.where('congregationId', '==', congregationId)
+                        .where('cityId', '==', cityId)
+                        .where('name', '==', mapNum)
+                        .limit(1)
+                        .get();
 
-                    if (territory?.id) {
-                        territoryId = territory.id;
-                        // Atualiza a descrição (notes) se mudou
-                        if (mapDesc && territory.notes !== mapDesc && !simulate) {
-                            await supabaseAdmin
-                                .from('territories')
-                                .update({ notes: mapDesc })
-                                .eq('id', territoryId);
+                    if (snapshot.empty) {
+                        // try legacy field formatting
+                        snapshot = await terrRef.where('congregation_id', '==', congregationId)
+                            .where('city_id', '==', cityId)
+                            .where('name', '==', mapNum)
+                            .limit(1)
+                            .get();
+                    }
+
+                    if (!snapshot.empty) {
+                        const existingTerr = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+                        territoryId = existingTerr.id;
+
+                        if (mapDesc && existingTerr.notes !== mapDesc && !simulate) {
+                            await adminDb.collection('territories').doc(territoryId).update({ notes: mapDesc });
                             results.updated.territories++;
                         }
                     } else if (!simulate) {
-                        const { data: newTerr, error: terrErr } = await supabaseAdmin
-                            .from('territories')
-                            .insert({
-                                congregation_id: congregationId,
-                                city_id: cityId,
-                                name: mapNum,
-                                notes: mapDesc || null,
-                            })
-                            .select('id').single();
-                        if (terrErr) throw terrErr;
-                        territoryId = newTerr.id;
+                        const newTerrRef = await terrRef.add({
+                            congregationId: congregationId,
+                            cityId: cityId,
+                            name: mapNum,
+                            notes: mapDesc || null,
+                            created_at: new Date().toISOString()
+                        });
+                        territoryId = newTerrRef.id;
                         results.created.territories++;
                     } else {
                         territoryId = `sim-terr-${territoryKey}`;
@@ -260,30 +261,29 @@ export async function POST(req: Request) {
                     territoryCache[territoryKey] = territoryId;
                 }
 
-                // --------------------------------------------------
-                // 3. UPSERT ENDEREÇO (apenas se houver street)
-                // --------------------------------------------------
+                // 3. ENDEREÇO
                 const street = get('street');
-                if (!street) continue; // Linha sem endereço apenas cria cidade/território
+                if (!street) continue;
 
                 const addressData: Record<string, any> = {
-                    congregation_id: congregationId,
-                    city_id: cityId,
-                    territory_id: territoryId,
+                    congregationId: congregationId,
+                    cityId: cityId,
+                    territoryId: territoryId,
                     street,
-                    residents_count: parseInt(get('residentsCount')) || 1,
-                    resident_name: get('residentName') || null,
-                    google_maps_link: get('googleMapsLink') || null,
-                    waze_link: get('wazeLink') || null,
-                    is_active: get('isActive') !== '' ? parseBool(get('isActive')) : true,
-                    is_deaf: parseBool(get('isDeaf')),
-                    is_minor: parseBool(get('isMinor')),
-                    is_student: parseBool(get('isStudent')),
-                    is_neurodivergent: parseBool(get('isNeurodivergent')),
+                    residentsCount: parseInt(get('residentsCount')) || 1,
+                    residentName: get('residentName') || null,
+                    googleMapsLink: get('googleMapsLink') || null,
+                    wazeLink: get('wazeLink') || null,
+                    isActive: get('isActive') !== '' ? parseBool(get('isActive')) : true,
+                    isDeaf: parseBool(get('isDeaf')),
+                    isMinor: parseBool(get('isMinor')),
+                    isStudent: parseBool(get('isStudent')),
+                    isNeurodivergent: parseBool(get('isNeurodivergent')),
                     gender: get('gender') || null,
                     observations: get('observations') || null,
-                    visit_status: get('visitStatus') || 'not_contacted',
-                    sort_order: parseInt(get('sortOrder')) || 0,
+                    visitStatus: get('visitStatus') || 'not_contacted',
+                    sortOrder: parseInt(get('sortOrder')) || 0,
+                    updatedAt: new Date().toISOString()
                 };
 
                 if (simulate) {
@@ -291,32 +291,42 @@ export async function POST(req: Request) {
                     continue;
                 }
 
-                // Tenta encontrar endereço existente (match por territory + street)
-                const { data: existing } = await supabaseAdmin
-                    .from('addresses')
-                    .select('id, resident_name, google_maps_link')
-                    .eq('territory_id', territoryId)
-                    .ilike('street', street)
-                    .single();
+                const addrsRef = adminDb.collection('addresses');
+                const addrSnap = await addrsRef.where('territoryId', '==', territoryId).get();
+                const addrLegacySnap = await addrsRef.where('territory_id', '==', territoryId).get();
 
-                if (existing?.id) {
-                    // Verifica se houve alteração relevante
+                let existingAddr = undefined;
+
+                addrSnap.forEach(doc => {
+                    if (doc.data().street && doc.data().street.toLowerCase() === street.toLowerCase()) {
+                        existingAddr = { id: doc.id, ...doc.data() };
+                    }
+                });
+
+                if (!existingAddr) {
+                    addrLegacySnap.forEach(doc => {
+                        if (doc.data().street && doc.data().street.toLowerCase() === street.toLowerCase()) {
+                            existingAddr = { id: doc.id, ...doc.data() };
+                        }
+                    });
+                }
+
+                if (existingAddr) {
                     const hasChanged =
-                        existing.resident_name !== addressData.resident_name ||
-                        existing.google_maps_link !== addressData.google_maps_link;
+                        existingAddr.residentName !== addressData.residentName ||
+                        existingAddr.googleMapsLink !== addressData.googleMapsLink ||
+                        existingAddr.gender !== addressData.gender ||
+                        existingAddr.isActive !== addressData.isActive;
 
                     if (hasChanged) {
-                        const { error: updErr } = await supabaseAdmin
-                            .from('addresses').update(addressData).eq('id', existing.id);
-                        if (updErr) throw updErr;
+                        await addrsRef.doc(existingAddr.id).update(addressData);
                         results.updated.addresses++;
                     } else {
                         results.skipped++;
                     }
                 } else {
-                    const { error: insErr } = await supabaseAdmin
-                        .from('addresses').insert(addressData);
-                    if (insErr) throw insErr;
+                    addressData.createdAt = new Date().toISOString();
+                    await addrsRef.add(addressData);
                     results.created.addresses++;
                 }
 

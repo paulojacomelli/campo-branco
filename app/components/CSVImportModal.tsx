@@ -3,6 +3,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useAuth } from '@/app/context/AuthContext';
 import {
     X, Upload, CheckCircle2, AlertCircle, Info,
     Loader2, Download, ChevronDown, ChevronRight,
@@ -141,6 +142,7 @@ function buildPreview(text: string): { cities: Record<string, PreviewCity>; tota
 export default function CSVImportModal({
     isOpen, onClose, congregationId, cityId, territoryId, onSuccess
 }: CSVImportModalProps) {
+    const { user } = useAuth(); // Para obter o token do Firebase
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
         setIsMounted(true);
@@ -198,7 +200,13 @@ export default function CSVImportModal({
             if (cityId) params.append('contextCityId', cityId);
             if (territoryId) params.append('contextTerritoryId', territoryId);
 
-            const response = await fetch(`/api/data/import?${params.toString()}`, { method: 'POST', body: formData });
+            const token = await user?.getIdToken();
+
+            const response = await fetch(`/api/data/import?${params.toString()}`, {
+                method: 'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body: formData
+            });
             const data = await response.json();
 
             if (!response.ok) throw new Error(data.error || 'Erro ao importar dados');

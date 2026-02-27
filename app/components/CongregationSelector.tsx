@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Building2, ChevronDown } from 'lucide-react';
 
@@ -21,36 +22,21 @@ export default function CongregationSelector({ currentId, className = '' }: Cong
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchCongregations = async () => {
-            const { data, error } = await supabase
-                .from('congregations')
-                .select('id, name')
-                .order('name');
+        const q = query(collection(db, 'congregations'), orderBy('name', 'asc'));
 
-            if (data) {
-                setCongregations(data);
-            }
-            if (error) {
-                console.error("Error fetching congregations:", error);
-            }
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name
+            })) as Congregation[];
+            setCongregations(data);
             setLoading(false);
-        };
+        }, (error) => {
+            console.error("Error fetching congregations:", error);
+            setLoading(false);
+        });
 
-        fetchCongregations();
-
-        // Optional: Realtime subscription
-        const subscription = supabase
-            .channel('public:congregations')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'congregations' }, (payload) => {
-                fetchCongregations(); // Simple re-fetch on change
-            })
-            .subscribe();
-
-        return () => {
-            setTimeout(() => {
-                subscription.unsubscribe();
-            }, 100);
-        };
+        return () => unsubscribe();
     }, []);
 
     const handleChange = (newId: string) => {

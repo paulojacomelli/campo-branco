@@ -15,9 +15,15 @@ import {
     X,
     Database,
     ChevronLeft,
-    AlertCircle
+    AlertCircle,
+    LogIn,
+    LogOut
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import {
+    doc,
+    updateDoc,
+} from 'firebase/firestore';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -31,7 +37,7 @@ interface Congregation {
     city?: string;
     term_type?: 'city' | 'neighborhood';
     category?: string;
-    created_at?: string;
+    created_at?: any;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -43,7 +49,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function CongregationsPage() {
-    const { user, isAdminRoleGlobal, loading: authLoading } = useAuth();
+    const { user, isAdminRoleGlobal, loading: authLoading, congregationId: userCongId } = useAuth();
     const [confirmModal, setConfirmModal] = useState<{
         title: string;
         message: string;
@@ -76,23 +82,26 @@ export default function CongregationsPage() {
         }
     }, []);
 
+    // Carrega a lista de congregações via API server-side (Firebase Admin SDK)
+    // Evita problemas com índices e regras de segurança do Firestore client-side
     const fetchCongregations = useCallback(async () => {
-        setLoading(true);
+        if (!user) return;
         try {
-            const { data, error } = await supabase
-                .from('congregations')
-                .select('*')
-                .order('name', { ascending: true });
-
-            if (error) throw error;
-            setCongregations(data || []);
+            setLoading(true);
+            const token = await user.getIdToken();
+            const res = await fetch('/api/admin/congregations/list', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erro ao carregar');
+            setCongregations(data.congregations || []);
         } catch (error) {
             console.error("Error fetching congregations:", error);
             toast.error("Erro ao carregar congregações");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         if (authLoading) return;
@@ -103,31 +112,16 @@ export default function CongregationsPage() {
         }
 
         fetchCongregations();
-
-        const channel = supabase
-            .channel('public:congregations_admin')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'congregations' }, () => {
-                fetchCongregations();
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
     }, [authLoading, isAdminRoleGlobal, router, fetchCongregations]);
 
     const handleCreateCongregation = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newName.trim()) return;
 
-        const formData: any = {
-            name: newName.trim(),
-            city: newCity.trim() || null,
-            category: newCategory.trim() || null,
-            term_type: newTermType,
-        };
-
         try {
+            setLoading(true);
+
+            // Se houver mudança de ID em uma congregação existente, aciona migração
             if (editingCongregation) {
                 const oldId = editingCongregation.id;
                 const newId = customId.trim();
@@ -151,7 +145,6 @@ export default function CongregationsPage() {
                                 if (!response.ok) throw new Error(result.error);
 
                                 toast.success("Migração concluída com sucesso!");
-                                fetchCongregations();
                                 setIsCreateModalOpen(false);
                             } catch (e: any) {
                                 toast.error("Erro na migração: " + e.message);
@@ -162,30 +155,37 @@ export default function CongregationsPage() {
                     });
                     return;
                 }
+            }
 
-                const { error } = await supabase
-                    .from('congregations')
-                    .update(formData)
-                    .eq('id', oldId);
-                if (error) throw error;
-            } else {
-                if (customId.trim()) {
-                    formData.id = customId.trim();
-                }
-                const { error } = await supabase
-                    .from('congregations')
-                    .insert(formData);
-                if (error) throw error;
+            // Chamada para a API server-side que usa Firebase Admin
+            const response = await fetch('/api/admin/congregations/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: editingCongregation?.id,
+                    name: newName.trim(),
+                    city: newCity.trim() || null,
+                    category: newCategory.trim() || null,
+                    term_type: newTermType,
+                    customId: customId.trim() || null
+                })
+            });
+
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Erro ao salvar congregação');
             }
 
             toast.success('Congregação salva com sucesso!');
             setIsCreateModalOpen(false);
             setEditingCongregation(null);
             resetForm();
-            await fetchCongregations();
+            fetchCongregations(); // Recarrega a lista após salvar
         } catch (error: any) {
             console.error("Error saving congregation:", error);
-            toast.error(`Erro: ${error.message || "Erro ao salvar."}`);
+            toast.error(`Erro: ${error.message || "Erro ao salvar congregação."}`);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -216,10 +216,45 @@ export default function CongregationsPage() {
             }
 
             toast.success(force ? "Limpeza total e exclusão concluídas!" : "Congregação excluída com sucesso!");
-            setCongregations(prev => prev.filter(c => c.id !== id));
+            fetchCongregations(); // Recarrega a lista após excluir
         } catch (error: any) {
             console.error("Error deleting:", error);
             toast.error(error.message || "Erro ao excluir congregação.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEnterCongregation = async (congId: string) => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            await updateDoc(doc(db, 'users', user.uid), {
+                congregationId: congId
+            });
+            toast.success("Congregação selecionada!");
+            // Forçamos o recarregamento do perfil no AuthContext via reload
+            setTimeout(() => window.location.reload(), 500);
+        } catch (e) {
+            console.error("Erro ao entrar:", e);
+            toast.error("Falha ao selecionar congregação.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLeaveCongregation = async () => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            await updateDoc(doc(db, 'users', user.uid), {
+                congregationId: null
+            });
+            toast.success("Você saiu da congregação.");
+            setTimeout(() => window.location.reload(), 500);
+        } catch (e) {
+            console.error("Erro ao sair:", e);
+            toast.error("Falha ao sair da congregação.");
         } finally {
             setLoading(false);
         }
@@ -318,63 +353,137 @@ export default function CongregationsPage() {
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
                         {filtered.map((cong) => (
                             <div key={cong.id} className="bg-surface rounded-lg p-5 border border-surface-border shadow-sm hover:shadow-md transition-all flex items-center justify-between group">
-                                <Link href={`/my-maps/city?congregationId=${cong.id}`} className="flex items-center gap-4 flex-1 min-w-0">
-                                    <div className="w-12 h-12 rounded-lg bg-primary-light/50 dark:bg-blue-900/20 flex items-center justify-center text-primary dark:text-blue-400 group-hover:scale-110 transition-transform">
-                                        <Building2 className="w-6 h-6" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <h3 className="font-bold text-main truncate">{cong.name}</h3>
-                                            {isAdminRoleGlobal && (
-                                                <span className="text-[9px] font-mono bg-background border border-surface-border text-muted px-1.5 py-0.5 rounded uppercase leading-none">
-                                                    ID: {cong.id.length > 8 ? `${cong.id.substring(0, 8)}...` : cong.id}
-                                                </span>
+                                {userCongId === cong.id ? (
+                                    <Link href={`/my-maps/city?congregationId=${cong.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+                                        <div className="w-12 h-12 rounded-lg bg-primary-light/50 dark:bg-blue-900/20 flex items-center justify-center text-primary dark:text-blue-400 group-hover:scale-110 transition-transform">
+                                            <Building2 className="w-6 h-6" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <h3 className="font-bold text-main truncate">{cong.name}</h3>
+                                                {isAdminRoleGlobal && (
+                                                    <span className="text-[9px] font-mono bg-background border border-surface-border text-muted px-1.5 py-0.5 rounded uppercase leading-none">
+                                                        ID: {cong.id.length > 8 ? `${cong.id.substring(0, 8)}...` : cong.id}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-muted truncate">
+                                                {cong.city ? `${cong.city} • ` : ''}Modo: {cong.term_type === 'neighborhood' ? 'Bairros' : 'Cidades'}
+                                            </p>
+                                            {cong.category && (
+                                                <div className="mt-1.5">
+                                                    <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-blue-900/20 text-primary dark:text-blue-400 rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light dark:border-blue-800/30">
+                                                        {CATEGORY_LABELS[cong.category] || cong.category}
+                                                    </span>
+                                                </div>
                                             )}
                                         </div>
-                                        <p className="text-[10px] text-muted truncate">
-                                            {cong.city ? `${cong.city} • ` : ''}Modo: {cong.term_type === 'neighborhood' ? 'Bairros' : 'Cidades'}
-                                        </p>
-                                        {cong.category && (
-                                            <div className="mt-1.5">
-                                                <span className="px-1.5 py-0.5 bg-primary-light/50 dark:bg-blue-900/20 text-primary dark:text-blue-400 rounded-md text-[8px] font-black uppercase tracking-tighter border border-primary-light dark:border-blue-800/30">
-                                                    {CATEGORY_LABELS[cong.category] || cong.category}
-                                                </span>
+                                    </Link>
+                                ) : (
+                                    <div className="flex items-center gap-4 flex-1 min-w-0 opacity-70">
+                                        <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-muted">
+                                            <Building2 className="w-6 h-6" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <h3 className="font-bold text-muted truncate">{cong.name}</h3>
                                             </div>
-                                        )}
+                                            <p className="text-[9px] text-orange-500 font-bold uppercase tracking-tight">
+                                                Use o menu ao lado para "Entrar" e ver os mapas
+                                            </p>
+                                        </div>
                                     </div>
-                                </Link>
-                                <div className="flex items-center gap-1">
+                                )}
+                                <div className="relative">
                                     <button
-                                        onClick={() => {
-                                            setEditingCongregation(cong);
-                                            setNewName(cong.name);
-                                            setNewCity(cong.city || '');
-                                            let cat = cong.category || '';
-                                            const lowerCat = cat.toLowerCase();
-                                            if (lowerCat.includes('sinais') || lowerCat.includes('sign')) cat = 'SIGN_LANGUAGE';
-                                            else if (lowerCat.includes('estrangeira') || lowerCat.includes('foreign')) cat = 'FOREIGN_LANGUAGE';
-                                            setNewCategory(cat);
-                                            setNewTermType(cong.term_type || 'city');
-                                            setCustomId(cong.id);
-                                            setIsCreateModalOpen(true);
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(openMenuId === cong.id ? null : cong.id);
                                         }}
                                         className="p-2 text-muted hover:text-main hover:bg-background rounded-lg transition-colors"
-                                        title="Editar"
                                     >
-                                        <Pencil className="w-4 h-4" />
+                                        <MoreVertical className="w-5 h-5" />
                                     </button>
-                                    <button
-                                        onClick={() => setConfirmModal({
-                                            title: 'Excluir congregação?',
-                                            message: `Tem certeza que deseja apagar a congregação "${cong.name}"? Esta ação não pode ser desfeita.`,
-                                            variant: 'danger',
-                                            onConfirm: () => handleDelete(cong.id)
-                                        })}
-                                        className="p-2 text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                        title="Excluir"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+
+                                    {openMenuId === cong.id && (
+                                        <>
+                                            <div
+                                                className="fixed inset-0 z-40"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setOpenMenuId(null);
+                                                }}
+                                            ></div>
+                                            <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-surface-border rounded-lg shadow-xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(null);
+                                                        setEditingCongregation(cong);
+                                                        setNewName(cong.name);
+                                                        setNewCity(cong.city || '');
+                                                        let cat = cong.category || '';
+                                                        const lowerCat = cat.toLowerCase();
+                                                        if (lowerCat.includes('sinais') || lowerCat.includes('sign')) cat = 'SIGN_LANGUAGE';
+                                                        else if (lowerCat.includes('estrangeira') || lowerCat.includes('foreign')) cat = 'FOREIGN_LANGUAGE';
+                                                        setNewCategory(cat);
+                                                        setNewTermType(cong.term_type || 'city');
+                                                        setCustomId(cong.id);
+                                                        setIsCreateModalOpen(true);
+                                                    }}
+                                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-main hover:bg-background transition-colors"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-muted" />
+                                                    Editar
+                                                </button>
+
+                                                {userCongId === cong.id ? (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenMenuId(null);
+                                                            handleLeaveCongregation();
+                                                        }}
+                                                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                                                    >
+                                                        <LogOut className="w-4 h-4" />
+                                                        Sair desta
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenMenuId(null);
+                                                            handleEnterCongregation(cong.id);
+                                                        }}
+                                                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-primary hover:bg-primary-light/10 transition-colors"
+                                                    >
+                                                        <LogIn className="w-4 h-4" />
+                                                        Entrar nesta
+                                                    </button>
+                                                )}
+
+                                                <div className="h-px bg-surface-border my-1"></div>
+
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(null);
+                                                        setConfirmModal({
+                                                            title: 'Excluir congregação?',
+                                                            message: `Tem certeza que deseja apagar a congregação "${cong.name}"? Esta ação não pode ser desfeita.`,
+                                                            variant: 'danger',
+                                                            onConfirm: () => handleDelete(cong.id)
+                                                        });
+                                                    }}
+                                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    Excluir
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ))}

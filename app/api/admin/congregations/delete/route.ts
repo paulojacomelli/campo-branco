@@ -1,73 +1,78 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+
+import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
 
 export async function POST(req: Request) {
     try {
-        const supabase = await createServerClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const authHeader = req.headers.get('Authorization');
+        let token = '';
 
-        if (authError || !user) {
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else {
+            // Tenta obter do cookie se não estiver no header (padrão do App Hosting)
+            const cookie = req.headers.get('cookie');
+            token = cookie?.split('__session=')[1]?.split(';')[0] || '';
+        }
+
+        if (!token) {
             return NextResponse.json({ error: 'Sessão expirada' }, { status: 401 });
         }
 
-        // 1. Verificar se é Super Admin
-        const { data: profile } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single();
+        const decodedToken = await adminAuth.verifyIdToken(token);
+        const { id: congregationId, force } = await req.json();
 
-        if (profile?.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-        }
-
-        const { id, force } = await req.json();
-
-        if (!id) {
+        if (!congregationId) {
             return NextResponse.json({ error: 'ID da congregação é obrigatório.' }, { status: 400 });
         }
 
-        console.log(`DEBUG - Solicitando exclusão de congregação: ${id} (Force: ${force}) por admin ${user.id}`);
+        // 1. Verificar se é Admin
+        const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
+        const userData = userDoc.data();
 
-        if (force === true) {
-            console.log(`DEBUG - Executando limpeza total para congregação ${id}...`);
-            const tables = ['cities', 'users', 'territories', 'addresses', 'witnessing_points', 'shared_lists', 'visits'];
+        if (userData?.role !== 'ADMIN' && decodedToken.role !== 'ADMIN') {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        }
 
-            for (const table of tables) {
-                if (table === 'users' || table === 'cities') {
-                    // Para usuários e cidades, apenas removemos o vínculo (null)
-                    await supabaseAdmin.from(table).update({ congregation_id: null }).eq('congregation_id', id);
-                } else {
-                    // Para territórios e outros dados operacionais, removemos tudo
-                    await supabaseAdmin.from(table).delete().eq('congregation_id', id);
+        const collectionsToCleanup = ['territories', 'addresses', 'witnessing_points', 'shared_lists', 'visits'];
+        const collectionsToUnlink = ['cities', 'users'];
+
+        if (!force) {
+            // Check for relations
+            for (const collName of [...collectionsToCleanup, ...collectionsToUnlink]) {
+                const snapshot = await adminDb.collection(collName).where('congregationId', '==', congregationId).limit(1).get();
+                if (!snapshot.empty) {
+                    return NextResponse.json({
+                        code: 'HAS_RELATIONS',
+                        error: `Esta congregação possui dados vinculados em '${collName}'. Deseja realizar uma limpeza total e excluir assim mesmo?`
+                    }, { status: 400 });
                 }
             }
-        }
+        } else {
+            // Force cleanup
+            console.log(`DEBUG - Executando limpeza total para congregação ${congregationId}...`);
 
-        // 2. Tentar excluir a congregação
-        const { error: deleteError } = await supabaseAdmin
-            .from('congregations')
-            .delete()
-            .eq('id', id);
-
-        if (deleteError) {
-            console.error('Congregation Delete API Error:', deleteError);
-
-            // Tratamento amigável para erro de chave estrangeira
-            if (deleteError.code === '23503') {
-                return NextResponse.json({
-                    code: 'HAS_RELATIONS',
-                    error: 'Esta congregação possui dados vinculados (cidades, territórios, etc). Deseja realizar uma limpeza total e excluir assim mesmo?'
-                }, { status: 400 });
+            for (const collName of collectionsToCleanup) {
+                const snapshot = await adminDb.collection(collName).where('congregationId', '==', congregationId).get();
+                const batch = adminDb.batch();
+                snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
             }
 
-            return NextResponse.json({ error: deleteError.message }, { status: 500 });
+            for (const collName of collectionsToUnlink) {
+                const snapshot = await adminDb.collection(collName).where('congregationId', '==', congregationId).get();
+                const batch = adminDb.batch();
+                snapshot.docs.forEach(doc => batch.update(doc.ref, { congregationId: null }));
+                await batch.commit();
+            }
         }
+
+        // 2. Excluir a congregação
+        await adminDb.collection('congregations').doc(congregationId).delete();
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error('Congregation Delete API Critical Error:', error);
-        return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
     }
 }

@@ -8,13 +8,7 @@
     ],
     "frameworksBackend": {
       "region": "us-east1"
-    },
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
+    }
   },
   "firestore": {
     "database": "(default)",
@@ -31,9 +25,11 @@
       "firebase-debug.log",
       "firebase-debug.*.log",
       "functions"
-    ]
+    ],
+    "alwaysDeployFromSource": true
   },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "storage.rules",
+    "bucket": "campo-branco.firebasestorage.app"
   }
 }

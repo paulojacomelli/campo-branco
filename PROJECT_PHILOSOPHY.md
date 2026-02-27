@@ -12,7 +12,6 @@ O aplicativo deve funcionar impecavelmente mesmo sob condições adversas (redes
 ## 2. Otimização Extrema (Velocidade e Banco de Dados)
 Sendo um projeto voluntário com recursos limitados de servidor, a comunicação com o banco de dados (Supabase) deve ser cirúrgica.
 * **Otimização de Consultas:** Evite o problema "N+1". Relacionamentos devem ser resolvidos diretamente no banco com `JOINs` (ou selects integrados no Supabase) em vez de múltiplos laços `for` no front-end.
-* **Segurança e Performance (RLS):** Toda função SQL usada em *Row Level Security* (RLS) deve ser declarada como `STABLE` (sempre que possível) e preferencialmente escrita em `LANGUAGE sql` para usar o cache de consulta do PostgreSQL. Isso evita que a mesma permissão seja recalculada milhares de vezes.
 * **Tempo Real Ponderado:** Use `subscriptions` (Websockets) apenas onde for necessário para a experiência em tempo real pontual. Garanta sempre o `unsubscribe` na desmontagem dos componentes para economizar conexões simultâneas.
 * **Cache Inteligente:** Sempre que possível, utilize cache no lado do cliente ou requisições deduplicadas para evitar ir ao servidor buscar o mesmo dado repetidas vezes.
 

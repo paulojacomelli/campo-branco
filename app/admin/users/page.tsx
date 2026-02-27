@@ -1,8 +1,17 @@
-"use client";
-
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import {
+    collection,
+    query,
+    where,
+    getDocs,
+    orderBy,
+    doc,
+    setDoc,
+    serverTimestamp,
+    onSnapshot
+} from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import {
     Shield,
@@ -36,6 +45,8 @@ interface UserProfile {
     roles?: string[];
     name?: string;
     provider?: string;
+    congregationId?: string | null;
+    // Retrocompatibilidade
     congregation_id?: string | null;
 }
 
@@ -50,7 +61,7 @@ const ROLE_DEFINITIONS = [
     { label: 'Ancião (Superintendente de Serviço)', value: 'ANCIAO', color: 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-800/30' },
 ];
 
-export default function SuperAdminUsersPage() {
+export default function AdminUsersPage() {
     const { user, isAdminRoleGlobal, isElder, congregationId, loading } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [congregations, setCongregations] = useState<Congregation[]>([]);
@@ -70,53 +81,52 @@ export default function SuperAdminUsersPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const router = useRouter();
 
-    const fetchInitialData = async () => {
-        setLoadingData(true);
-        try {
-            const { data: congData, error: congError } = await supabase
-                .from('congregations')
-                .select('id, name')
-                .order('name');
-            if (congError) throw congError;
-            setCongregations(congData || []);
-
-            let queryBuilder = supabase.from('users').select('*').order('name');
-            if (!isAdminRoleGlobal && congregationId) {
-                queryBuilder = queryBuilder.eq('congregation_id', congregationId);
-            }
-
-            const { data: usersData, error: usersError } = await queryBuilder;
-            if (usersError) throw usersError;
-            setUsers(usersData || []);
-        } catch (error) {
-            console.error("Erro ao buscar dados dos usuários:", error);
-        } finally {
-            setLoadingData(false);
-        }
-    };
-
     useEffect(() => {
-        if (!loading) {
-            if (!user) {
-                router.push('/login');
-            } else if (!isElder) {
-                router.push('/dashboard');
-            } else {
-                fetchInitialData();
-                const channel = supabase
-                    .channel('public:users_admin')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
-                        fetchInitialData();
-                    })
-                    .subscribe();
-
-                return () => {
-                    setTimeout(() => {
-                        supabase.removeChannel(channel);
-                    }, 100);
-                };
-            }
+        if (loading) return;
+        if (!user) {
+            router.push('/login');
+            return;
         }
+        if (!isElder) {
+            router.push('/dashboard');
+            return;
+        }
+
+        setLoadingData(true);
+
+        // Busca congregações
+        const fetchCongs = async () => {
+            try {
+                const congsSnap = await getDocs(query(collection(db, 'congregations'), orderBy('name')));
+                const congs = congsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+                setCongregations(congs);
+            } catch (e) {
+                console.error("Erro ao buscar congregações:", e);
+            }
+        };
+        fetchCongs();
+
+        // Listeners para usuários
+        let usersQuery = query(collection(db, 'users'), orderBy('name'));
+        if (!isAdminRoleGlobal && congregationId) {
+            usersQuery = query(collection(db, 'users'), where('congregationId', '==', congregationId), orderBy('name'));
+        }
+
+        const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
+            const usersData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                // Mapeia congregationId para congregation_id para compatibilidade com o restante do código
+                congregation_id: doc.data().congregationId || doc.data().congregation_id
+            })) as UserProfile[];
+            setUsers(usersData);
+            setLoadingData(false);
+        }, (error) => {
+            console.error("Erro no listener de usuários:", error);
+            setLoadingData(false);
+        });
+
+        return () => unsubscribe();
     }, [user, isAdminRoleGlobal, isElder, congregationId, loading, router]);
 
     useEffect(() => {
@@ -138,11 +148,11 @@ export default function SuperAdminUsersPage() {
 
         if (!isAdminRoleGlobal) {
             if (editingUser.role === 'ADMIN' || (editingUser.roles && editingUser.roles.includes('ADMIN'))) {
-                toast.error("Você não pode editar um Super Admin.");
+                toast.error("Você não pode editar um Admin.");
                 return;
             }
             if (editRoles.includes('ADMIN')) {
-                toast.error("Você não pode promover alguém a Super Admin.");
+                toast.error("Você não pode promover alguém a Admin.");
                 return;
             }
         }
@@ -201,27 +211,15 @@ export default function SuperAdminUsersPage() {
         setLoadingData(true);
         try {
             const newUserId = crypto.randomUUID();
-            const { error } = await supabase
-                .from('users')
-                .insert({
-                    id: newUserId,
-                    name: newUser.name.trim(),
-                    email: newUser.email.trim().toLowerCase(),
-                    congregation_id: isAdminRoleGlobal ? (newUser.congregationId || null) : congregationId,
-                    role: 'PUBLICADOR'
-                });
 
-            if (error) throw error;
-
-            // Atualiza o estado local (otimista)
-            const createdUser: UserProfile = {
-                id: newUserId,
+            await setDoc(doc(db, 'users', newUserId), {
                 name: newUser.name.trim(),
                 email: newUser.email.trim().toLowerCase(),
-                congregation_id: isAdminRoleGlobal ? (newUser.congregationId || null) : (congregationId || null),
-                role: 'PUBLICADOR'
-            };
-            setUsers(prev => [createdUser, ...prev]);
+                congregationId: isAdminRoleGlobal ? (newUser.congregationId || null) : congregationId,
+                role: 'PUBLICADOR',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
 
             setShowCreateModal(false);
             setNewUser({ name: '', email: '', congregationId: '' });
@@ -236,7 +234,7 @@ export default function SuperAdminUsersPage() {
 
     const handleDeleteUser = (targetUser: UserProfile) => {
         // Impede que o usuário exclua a própria conta
-        if (targetUser.id === user?.id) {
+        if (targetUser.id === user?.uid) {
             toast.error("Você não pode excluir sua própria conta por aqui.");
             return;
         }
@@ -247,7 +245,7 @@ export default function SuperAdminUsersPage() {
         }
 
         if (targetUser.role === 'ADMIN' && !isAdminRoleGlobal) {
-            toast.error("Apenas Super Admins podem excluir outros Super Admins.");
+            toast.error("Apenas Admins podem excluir outros Admins.");
             return;
         }
 
@@ -552,7 +550,7 @@ export default function SuperAdminUsersPage() {
 
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-left">Nível de Acesso (Função)</label>
-                                {editingUser?.id === user?.id ? (
+                                {editingUser?.id === user?.uid ? (
                                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 flex flex-col gap-2">
                                         <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs uppercase">
                                             <AlertCircle className="w-4 h-4" />

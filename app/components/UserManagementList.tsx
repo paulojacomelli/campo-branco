@@ -67,7 +67,7 @@ export default function UserManagementList({ congregationId }: { congregationId?
     const canAssignRole = (targetRole: string): boolean => {
         if (isAdminRoleGlobal) return true;
         if (isElder) {
-            // Elders can assign Publicador and Servo, but NOT Anciao or Super Admin
+            // Elders can assign Publicador and Servo, but NOT Anciao or Admin
             return ['PUBLICADOR', 'SERVO'].includes(targetRole);
         }
         return false;
