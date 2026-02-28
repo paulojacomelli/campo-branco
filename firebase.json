@@ -13,8 +13,7 @@
   "firestore": {
     "database": "(default)",
     "location": "southamerica-east1",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "rules": "firestore.rules"
   },
   "apphosting": {
     "backendId": "campo-branco",

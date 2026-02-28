@@ -20,6 +20,7 @@ const nextConfig = {
         // Define a URL base para as APIs. No GitHub, aponta para o Firebase.
         NEXT_PUBLIC_API_BASE_URL: isGithubActions ? 'https://campo-branco.web.app' : '',
     },
+    turbopack: {},
 };
 
 const withPWA = require("@ducanh2912/next-pwa").default({
