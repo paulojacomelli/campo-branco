@@ -17,7 +17,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { id, mode = 'cascade' } = body; // mode pode ser 'cascade' ou 'orphan'
+        const { id } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'ID é obrigatório.' }, { status: 400 });
@@ -62,15 +62,7 @@ export async function POST(req: Request) {
             for (const chunk of chunks) {
                 const batch = adminDb.batch();
                 chunk.forEach(doc => {
-                    if (mode === 'orphan') {
-                        batch.update(doc.ref, {
-                            territoryId: null,
-                            territory_id: null,
-                            updatedAt: new Date().toISOString()
-                        });
-                    } else {
-                        batch.delete(doc.ref);
-                    }
+                    batch.delete(doc.ref);
                 });
                 await batch.commit();
             }

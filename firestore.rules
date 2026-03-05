@@ -22,23 +22,39 @@ service cloud.firestore {
     }
 
     // Role checks (SECURE LOCK STRATEGY)
+    
+    // Check if the user is the master global administrator
+    function isMasterAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'campobrancojw@gmail.com';
+    }
+
+    // Check for admin role (Global or Database)
     function isAdmin() {
-      // Simplificado: Confia no claim de role do token (setado via Admin SDK/AuthContext)
-      // ou permite acesso inicial se for o email master
-      return request.auth.token.role == 'ADMIN' || request.auth.token.email == 'campobrancojw@gmail.com';
+      return isAuthenticated() && (
+        isMasterAdmin() ||
+        request.auth.token.role == 'ADMIN' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'ADMIN'
+      );
     }
     
     function isElder() {
       let auth = getAuthContext();
-      return auth.role == 'ANCIAO' || 'ANCIAO' in auth.roles || isAdmin();
+      return isAdmin() || 
+             auth.role == 'ANCIAO' || 
+             'ANCIAO' in auth.roles ||
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'ANCIAO';
     }
     
     function isServant() {
       let auth = getAuthContext();
-      return auth.role == 'SERVO' || 'SERVO' in auth.roles || isElder();
+      return isElder() || 
+             auth.role == 'SERVO' || 
+             'SERVO' in auth.roles ||
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'SERVO';
     }
     
     // --- Isolation Logic ---
+
 
     // Verify if the requested data belongs to the user's congregation
     function belongsToUserCongregation(docData) {
@@ -77,13 +93,13 @@ service cloud.firestore {
     // 2. Users (Strict Access)
     match /users/{userId} {
       // MASTER ACCESS (Emergency / First Login)
-      allow read, write: if isAuthenticated() && request.auth.token.email == 'campobrancojw@gmail.com';
+      allow read, write: if isMasterAdmin();
 
       // Individual document access
       allow get: if isAuthenticated() && (
         request.auth.uid == userId || 
-        (resource.data.email == request.auth.token.email && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com')) ||
         isAdmin() ||
+        (resource.data.email == request.auth.token.email && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com')) ||
         // Only allow reading users from SAME congregation
         (getAuthContext().congregationId != "" && getAuthContext().congregationId == resource.data.congregationId)
       );
@@ -251,15 +267,23 @@ service cloud.firestore {
         allow write: if isAuthenticated() && isAdmin();
     }
 
-    // STRICT REPORTS RULES (As Requested)
-    match /reports/{reportId} {
+    // BUG REPORTS RULES
+    match /bug_reports/{reportId} {
         allow create: if isAuthenticated()
-          && request.resource.data.userId == request.auth.uid
-          // && request.resource.data.createdAt is timestamp // Optional: Strict type check if needed
-          ;
+          && (request.resource.data.userId == request.auth.uid || request.resource.data.user_id == request.auth.uid);
           
         allow read: if isAdmin();
-        allow update, delete: if false;
+        allow update: if isAdmin();
+        allow delete: if false;
+    }
+
+    match /error_reports/{reportId} {
+        allow create: if isAuthenticated()
+          && (request.resource.data.userId == request.auth.uid || request.resource.data.user_id == request.auth.uid);
+          
+        allow read: if isAdmin();
+        allow update: if isAdmin();
+        allow delete: if false;
     }
     
     // Default Deny All (Implicit in Firestore, but good practice to verify covers everything)

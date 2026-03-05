@@ -49,12 +49,11 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
             setLoading(true);
             try {
                 // Busca visitas da coleção 'visits' no Firestore
+                // Utilizando ordenação em memória para evitar a exigência de Índice Composto (Composite Index) no Firestore
                 const visitsRef = collection(db, 'visits');
                 const q = query(
                     visitsRef,
-                    where('addressId', '==', addressId),
-                    orderBy('visitDate', 'desc'),
-                    limit(50)
+                    where('addressId', '==', addressId)
                 );
 
                 const snapshot = await getDocs(q);
@@ -67,9 +66,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                 if (rawVisits.length === 0) {
                     const qLegacy = query(
                         visitsRef,
-                        where('address_id', '==', addressId),
-                        orderBy('visit_date', 'desc'),
-                        limit(50)
+                        where('address_id', '==', addressId)
                     );
                     const snapshotLegacy = await getDocs(qLegacy);
                     rawVisits = snapshotLegacy.docs.map(d => ({
@@ -77,6 +74,16 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                         ...d.data()
                     }));
                 }
+
+                // Ordenação local descente por data da visita
+                rawVisits.sort((a: any, b: any) => {
+                    const dateA = new Date(a.visitDate || a.visit_date || 0).getTime();
+                    const dateB = new Date(b.visitDate || b.visit_date || 0).getTime();
+                    return dateB - dateA;
+                });
+
+                // Limita a 50
+                rawVisits = rawVisits.slice(0, 50);
 
                 // Busca nomes reais para os usuários de forma otimizada
                 const userIds = Array.from(new Set(rawVisits.map((v: any) => v.userId || v.user_id).filter(id => id)));
@@ -104,15 +111,6 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
                 setVisits(mergedVisits);
             } catch (error) {
                 console.error("[VISIT_HISTORY] Error fetching from Firestore:", error);
-
-                // Tenta busca simples se falhar por falta de índice
-                try {
-                    const visitsRef = collection(db, 'visits');
-                    const qSimple = query(visitsRef, where('addressId', '==', addressId), limit(50));
-                    const snapshotSimple = await getDocs(qSimple);
-                    const data = snapshotSimple.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setVisits(data);
-                } catch (e) { }
             } finally {
                 setLoading(false);
             }
@@ -125,7 +123,7 @@ export default function VisitHistoryModal({ addressId, onClose, address, isShare
         switch (status) {
             case 'contacted': return <ThumbsUp className="w-4 h-4 text-green-600" />;
             case 'not_contacted': return <ThumbsDown className="w-4 h-4 text-red-600" />;
-            case 'moved': return <Home className="w-4 h-4 text-orange-600" />;
+            case 'moved': return <Home className="w-4 h-4 text-blue-600" />;
             case 'do_not_visit': return <Hand className="w-4 h-4 text-red-600" />;
             default: return <div className="w-4 h-4 bg-gray-200 rounded-full" />;
         }

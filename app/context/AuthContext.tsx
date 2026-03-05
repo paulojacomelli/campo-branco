@@ -77,9 +77,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => clearTimeout(safetyTimeout);
     }, []);
 
-    // Ouve mudanças de estado de autenticação do Firebase
+    // Ouve mudanças de estado de autenticação e de token do Firebase
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        const { onIdTokenChanged } = require("firebase/auth");
+        const unsubscribe = onIdTokenChanged(auth, async (firebaseUser: User | null) => {
             if (firebaseUser) {
                 setUser(firebaseUser);
                 await fetchUserProfile(firebaseUser);
@@ -87,7 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Salva o token no cookie para uso nas API routes (servidor)
                 try {
                     const token = await firebaseUser.getIdToken();
-                    document.cookie = `__session=${token}; path=/; max-age=3600; SameSite=Strict`;
+                    // Configuração de cookie: Lax permite envio em navegação top-level vinda de outros sites.
+                    // path=/ garante que o cookie chegue em todas as APIs.
+                    const isSecure = window.location.protocol === 'https:';
+                    document.cookie = `__session=${token}; path=/; max-age=3600; SameSite=Lax${isSecure ? '; Secure' : ''}`;
                 } catch (e) {
                     console.warn("Não foi possível salvar o token no cookie:", e);
                 }
@@ -98,7 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setSimulatedRole(null);
                 setCongregationId(null);
                 setProfileName(null);
-                document.cookie = '__session=; path=/; max-age=0';
+                // Limpa cookie com data de expiração fixa para garantir remoção
+                document.cookie = '__session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
                 setLoading(false);
             }
         });
@@ -202,7 +207,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Realiza logout do Firebase
     const logout = async () => {
         await signOut(auth);
-        document.cookie = '__session=; path=/; max-age=0';
+        const isSecure = window.location.protocol === 'https:';
+        document.cookie = `__session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${isSecure ? '; Secure' : ''}`;
     };
 
     // Atualiza a preferência de notificações do usuário no Firestore

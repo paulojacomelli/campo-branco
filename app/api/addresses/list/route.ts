@@ -43,7 +43,30 @@ export async function GET(req: Request) {
         }
 
         const addressSnap = await query.get();
-        const addresses = addressSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const addresses = addressSnap.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                street: data.street,
+                territoryId: data.territoryId || data.territory_id,
+                congregationId: data.congregationId || data.congregation_id,
+                cityId: data.cityId || data.city_id,
+                lat: data.lat,
+                lng: data.lng,
+                isActive: data.isActive ?? data.is_active ?? true,
+                googleMapsLink: data.googleMapsLink || data.google_maps_link,
+                wazeLink: data.wazeLink || data.waze_link,
+                residentName: data.residentName || data.resident_name,
+                gender: data.gender,
+                isDeaf: data.isDeaf || data.is_deaf,
+                isMinor: data.isMinor || data.is_minor,
+                isStudent: data.isStudent || data.is_student,
+                isNeurodivergent: data.isNeurodivergent || data.is_neurodivergent,
+                observations: data.observations,
+                sortOrder: data.sortOrder ?? data.sort_order ?? 999999,
+                inactivatedAt: data.inactivatedAt || data.inactivated_at
+            };
+        });
 
         // Busca as visitas mais recentes para esses endereços
         const addressIds = addresses.map((a: any) => a.id);

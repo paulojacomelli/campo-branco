@@ -220,15 +220,24 @@ function CityListContent() {
                 const history = data.history || [];
                 const addresses = data.addresses || [];
 
+                // Debug logs
+                console.log('[DEBUG] Territories:', territories.length, territories);
+                console.log('[DEBUG] History:', history.length, history);
+                console.log('[DEBUG] Addresses:', addresses.length, addresses);
+
                 const cityTotals: Record<string, number> = {};
                 const territoryCityMap: Record<string, string> = {};
 
                 territories.forEach((t: any) => {
+                    console.log('[DEBUG] Processing territory:', t.id, t.name, 'city_id:', t.city_id);
                     if (t.city_id) {
                         cityTotals[t.city_id] = (cityTotals[t.city_id] || 0) + 1;
                         territoryCityMap[t.id] = t.city_id;
                     }
                 });
+
+                console.log('[DEBUG] City totals:', cityTotals);
+                console.log('[DEBUG] Territory city map:', territoryCityMap);
 
                 const completedUniqueByCity: Record<string, Set<string>> = {};
                 const completedVolumeByCity: Record<string, number> = {};
@@ -284,6 +293,7 @@ function CityListContent() {
                     };
                 });
 
+                console.log('[DEBUG] Final stats:', stats);
                 setCoverageStats(stats);
             } catch (error) {
                 console.error("Error fetching coverage stats:", error);

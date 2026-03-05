@@ -57,9 +57,15 @@ import VisitsHistory from "@/app/components/Dashboard/VisitsHistory";
 
 // --- UTILS ---
 
-const formatDate = (dateString: any) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
+const formatDate = (dateValue: any) => {
+    if (!dateValue) return 'N/A';
+
+    // Check if it's a Firestore Timestamp and has the toDate method
+    const date = typeof dateValue.toDate === 'function' ? dateValue.toDate() : new Date(dateValue);
+
+    // Still invalid date fallback
+    if (isNaN(date.getTime())) return 'N/A';
+
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 };
 
@@ -688,7 +694,7 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3 text-muted" />
-                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.created_at)}</span>
+                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.created_at || list.createdAt)}</span>
                                         </div>
                                         {list.status === 'completed' && list.returned_at ? (
                                             <div className="flex items-center gap-1">

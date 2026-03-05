@@ -37,6 +37,7 @@ import LoginRequestModal from '@/app/components/LoginRequestModal';
 import AccessDeniedModal from '@/app/components/AccessDeniedModal';
 import MapView from '@/app/components/MapView';
 import BottomNav from '@/app/components/BottomNav';
+import MapAppSelectModal from '@/app/components/MapAppSelectModal';
 import { toast } from 'sonner';
 
 interface PreviewItem {
@@ -89,6 +90,7 @@ function SharedPreviewContent() {
     const [deniedResource, setDeniedResource] = useState('');
     const [isInactiveExpanded, setIsInactiveExpanded] = useState(false);
     const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+    const [mapAppSelect, setMapAppSelect] = useState<{ isOpen: boolean; address: PreviewItem } | null>(null);
     const [congregationType, setCongregationType] = useState<'TRADITIONAL' | 'SIGN_LANGUAGE' | 'FOREIGN_LANGUAGE' | null>(null);
     const isTraditional = congregationType === 'TRADITIONAL';
 
@@ -121,42 +123,49 @@ function SharedPreviewContent() {
 
             // 2. Identify "Main Data" (The Territory or City being previewed)
             // The items from the API contain all snapshots. One of them is our main territory/city.
-            const mainData = fetchedItems.find((item: any) => item.id === id);
+            const mainDataRaw = fetchedItems.find((item: any) => (item.itemId || item.id) === id);
 
-            if (!mainData) {
+            if (!mainDataRaw) {
                 setError("Item não encontrado.");
                 setLoading(false);
                 return;
             }
+            const mainData = { ...(mainDataRaw.data || mainDataRaw), id: mainDataRaw.itemId || mainDataRaw.id };
 
             // 3. Process Addresses
             // Filter snapshots to get only relevant addresses for this territory/city
             // Addresses in snapshots usually have territory_id or city_id
-            const addressesData = fetchedItems.filter((item: any) =>
-                type === 'city' ? item.city_id === id : item.territory_id === id
-            );
+            const addressesData = fetchedItems.filter((item: any) => {
+                const sourceData = item.data || item;
+                return type === 'city'
+                    ? (sourceData.city_id || sourceData.cityId) === id
+                    : (sourceData.territory_id || sourceData.territoryId) === id;
+            });
 
-            const addresses: PreviewItem[] = addressesData.map((a: any) => ({
-                id: a.id,
-                street: a.street,
-                number: a.number,
-                complement: a.complement,
-                residentName: a.resident_name || a.residentName,
-                googleMapsLink: a.google_maps_link || a.googleMapsLink,
-                lat: a.lat,
-                lng: a.lng,
-                isActive: a.is_active !== false,
-                gender: a.gender,
-                isDeaf: a.is_deaf || a.isDeaf,
-                isMinor: a.is_minor || a.isMinor,
-                isStudent: a.is_student || a.isStudent,
-                isNeurodivergent: a.is_neurodivergent || a.isNeurodivergent,
-                observations: a.observations,
-                visitStatus: a.visit_status || a.visitStatus,
-                territoryId: a.territory_id || a.territoryId,
-                cityId: a.city_id || a.cityId,
-                inactivatedAt: a.inactivated_at
-            }));
+            const addresses: PreviewItem[] = addressesData.map((a: any) => {
+                const sourceData = a.data || a;
+                return {
+                    id: a.itemId || a.id,
+                    street: sourceData.street,
+                    number: sourceData.number,
+                    complement: sourceData.complement,
+                    residentName: sourceData.resident_name || sourceData.residentName,
+                    googleMapsLink: sourceData.google_maps_link || sourceData.googleMapsLink,
+                    lat: sourceData.lat,
+                    lng: sourceData.lng,
+                    isActive: sourceData.is_active !== false && sourceData.isActive !== false,
+                    gender: sourceData.gender,
+                    isDeaf: sourceData.is_deaf || sourceData.isDeaf,
+                    isMinor: sourceData.is_minor || sourceData.isMinor,
+                    isStudent: sourceData.is_student || sourceData.isStudent,
+                    isNeurodivergent: sourceData.is_neurodivergent || sourceData.isNeurodivergent,
+                    observations: sourceData.observations,
+                    visitStatus: sourceData.visit_status || sourceData.visitStatus,
+                    territoryId: sourceData.territory_id || sourceData.territoryId,
+                    cityId: sourceData.city_id || sourceData.cityId,
+                    inactivatedAt: sourceData.inactivated_at || sourceData.inactivatedAt
+                };
+            });
 
             // 4. Merge Results (Visits)
             const linkResults: Record<string, any> = {};
@@ -303,6 +312,37 @@ function SharedPreviewContent() {
     // If we have a shareId, we use it.
 
 
+    const handleOpenMap = (item: PreviewItem) => {
+        // Se ambos os links existirem, abre o modal de seleção
+        if (item.googleMapsLink && item.wazeLink) {
+            setMapAppSelect({ isOpen: true, address: item });
+            return;
+        }
+
+        const exactLink = item.googleMapsLink || item.wazeLink;
+
+        if (exactLink) {
+            window.open(exactLink, '_blank');
+            return;
+        }
+
+        // Se não houver links salvos, tenta abrir via coordenadas ou endereço (query)
+        let url = '';
+        if (item.lat && item.lng) {
+            url = `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`;
+        } else {
+            const query = `${item.street}${item.number ? `, ${item.number}` : ''}`;
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isAndroid = /Android/i.test(navigator.userAgent);
+
+            if (isIOS) url = `maps://?q=${encodeURIComponent(query)}`;
+            else if (isAndroid) url = `geo:0,0?q=${encodeURIComponent(query)}`;
+            else url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+        }
+
+        if (url) window.open(url, '_blank');
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
@@ -388,7 +428,7 @@ function SharedPreviewContent() {
         return (
             <Wrapper key={item.id} {...(wrapperProps as any)}>
                 {/* Main Card Container - Matching Address List padding and styles */}
-                <div className={`bg-surface rounded-2xl p-4 border-2 shadow-sm hover:shadow-md transition-all relative 
+                <div className={`bg-surface rounded-md p-4 border-2 shadow-sm hover:shadow-md transition-all relative 
                     ${item.isActive === false ? 'opacity-60 grayscale' : ''} 
                     ${activeDropdownId === item.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}
                     ${item.visitStatus && item.visitStatus !== 'none'
@@ -556,45 +596,17 @@ function SharedPreviewContent() {
                                     <div className="absolute right-0 top-10 bg-surface rounded-xl shadow-xl border border-surface-border p-1 z-20 min-w-[160px] animate-in fade-in zoom-in-95 duration-200">
 
                                         {/* Dropdown Options */}
-                                        {item.wazeLink && (
-                                            <a
-                                                href={item.wazeLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setActiveDropdownId(null);
-                                                }}
-                                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors w-full text-left"
-                                            >
-                                                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
-                                                    <path fill="#33CCFF" d="M19.333 11.667a6.666 6.666 0 0 0-13.333 0c0 .35.03.7.078 1.045a3.167 3.167 0 0 0-2.745 3.122 3.167 3.167 0 0 0 3.167 3.166h.165a2.833 2.833 0 0 0 5.667 0h1.333a2.833 2.833 0 0 0 5.667 0h.165a3.167 3.167 0 0 0 3.167-3.166 3.167 3.167 0 0 0-2.745-3.122 6.666 6.666 0 0 0 .078-1.045z" />
-                                                    <circle cx="15.5" cy="11.5" r="1" fill="#fff" />
-                                                    <circle cx="9.5" cy="11.5" r="1" fill="#fff" />
-                                                    <path d="M10 14.5s1 1 2 0" stroke="#fff" strokeWidth="1" fill="none" strokeLinecap="round" />
-                                                </svg>
-                                                Abrir no Waze
-                                            </a>
-                                        )}
-
-                                        {href !== '#' && (
-                                            <a
-                                                href={href}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setActiveDropdownId(null);
-                                                }}
-                                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
-                                            >
-                                                <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0">
-                                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4285F4" />
-                                                    <circle cx="12" cy="9" r="2.5" fill="#fff" />
-                                                </svg>
-                                                Abrir no Mapa
-                                            </a>
-                                        )}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenMap(item);
+                                                setActiveDropdownId(null);
+                                            }}
+                                            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
+                                        >
+                                            <Navigation className="w-4 h-4" />
+                                            Abrir no Mapa
+                                        </button>
 
                                         <button
                                             onClick={(e) => handleHistoryClick(e, item.id)}
@@ -754,6 +766,13 @@ function SharedPreviewContent() {
                     onClose={() => setShowAccessDenied(false)}
                 />
             )}
+
+            {/* Map App Selection Modal */}
+            <MapAppSelectModal
+                isOpen={!!mapAppSelect?.isOpen}
+                onClose={() => setMapAppSelect(null)}
+                address={mapAppSelect?.address || {}}
+            />
 
             {/* Bottom Nav for Authenticated Users */}
             {user && <BottomNav />}

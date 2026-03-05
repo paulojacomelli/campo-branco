@@ -4,43 +4,18 @@ import { useState, useEffect, Suspense } from 'react';
 import { toast } from 'sonner';
 import RoleBasedSwitcher from '@/app/components/RoleBasedSwitcher';
 import {
-    Link as LinkIcon,
-    Link2,
-    X,
-    Plus,
-    MapPin,
-    ArrowRight,
-    Loader2,
-    Trash2,
-    Navigation,
-    Home,
-    Search,
-    List,
-    Map,
-    Pencil,
-    User,
-    Users,
-    Ear,
-    Baby,
-    GraduationCap,
-    Brain,
-    FileText,
-    MoreVertical,
-    History as HistoryIcon,
-    ChevronDown,
-    ChevronUp,
-    ArrowLeft,
-    CheckCircle,
-    MousePointer2,
-    GripVertical,
-    Truck,
-    Hand,
-    Calendar
+    Search, Plus, MapPin, Navigation, Pencil, Trash2,
+    Loader2, ArrowLeft, Home, GripVertical, MoreVertical,
+    X, CheckCircle, MousePointer2, History as HistoryIcon,
+    FileText, User, Ear, Baby, GraduationCap, Brain,
+    Truck, Calendar, Hand, Info, Link as LinkIcon,
+    ChevronDown, ChevronUp, Map as MapIcon
 } from 'lucide-react';
 import VisitHistoryModal from '@/app/components/VisitHistoryModal';
 import BottomNav from '@/app/components/BottomNav';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
 import MapView, { MapItem } from '@/app/components/MapView';
+import MapAppSelectModal from '@/app/components/MapAppSelectModal';
 import {
     doc,
     getDoc,
@@ -58,6 +33,7 @@ import {
     writeBatch
 } from "firebase/firestore";
 import { db } from '@/lib/firebase';
+import { geocodeAddress } from '@/app/actions/geocoding';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
 import { getServiceYear, getServiceYearRange } from '@/lib/serviceYearUtils';
@@ -67,26 +43,39 @@ import CSVActionButtons from '@/app/components/CSVActionButtons';
 interface Address {
     id: string;
     street: string;
-    territory_id: string;
-    congregation_id: string;
-    city_id: string;
+    territoryId?: string;
+    territory_id?: string;
+    congregationId?: string;
+    congregation_id?: string;
+    cityId?: string;
+    city_id?: string;
     completed?: boolean;
     visited_at?: string;
     lat?: number;
     lng?: number;
+    isActive?: boolean;
     is_active?: boolean;
+    googleMapsLink?: string;
     google_maps_link?: string;
+    wazeLink?: string;
     waze_link?: string;
+    residentName?: string;
     resident_name?: string;
+    isDeaf?: boolean;
     is_deaf?: boolean;
+    isMinor?: boolean;
     is_minor?: boolean;
+    isStudent?: boolean;
     is_student?: boolean;
     observations?: string;
     gender?: 'HOMEM' | 'MULHER' | 'CASAL';
+    isNeurodivergent?: boolean;
     is_neurodivergent?: boolean;
     visit_status?: 'contacted' | 'not_contacted' | 'moved' | 'do_not_visit' | 'none';
     last_visited_at?: string;
     sort_order?: number;
+    inactivated_at?: string;
+    inactivatedAt?: string;
 }
 
 function AddressListContent() {
@@ -110,6 +99,7 @@ function AddressListContent() {
     const [historyAddressId, setHistoryAddressId] = useState<string | null>(null);
     const [localTermType, setLocalTermType] = useState<'city' | 'neighborhood'>('city');
     const [parentCity, setParentCity] = useState<string | null>(null);
+    const [mapAppSelect, setMapAppSelect] = useState<{ isOpen: boolean, address: any } | null>(null);
 
     const serviceYearRange = useState(() => getServiceYearRange(getServiceYear()))[0];
 
@@ -175,6 +165,32 @@ function AddressListContent() {
     const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
     const [isMapSelectionMode, setIsMapSelectionMode] = useState(true);
     const [pickerTempCoords, setPickerTempCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [mapSearchQuery, setMapSearchQuery] = useState('');
+    const [isGeocodingMap, setIsGeocodingMap] = useState(false);
+
+    const handleMapSearch = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!mapSearchQuery.trim()) return;
+
+        setIsGeocodingMap(true);
+        try {
+            const results = await geocodeAddress(mapSearchQuery);
+            if (results && results.length > 0) {
+                const { lat, lon } = results[0];
+                const newCoords = { lat: parseFloat(lat), lng: parseFloat(lon) };
+                setPickerTempCoords(newCoords);
+                setIsMapSelectionMode(true);
+                toast.success("Localização encontrada!");
+            } else {
+                toast.error("Endereço não encontrado");
+            }
+        } catch (error) {
+            console.error("Error geocoding in picker:", error);
+            toast.error("Erro ao pesquisar endereço");
+        } finally {
+            setIsGeocodingMap(false);
+        }
+    };
 
     // View Mode
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
@@ -226,7 +242,7 @@ function AddressListContent() {
             setLoading(true);
             try {
                 // Fetch context over bypass RLS API to avoid 404 block for cities and territories selection
-                const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/maps/context?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
+                const response = await fetch(`/api/maps/context?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
                 const resData = await response.json();
 
                 if (!resData.success) {
@@ -279,7 +295,9 @@ function AddressListContent() {
         if (!congregationId || !territoryId) return;
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`);
+            const response = await fetch(`/api/addresses/list?congregationId=${congregationId}&cityId=${cityId}&territoryId=${territoryId}`, {
+                cache: 'no-store'
+            });
             const resData = await response.json();
 
             if (!response.ok) {
@@ -299,8 +317,13 @@ function AddressListContent() {
             });
 
             setAddresses(sorted);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error fetching addresses:", error);
+            if (error.message?.includes('index')) {
+                toast.error("O banco de dados ainda está preparando os índices. Aguarde um momento...");
+            } else {
+                toast.error("Erro ao carregar endereços.");
+            }
         } finally {
             setLoading(false);
         }
@@ -309,7 +332,7 @@ function AddressListContent() {
     useEffect(() => {
         fetchAddresses();
 
-        if (territoryId) {
+        if (territoryId && db) {
             const addressesRef = collection(db, 'addresses');
             const q = query(addressesRef, where('territoryId', '==', territoryId));
 
@@ -328,22 +351,26 @@ function AddressListContent() {
         const fetchOptions = async () => {
             try {
                 // Fetch Cities
-                const citiesRef = collection(db, 'cities');
-                const qCities = query(citiesRef, where('congregationId', '==', selectedCongregationId));
-                const citiesSnap = await getDocs(qCities);
-                setAvailableCities(citiesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
+                if (selectedCongregationId) {
+                    const citiesRef = collection(db, 'cities');
+                    const qCities = query(citiesRef, where('congregationId', '==', selectedCongregationId));
+                    const citiesSnap = await getDocs(qCities);
+                    setAvailableCities(citiesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
+                }
 
                 // Fetch Territories
-                const territoriesRef = collection(db, 'territories');
-                const qTerrs = query(
-                    territoriesRef,
-                    where('congregationId', '==', selectedCongregationId),
-                    where('cityId', '==', selectedCityId)
-                );
-                const terrsSnap = await getDocs(qTerrs);
-                const terrs = terrsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
-                const sortedT = terrs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                setAvailableTerritories(sortedT);
+                if (selectedCongregationId && selectedCityId) {
+                    const territoriesRef = collection(db, 'territories');
+                    const qTerrs = query(
+                        territoriesRef,
+                        where('congregationId', '==', selectedCongregationId),
+                        where('cityId', '==', selectedCityId)
+                    );
+                    const terrsSnap = await getDocs(qTerrs);
+                    const terrs = terrsSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+                    const sortedT = terrs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                    setAvailableTerritories(sortedT);
+                }
 
                 if (congregationId) {
                     const congRef = doc(db, 'congregations', congregationId);
@@ -384,25 +411,32 @@ function AddressListContent() {
             const addressData = {
                 id: editingId || undefined,
                 street: combinedAddress.trim(),
-                territory_id: selectedTerritoryId,
-                congregation_id: selectedCongregationId,
-                city_id: selectedCityId,
+                territoryId: selectedTerritoryId,
+                congregationId: selectedCongregationId,
+                cityId: selectedCityId,
                 lat: lat ? parseFloat(lat) : null,
                 lng: lng ? parseFloat(lng) : null,
-                is_active: isActive,
-                google_maps_link: googleMapsLink,
-                waze_link: wazeLink,
-                resident_name: residentName,
-                residents_count: residentsCount ? parseInt(residentsCount) : 1,
+                isActive: isActive,
+                googleMapsLink: googleMapsLink,
+                wazeLink: wazeLink,
+                residentName: residentName,
+                residentsCount: residentsCount ? parseInt(residentsCount) : 1,
                 gender: gender || null,
-                is_deaf: isDeaf,
-                is_minor: isMinor,
-                is_student: isStudent,
-                is_neurodivergent: isNeurodivergent,
+                isDeaf: isDeaf,
+                isMinor: isMinor,
+                isStudent: isStudent,
+                isNeurodivergent: isNeurodivergent,
                 observations
             };
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
+            console.log("[Debug] Salvando endereço:", addressData);
+            console.log("[Debug] IDs individuais:", {
+                territoryId: selectedTerritoryId,
+                congregationId: selectedCongregationId,
+                cityId: selectedCityId
+            });
+
+            const response = await fetch('/api/addresses/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(addressData)
@@ -449,18 +483,18 @@ function AddressListContent() {
         setCombinedAddress(addr.street);
         setLat(addr.lat?.toString() || '');
         setLng(addr.lng?.toString() || '');
-        setSelectedCongregationId(addr.congregation_id);
-        setSelectedCityId(addr.city_id);
-        setSelectedTerritoryId(addr.territory_id);
-        setIsActive(addr.is_active ?? true);
-        setGoogleMapsLink(addr.google_maps_link || '');
-        setWazeLink(addr.waze_link || '');
-        setResidentName(addr.resident_name || '');
+        setSelectedCongregationId(addr.congregationId || '');
+        setSelectedCityId(addr.cityId || '');
+        setSelectedTerritoryId(addr.territoryId || '');
+        setIsActive(addr.isActive ?? true);
+        setGoogleMapsLink(addr.googleMapsLink || '');
+        setWazeLink(addr.wazeLink || '');
+        setResidentName(addr.residentName || '');
         setGender(addr.gender || '');
-        setIsDeaf(addr.is_deaf || false);
-        setIsMinor(addr.is_minor || false);
-        setIsStudent(addr.is_student || false);
-        setIsNeurodivergent(addr.is_neurodivergent || false);
+        setIsDeaf(addr.isDeaf || false);
+        setIsMinor(addr.isMinor || false);
+        setIsStudent(addr.isStudent || false);
+        setIsNeurodivergent(addr.isNeurodivergent || false);
         setObservations(addr.observations || '');
         setIsCreateModalOpen(true);
     };
@@ -542,8 +576,8 @@ function AddressListContent() {
         a.street.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const activeAddresses = filteredAddresses.filter(a => a.is_active !== false);
-    const inactiveAddresses = filteredAddresses.filter(a => a.is_active === false);
+    const activeAddresses = filteredAddresses.filter(a => a.isActive !== false);
+    const inactiveAddresses = filteredAddresses.filter(a => a.isActive === false);
 
     const handleGeocodeSuccess = async (id: string, lat: number, lng: number) => {
         try {
@@ -555,14 +589,30 @@ function AddressListContent() {
     };
 
     const handleOpenMap = (item: any) => {
-        // Usa o endereço completo para abrir no mapa
+        const googleLink = item.googleMapsLink || item.google_maps_link;
+        const wazeLink = item.wazeLink || item.waze_link;
+
+        if (googleLink && wazeLink) {
+            setMapAppSelect({ isOpen: true, address: item });
+            return;
+        }
+
+        const exactLink = googleLink || wazeLink;
+
+        if (exactLink) {
+            window.open(exactLink, '_blank');
+            return;
+        }
+
+        // Usa o endereço completo para abrir no mapa (busca padrão)
         const query = item.street;
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const isAndroid = /Android/i.test(navigator.userAgent);
         let url = '';
         if (isIOS) url = `maps://?q=${encodeURIComponent(query)}`;
         else if (isAndroid) url = `geo:0,0?q=${encodeURIComponent(query)}`;
-        else url = item.google_maps_link || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+        else url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+
         window.open(url, '_blank');
     };
 
@@ -574,7 +624,7 @@ function AddressListContent() {
                 inactivated_at: new Date().toISOString()
             };
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
+            const response = await fetch('/api/addresses/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(addressData)
@@ -605,7 +655,7 @@ function AddressListContent() {
 
             if (!latestVisit) throw new Error("Não foi possível encontrar a visita relacionada.");
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/visits/delete`, {
+            const response = await fetch('/api/visits/delete', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ visitId: latestVisit.id })
@@ -623,10 +673,28 @@ function AddressListContent() {
 
     const handleToggleActive = async (addr: Address) => {
         try {
+            const currentActive = addr.isActive ?? addr.is_active ?? true;
+
+            // Cria um objeto limpo para salvar, evitando dados desnecessários ou conflitantes
             const addressData = {
-                ...addr,
-                is_active: !addr.is_active,
-                inactivated_at: !addr.is_active ? new Date().toISOString() : null
+                id: addr.id,
+                street: addr.street,
+                territoryId: addr.territoryId || addr.territory_id,
+                congregationId: addr.congregationId || addr.congregation_id,
+                cityId: addr.cityId || addr.city_id,
+                lat: addr.lat,
+                lng: addr.lng,
+                isActive: !currentActive,
+                inactivatedAt: !currentActive ? new Date().toISOString() : null,
+                googleMapsLink: addr.googleMapsLink || addr.google_maps_link,
+                wazeLink: addr.wazeLink || addr.waze_link,
+                residentName: addr.residentName || addr.resident_name,
+                gender: addr.gender,
+                isDeaf: addr.isDeaf || addr.is_deaf,
+                isMinor: addr.isMinor || addr.is_minor,
+                isStudent: addr.isStudent || addr.is_student,
+                isNeurodivergent: addr.isNeurodivergent || addr.is_neurodivergent,
+                observations: addr.observations
             };
 
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/addresses/save`, {
@@ -652,289 +720,308 @@ function AddressListContent() {
     };
 
     // --- RENDER HELPERS ---
-    const renderAddressCard = (addr: Address, index: number) => (
-        <div
-            key={addr.id}
-            draggable={!isSelectionMode}
-            onDragStart={(e) => handleDragStart(e, addr.id)}
-            onDragOver={(e) => handleDragOver(e, addr.id)}
-            onDragEnd={handleDragEnd}
-            className={`group bg-surface rounded-lg p-4 border border-surface-border shadow-sm hover:shadow-md transition-all ${draggedId === addr.id ? 'opacity-20 transition-none scale-95' : ''} ${openMenuId === addr.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}
-        >
-            <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-3 flex-1 min-w-0 ${!addr.is_active ? 'opacity-60 grayscale' : ''}`}>
-                    {/* Drag Handle */}
-                    {!isSelectionMode && (
-                        <div className="cursor-grab active:cursor-grabbing text-muted hover:text-primary-500 transition-colors">
-                            <GripVertical className="w-5 h-5" />
-                        </div>
-                    )}
+    const renderAddressCard = (addr: Address, index: number) => {
+        const active = addr.isActive ?? true;
 
-                    {/* Checkbox for selection */}
-                    {isSelectionMode && (
-                        <div onClick={(e) => e.stopPropagation()}>
-                            <input
-                                type="checkbox"
-                                checked={selectedIds.has(addr.id)}
-                                onChange={() => toggleSelection(addr.id)}
-                                className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 bg-gray-50 dark:bg-gray-800"
-                            />
-                        </div>
-                    )}
+        return (
+            <div
+                key={addr.id}
+                draggable={!isSelectionMode}
+                onDragStart={(e) => handleDragStart(e, addr.id)}
+                onDragOver={(e) => handleDragOver(e, addr.id)}
+                onDragEnd={handleDragEnd}
+                className={`group bg-surface rounded-md p-4 border shadow-md hover:shadow-md transition-all 
+                    ${(addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') ? 'border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' : 'border-surface-border'}
+                    ${draggedId === addr.id ? 'opacity-20 transition-none scale-95' : ''} 
+                    ${openMenuId === addr.id ? 'relative z-20 ring-1 ring-primary-100 dark:ring-primary-900' : ''}`}
+            >
+                <div className="flex items-center gap-3">
+                    <div className={`flex items-center gap-3 flex-1 min-w-0 ${active === false ? 'opacity-60 grayscale' : ''}`}>
+                        {/* Drag Handle */}
+                        {!isSelectionMode && (
+                            <div className="cursor-grab active:cursor-grabbing text-muted hover:text-primary-500 transition-colors">
+                                <GripVertical className="w-5 h-5" />
+                            </div>
+                        )}
 
-                    {/* Gender/Number Badge */}
-                    {(() => {
-                        let lastVisitFormatted = "Sem visitas este ano";
-                        if (addr.last_visited_at) {
-                            const lvDate = new Date(addr.last_visited_at);
-                            lastVisitFormatted = `Última visita: ${lvDate.toLocaleDateString()}`;
-                        }
+                        {/* Checkbox for selection */}
+                        {isSelectionMode && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(addr.id)}
+                                    onChange={() => toggleSelection(addr.id)}
+                                    className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 bg-gray-50 dark:bg-gray-800"
+                                />
+                            </div>
+                        )}
 
-                        // Gender Mode (Sign Language / Foreign)
-                        if (!isTraditional && addr.gender) {
-                            let badgeStyles = "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
-                            if (addr.gender === 'HOMEM') {
-                                badgeStyles = "bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
-                            } else if (addr.gender === 'MULHER') {
-                                badgeStyles = "bg-pink-100 text-pink-600 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800";
-                            } else if (addr.gender === 'CASAL') {
-                                badgeStyles = "bg-purple-100 text-purple-600 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
+                        {/* Gender/Number Badge */}
+                        {(() => {
+                            let lastVisitFormatted = "Sem visitas este ano";
+                            if (addr.last_visited_at) {
+                                const lvDate = new Date(addr.last_visited_at);
+                                lastVisitFormatted = `Última visita: ${lvDate.toLocaleDateString()}`;
+                            }
+
+                            // Mudou-se Highlight - Blue Home Icon
+                            if (addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') {
+                                return (
+                                    <div
+                                        title="Morador Mudou-se"
+                                        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border bg-blue-500 text-white border-blue-600 transition-colors"
+                                    >
+                                        <Home className="w-6 h-6" />
+                                    </div>
+                                );
+                            }
+
+                            // Gender Mode (Sign Language / Foreign)
+                            if (!isTraditional && addr.gender) {
+                                let badgeStyles = "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+                                if (addr.gender === 'HOMEM') {
+                                    badgeStyles = "bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
+                                } else if (addr.gender === 'MULHER') {
+                                    badgeStyles = "bg-pink-100 text-pink-600 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800";
+                                } else if (addr.gender === 'CASAL') {
+                                    badgeStyles = "bg-purple-100 text-purple-600 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
+                                }
+
+                                return (
+                                    <div
+                                        title={lastVisitFormatted}
+                                        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border transition-colors ${badgeStyles}`}
+                                    >
+                                        {addr.gender === 'CASAL' ? (
+                                            <div className="flex -space-x-1.5">
+                                                <User className="w-4 h-4 fill-current" />
+                                                <User className="w-4 h-4 fill-current" />
+                                            </div>
+                                        ) : (
+                                            <User className="w-5 h-5 fill-current" />
+                                        )}
+                                    </div>
+                                );
                             }
 
                             return (
                                 <div
                                     title={lastVisitFormatted}
-                                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border transition-colors ${badgeStyles}`}
+                                    className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 shadow-sm border bg-primary-50 dark:bg-primary-900/10 text-primary-700 dark:text-primary-400 border-primary-100 dark:border-primary-900/20 transition-colors"
                                 >
-                                    {addr.gender === 'CASAL' ? (
-                                        <div className="flex -space-x-1.5">
-                                            <User className="w-4 h-4 fill-current" />
-                                            <User className="w-4 h-4 fill-current" />
-                                        </div>
-                                    ) : (
-                                        <User className="w-5 h-5 fill-current" />
-                                    )}
+                                    <span className="text-sm font-bold">{index + 1}</span>
                                 </div>
                             );
-                        }
+                        })()}
 
-                        return (
-                            <div
-                                title={lastVisitFormatted}
-                                className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 shadow-sm border bg-primary-50 dark:bg-primary-900/10 text-primary-700 dark:text-primary-400 border-primary-100 dark:border-primary-900/20 transition-colors"
-                            >
-                                <span className="text-sm font-bold">{index + 1}</span>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-main text-base truncate">
+                                {addr.street}
+                            </h3>
+
+                            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
+                                {!isTraditional && addr.resident_name && <span className="font-semibold text-gray-700 dark:text-gray-300">{addr.resident_name}</span>}
+
+                                {!isTraditional && (
+                                    <>
+                                        {addr.gender && (
+                                            <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${addr.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                addr.gender === 'MULHER' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400' :
+                                                    'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                                }`}>
+                                                {addr.gender === 'HOMEM' && <User className="w-3 h-3 fill-current" />}
+                                                {addr.gender === 'MULHER' && <User className="w-3 h-3 fill-current" />}
+                                                {addr.gender === 'CASAL' && (
+                                                    <div className="flex -space-x-1">
+                                                        <User className="w-2.5 h-2.5 fill-current" />
+                                                        <User className="w-2.5 h-2.5 fill-current" />
+                                                    </div>
+                                                )}
+                                                {addr.gender === 'HOMEM' ? 'Homem' : addr.gender === 'MULHER' ? 'Mulher' : 'Casal'}
+                                            </span>
+                                        )}
+                                        {addr.is_deaf && (
+                                            <span className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                                                <Ear className="w-3 h-3" /> Surdo
+                                            </span>
+                                        )}
+                                        {addr.is_minor || (addr as any).isMinor ? (
+                                            <span className="flex items-center gap-1 bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                                                <Baby className="w-3 h-3" /> Menor
+                                            </span>
+                                        ) : null}
+                                        {(addr.is_student || (addr as any).isStudent) && (
+                                            <span className="flex items-center gap-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                                                <GraduationCap className="w-3 h-3" /> Estudante
+                                            </span>
+                                        )}
+                                        {(addr.is_neurodivergent || (addr as any).isNeurodivergent) && (
+                                            <span className="flex items-center gap-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                                                <Brain className="w-3 h-3" /> Neurodivergente
+                                            </span>
+                                        )}
+                                    </>
+                                )}
+                                {(addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') && (
+                                    <span className="flex items-center gap-1 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                                        <Truck className="w-3 h-3" /> Mudou-se
+                                    </span>
+                                )}
+                                {/* Deactivation Date for all inactive items */}
+                                {addr.is_active === false && (addr as any).inactivated_at && (
+                                    <span className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border border-red-100 dark:border-red-900/30">
+                                        <Calendar className="w-3 h-3" /> Desativado em: {new Date((addr as any).inactivated_at).toLocaleDateString('pt-BR')}
+                                    </span>
+                                )}
+                                {active !== false && addr.visit_status === 'do_not_visit' && (
+                                    <span className="flex items-center gap-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase animate-pulse border border-red-200 dark:border-red-800">
+                                        <Hand className="w-3 h-3" /> Pediu para não ser visitado
+                                    </span>
+                                )}
                             </div>
-                        );
-                    })()}
 
-                    <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-main text-base truncate">
-                            {addr.street}
-                        </h3>
-
-                        <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
-                            {!isTraditional && addr.resident_name && <span className="font-semibold text-gray-700 dark:text-gray-300">{addr.resident_name}</span>}
-
-                            {!isTraditional && (
-                                <>
-                                    {addr.gender && (
-                                        <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase ${addr.gender === 'HOMEM' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                            addr.gender === 'MULHER' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400' :
-                                                'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                            }`}>
-                                            {addr.gender === 'HOMEM' && <User className="w-3 h-3 fill-current" />}
-                                            {addr.gender === 'MULHER' && <User className="w-3 h-3 fill-current" />}
-                                            {addr.gender === 'CASAL' && (
-                                                <div className="flex -space-x-1">
-                                                    <User className="w-2.5 h-2.5 fill-current" />
-                                                    <User className="w-2.5 h-2.5 fill-current" />
-                                                </div>
-                                            )}
-                                            {addr.gender === 'HOMEM' ? 'Homem' : addr.gender === 'MULHER' ? 'Mulher' : 'Casal'}
-                                        </span>
-                                    )}
-                                    {addr.is_deaf && (
-                                        <span className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                            <Ear className="w-3 h-3" /> Surdo
-                                        </span>
-                                    )}
-                                    {addr.is_minor && (
-                                        <span className="flex items-center gap-1 bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                            <Baby className="w-3 h-3" /> Menor
-                                        </span>
-                                    )}
-                                    {addr.is_student && (
-                                        <span className="flex items-center gap-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                            <GraduationCap className="w-3 h-3" /> Estudante
-                                        </span>
-                                    )}
-                                    {addr.is_neurodivergent && (
-                                        <span className="flex items-center gap-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                            <Brain className="w-3 h-3" /> Neurodivergente
-                                        </span>
-                                    )}
-                                </>
-                            )}
-                            {addr.visit_status === 'moved' && (
-                                <span className="flex items-center gap-1 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                                    <Truck className="w-3 h-3" /> Mudou-se
-                                </span>
-                            )}
-                            {/* Deactivation Date for all inactive items */}
-                            {addr.is_active === false && (addr as any).inactivated_at && (
-                                <span className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border border-red-100 dark:border-red-900/30">
-                                    <Calendar className="w-3 h-3" /> Desativado em: {new Date((addr as any).inactivated_at).toLocaleDateString('pt-BR')}
-                                </span>
-                            )}
-                            {addr.is_active !== false && addr.visit_status === 'do_not_visit' && (
-                                <span className="flex items-center gap-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase animate-pulse border border-red-200 dark:border-red-800">
-                                    <Hand className="w-3 h-3" /> Pediu para não ser visitado
-                                </span>
+                            {addr.observations && (
+                                <div className="flex items-center gap-1 mt-1 text-xs text-muted">
+                                    <FileText className="w-3 h-3 shrink-0" />
+                                    <p className="truncate">{addr.observations}</p>
+                                </div>
                             )}
                         </div>
-
-                        {addr.observations && (
-                            <div className="flex items-center gap-1 mt-1 text-xs text-muted">
-                                <FileText className="w-3 h-3 shrink-0" />
-                                <p className="truncate">{addr.observations}</p>
-                            </div>
-                        )}
                     </div>
-                </div>
 
-                <div className="relative flex items-center gap-2">
-                    {addr.is_active !== false && addr.visit_status === 'do_not_visit' && (isElder || isServant) && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmModal({
-                                    isOpen: true,
-                                    title: "Pedido de Não Visitar",
-                                    message: "Este morador solicitou não ser visitado. O que deseja fazer?",
-                                    variant: 'danger',
-                                    confirmText: "Inativar Endereço",
-                                    cancelText: "Remover Marcação",
-                                    onConfirm: () => {
-                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                                        handleApproveDNV(addr);
-                                    },
-                                    onCancel: () => {
-                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                                        handleRemoveDNVMark(addr);
-                                    }
-                                });
-                            }}
-                            className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm transition-colors flex items-center gap-1 animate-pulse"
-                        >
-                            <Hand className="w-3 h-3" /> Gerenciar Solicitação
-                        </button>
-                    )}
-                    {(isElder || isServant) ? (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuId(openMenuId === addr.id ? null : addr.id);
-                            }}
-                            className={`p-2 rounded-full transition-colors ${openMenuId === addr.id ? 'bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-                        >
-                            <MoreVertical className="w-5 h-5" />
-                        </button>
-                    ) : (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setHistoryAddressId(addr.id);
-                            }}
-                            className="p-2 rounded-full text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
-                        >
-                            <HistoryIcon className="w-5 h-5" />
-                        </button>
-                    )}
-
-                    {openMenuId === addr.id && (
-                        <div className="absolute right-0 top-10 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-surface-border dark:border-slate-700 p-1 z-20 min-w-[160px] animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative flex items-center gap-2">
+                        {addr.is_active !== false && addr.visit_status === 'do_not_visit' && (isElder || isServant) && (
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    handleOpenMap(addr);
-                                    setOpenMenuId(null);
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: "Pedido de Não Visitar",
+                                        message: "Este morador solicitou não ser visitado. O que deseja fazer?",
+                                        variant: 'danger',
+                                        confirmText: "Inativar Endereço",
+                                        cancelText: "Remover Marcação",
+                                        onConfirm: () => {
+                                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                            handleApproveDNV(addr);
+                                        },
+                                        onCancel: () => {
+                                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                            handleRemoveDNVMark(addr);
+                                        }
+                                    });
                                 }}
-                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
+                                className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm transition-colors flex items-center gap-1 animate-pulse"
                             >
-                                <Navigation className="w-4 h-4" />
-                                Abrir no Mapa
+                                <Hand className="w-3 h-3" /> Gerenciar Solicitação
                             </button>
-
+                        )}
+                        {(isElder || isServant) ? (
                             <button
-                                onClick={() => {
-                                    setHistoryAddressId(addr.id);
-                                    setOpenMenuId(null);
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(openMenuId === addr.id ? null : addr.id);
                                 }}
-                                className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors w-full text-left"
+                                className={`p-2 rounded-full transition-colors ${openMenuId === addr.id ? 'bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                             >
-                                <HistoryIcon className="w-4 h-4" />
-                                Abrir Histórico
+                                <MoreVertical className="w-5 h-5" />
                             </button>
+                        ) : (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setHistoryAddressId(addr.id);
+                                }}
+                                className="p-2 rounded-full text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
+                            >
+                                <HistoryIcon className="w-5 h-5" />
+                            </button>
+                        )}
 
-                            {isServant && (
+                        {openMenuId === addr.id && (
+                            <div className="absolute right-0 top-10 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-surface-border dark:border-slate-700 p-1 z-20 min-w-[160px] animate-in fade-in zoom-in-95 duration-200">
                                 <button
-                                    onClick={() => {
-                                        handleEditAddress(addr);
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenMap(addr);
                                         setOpenMenuId(null);
                                     }}
                                     className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
                                 >
-                                    <Pencil className="w-4 h-4" />
-                                    Editar
+                                    <Navigation className="w-4 h-4" />
+                                    Abrir no Mapa
                                 </button>
-                            )}
 
-                            {(isElder || isServant) && (
                                 <button
                                     onClick={() => {
-                                        setConfirmModal({
-                                            isOpen: true,
-                                            title: addr.is_active === false ? "Reativar Endereço" : "Desativar Endereço",
-                                            message: addr.is_active === false
-                                                ? "Deseja reativar este endereço para que ele volte a aparecer nos links?"
-                                                : "Deseja desativar este endereço temporariamente?",
-                                            variant: addr.is_active === false ? 'info' : 'danger',
-                                            confirmText: addr.is_active === false ? "Reativar" : "Desativar",
-                                            cancelText: "Cancelar",
-                                            onConfirm: () => {
-                                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                                                handleToggleActive(addr);
-                                            },
-                                            onCancel: undefined
-                                        });
+                                        setHistoryAddressId(addr.id);
                                         setOpenMenuId(null);
                                     }}
-                                    className={`flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors w-full text-left ${addr.is_active === false ? 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30' : 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30'}`}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg transition-colors w-full text-left"
                                 >
-                                    {addr.is_active === false ? <Plus className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                                    {addr.is_active === false ? 'Reativar Endereço' : 'Inativar Endereço'}
+                                    <HistoryIcon className="w-4 h-4" />
+                                    Abrir Histórico
                                 </button>
-                            )}
 
-                            {(isElder || isServant) && (
-                                <button
-                                    onClick={() => {
-                                        handleDeleteAddress(addr.id);
-                                        setOpenMenuId(null);
-                                    }}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors w-full text-left"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                    Excluir
-                                </button>
-                            )}
-                        </div>
-                    )}
+                                {isServant && (
+                                    <button
+                                        onClick={() => {
+                                            handleEditAddress(addr);
+                                            setOpenMenuId(null);
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg transition-colors w-full text-left"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                        Editar
+                                    </button>
+                                )}
+
+                                {(isElder || isServant) && (
+                                    <button
+                                        onClick={() => {
+                                            setConfirmModal({
+                                                isOpen: true,
+                                                title: addr.is_active === false ? "Reativar Endereço" : "Desativar Endereço",
+                                                message: addr.is_active === false
+                                                    ? "Deseja reativar este endereço para que ele volte a aparecer nos links?"
+                                                    : "Deseja desativar este endereço temporariamente?",
+                                                variant: addr.is_active === false ? 'info' : 'danger',
+                                                confirmText: addr.is_active === false ? "Reativar" : "Desativar",
+                                                cancelText: "Cancelar",
+                                                onConfirm: () => {
+                                                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                                    handleToggleActive(addr);
+                                                },
+                                                onCancel: undefined
+                                            });
+                                            setOpenMenuId(null);
+                                        }}
+                                        className={`flex items-center gap-2 px-3 py-2 text-sm font-bold rounded-lg transition-colors w-full text-left ${addr.is_active === false ? 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30' : 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30'}`}
+                                    >
+                                        {addr.is_active === false ? <Plus className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                                        {addr.is_active === false ? 'Reativar Endereço' : 'Inativar Endereço'}
+                                    </button>
+                                )}
+
+                                {(isElder || isServant) && (
+                                    <button
+                                        onClick={() => {
+                                            handleDeleteAddress(addr.id);
+                                            setOpenMenuId(null);
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors w-full text-left"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        Excluir
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -1041,7 +1128,7 @@ function AddressListContent() {
                                         </thead>
                                         <tbody className="divide-y divide-surface-border">
                                             {activeAddresses.map((addr, idx) => (
-                                                <tr key={addr.id} className="hover:bg-surface-highlight/50 transition-colors group">
+                                                <tr key={addr.id} className={`transition-colors group ${(addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') ? 'bg-blue-50/40 dark:bg-blue-900/20' : 'hover:bg-surface-highlight/50'}`}>
                                                     <td className="px-4 py-4 text-center font-bold text-muted">{idx + 1}</td>
                                                     <td className="px-4 py-4">
                                                         <div className="font-bold text-main">{addr.street}</div>
@@ -1064,11 +1151,11 @@ function AddressListContent() {
                                                     <td className="px-4 py-4">
                                                         {addr.visit_status && (
                                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${addr.visit_status === 'contacted' ? 'bg-green-100 text-green-700' :
-                                                                addr.visit_status === 'moved' ? 'bg-sky-100 text-sky-700' :
+                                                                (addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') ? 'bg-sky-100 text-sky-700' :
                                                                     addr.visit_status === 'do_not_visit' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
                                                                 }`}>
                                                                 {addr.visit_status === 'contacted' ? 'Visitado' :
-                                                                    addr.visit_status === 'moved' ? 'Mudou' :
+                                                                    (addr.visit_status === 'moved' || (addr as any).visitStatus === 'moved') ? 'Mudou' :
                                                                         addr.visit_status === 'do_not_visit' ? 'Não Visitar' : 'Pendente'}
                                                             </span>
                                                         )}
@@ -1429,6 +1516,30 @@ function AddressListContent() {
                         </button>
                     </header>
 
+                    {/* Search Bar in Modal */}
+                    <div className="bg-surface px-6 py-3 border-b border-surface-border">
+                        <form onSubmit={handleMapSearch} className="relative max-w-2xl mx-auto flex gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted w-4 h-4" />
+                                <input
+                                    type="text"
+                                    placeholder="Pesquisar endereço para o pino..."
+                                    className="w-full bg-background border border-surface-border rounded-lg py-2 pl-9 pr-4 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                                    value={mapSearchQuery}
+                                    onChange={(e) => setMapSearchQuery(e.target.value)}
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={isGeocodingMap}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center gap-2"
+                            >
+                                {isGeocodingMap ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                                {isGeocodingMap ? 'Buscando...' : 'Buscar'}
+                            </button>
+                        </form>
+                    </div>
+
                     <div className="flex-1 relative">
                         <div className="absolute top-4 right-4 z-50 flex flex-col gap-2">
                             <button
@@ -1449,6 +1560,7 @@ function AddressListContent() {
 
                         <MapView
                             onMapClick={handleMapClick}
+                            center={pickerTempCoords || undefined}
                             items={pickerTempCoords ? [{
                                 id: 'temp',
                                 lat: pickerTempCoords.lat,
@@ -1505,6 +1617,13 @@ function AddressListContent() {
                 confirmText="Excluir"
                 variant="danger"
                 isLoading={isDeleting}
+            />
+
+            {/* Map App Selection Modal */}
+            <MapAppSelectModal
+                isOpen={!!mapAppSelect?.isOpen}
+                onClose={() => setMapAppSelect(null)}
+                address={mapAppSelect?.address || {}}
             />
 
             <BottomNav />

@@ -62,8 +62,8 @@ export async function POST(req: Request) {
         };
 
         if (id) {
-            // Atualiza um endereço existente
-            await adminDb.collection('addresses').doc(id).update(addressData);
+            // Atualiza o endereço removendo campos legados caso existam
+            await adminDb.collection('addresses').doc(id).set(addressData);
         } else {
             // Cria um novo endereço
             addressData.createdAt = FieldValue.serverTimestamp();

@@ -95,7 +95,6 @@ function TerritoryListContent() {
     // Delete State
     const [territoryToDelete, setTerritoryToDelete] = useState<{ id: string, name: string } | null>(null);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-    const [deleteMode, setDeleteMode] = useState<'cascade' | 'orphan'>('cascade');
 
     // Multi-select state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -395,7 +394,7 @@ function TerritoryListContent() {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/territories/delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, mode: deleteMode })
+                body: JSON.stringify({ id })
             });
 
             const resData = await response.json();
@@ -407,9 +406,7 @@ function TerritoryListContent() {
                     throw new Error(resData.error || 'Erro ao excluir território');
                 }
             } else {
-                toast.success(deleteMode === 'cascade'
-                    ? "Território e endereços excluídos!"
-                    : "Território excluído e endereços mantidos!");
+                toast.success("Território e endereços vinculados excluídos!");
             }
 
             fetchTerritories();
@@ -965,49 +962,15 @@ function TerritoryListContent() {
                     <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
                         <div className="mb-6">
                             <h3 className="text-xl font-bold text-main tracking-tight">Excluir Território {territoryToDelete.name}</h3>
-                            <p className="text-sm text-muted mt-1">Este território possui endereços vinculados. O que deseja fazer com eles?</p>
+                            <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 flex gap-3">
+                                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-700 dark:text-red-400 font-medium leading-relaxed">
+                                    <span className="font-bold">Atenção:</span> A exclusão do território apagará definitivamente também todos os endereços vinculados a ele.
+                                </p>
+                            </div>
                         </div>
 
-                        <div className="space-y-3 mb-8">
-                            <button
-                                onClick={() => setDeleteMode('cascade')}
-                                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 ${deleteMode === 'cascade' ? 'border-red-50 bg-red-50/50 dark:bg-red-900/10' : 'border-surface-border'}`}
-                            >
-                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${deleteMode === 'cascade' ? 'bg-red-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
-                                    <Trash2 className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <div className={`font-bold text-sm ${deleteMode === 'cascade' ? 'text-red-700 dark:text-red-400' : 'text-main'}`}>Apagar Tudo</div>
-                                    <div className="text-[10px] text-muted leading-tight">Remove o mapa e todos os endereços definitivamente.</div>
-                                </div>
-                                {deleteMode === 'cascade' && <div className="ml-auto w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />}
-                            </button>
-
-                            <button
-                                onClick={() => setDeleteMode('orphan')}
-                                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 ${deleteMode === 'orphan' ? 'border-amber-50 bg-amber-50/50 dark:bg-amber-900/10' : 'border-surface-border'}`}
-                            >
-                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${deleteMode === 'orphan' ? 'bg-amber-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
-                                    <LogOut className="w-5 h-5 -rotate-90" />
-                                </div>
-                                <div>
-                                    <div className={`font-bold text-sm ${deleteMode === 'orphan' ? 'text-amber-700 dark:text-amber-400' : 'text-main'}`}>Deixar Órfãos</div>
-                                    <div className="text-[10px] text-muted leading-tight">Apaga o mapa, mas mantém os endereços na lista de espera.</div>
-                                </div>
-                                {deleteMode === 'orphan' && <div className="ml-auto w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" />}
-                            </button>
-
-                            {deleteMode === 'orphan' && (
-                                <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30 flex gap-3 animate-in slide-in-from-top-2 duration-200">
-                                    <AlertCircle className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                                    <p className="text-[10px] text-blue-700 dark:text-blue-400 font-medium leading-relaxed">
-                                        Importante: Você precisará <span className="font-bold">entrar em contato com o Administrador do Sistema</span> para visualizar e reatribuir estes endereços órfãos posteriormente.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex gap-3">
+                        <div className="flex gap-3 mt-6">
                             <button
                                 onClick={() => setIsDeleteDialogOpen(false)}
                                 className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-bold py-3.5 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm"
@@ -1016,9 +979,9 @@ function TerritoryListContent() {
                             </button>
                             <button
                                 onClick={confirmDeleteTerritory}
-                                className={`flex-1 font-bold py-3.5 rounded-xl transition-all shadow-lg active:scale-95 text-sm text-white ${deleteMode === 'cascade' ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'}`}
+                                className="flex-1 font-bold py-3.5 rounded-xl transition-all shadow-lg active:scale-95 text-sm text-white bg-red-500 hover:bg-red-600 shadow-red-500/20"
                             >
-                                Confirmar
+                                Excluir Definitivamente
                             </button>
                         </div>
                     </div>

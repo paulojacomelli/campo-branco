@@ -86,6 +86,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
     // Stats
     const [addressCounts, setAddressCounts] = useState<Record<string, number>>({});
+    const [processedCounts, setProcessedCounts] = useState<Record<string, number>>({});
     const [globalStats, setGlobalStats] = useState({
         total: 0,
         processed: 0,
@@ -132,7 +133,8 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                 } as any);
 
                 // Show responsibility modal if no one is assigned and list is active
-                if (!list.assigned_to && !list.assigned_name && list.status !== 'completed') {
+                const hasResponsible = list.assigned_to || list.assignedTo || list.assigned_name || list.assignedName;
+                if (!hasResponsible && list.status !== 'completed') {
                     setIsResponsibilityModalOpen(true);
                 }
 
@@ -149,15 +151,19 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                 // We must filter for only the "main items" listed in the shared_list metadata
                 const mainItemIds = list.items || [];
                 const mergedItems = (fetchedItems || [])
-                    .filter((item: any) => mainItemIds.includes(item.id))
+                    .filter((item: any) => mainItemIds.includes(item.itemId || item.id))
                     .map((item: any) => {
-                        const result = linkResults[item.id];
+                        const sourceData = item.data || item;
+                        const actualId = item.itemId || item.id;
+                        const result = linkResults[actualId];
                         return {
                             ...item,
+                            ...sourceData,
+                            id: actualId,
                             completed: result?.status === 'contacted',
                             visitStatus: result?.status || item.visitStatus || 'none',
                             visitNotes: result?.notes || '',
-                            inactivatedAt: item.inactivated_at
+                            inactivatedAt: sourceData.inactivated_at || sourceData.inactivatedAt
                         };
                     });
 
@@ -170,15 +176,20 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     let allAddresses: any[] = [];
 
                     if (fetchedItems && fetchedItems.length > 0) {
-                        // In snapshots, we store both territories and addresses
-                        // Addresses usually have territory_id pointing to one of the territories
+                        // Em snapshots, o território_id pode estar no item ou dentro de item.data
                         const territoryIds = (list.items || []);
-                        allAddresses = fetchedItems.filter((item: any) =>
-                            item.territory_id && (territoryIds.includes(item.territory_id) || item.territory_id === list.territory_id)
-                        );
+                        allAddresses = fetchedItems.filter((item: any) => {
+                            const sourceData = item.data || item;
+                            const tId = sourceData.territory_id || sourceData.territoryId;
+                            return tId && (territoryIds.includes(tId) || tId === list.territoryId);
+                        }).map((item: any) => ({
+                            ...(item.data || item),
+                            id: item.itemId || item.id
+                        }));
                     }
 
                     const counts: Record<string, number> = {};
+                    const procCounts: Record<string, number> = {};
                     const stats = {
                         total: 0,
                         processed: 0,
@@ -190,8 +201,12 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     };
 
                     allAddresses.forEach((addr: any) => {
-                        if (addr.is_active !== false) {
-                            counts[addr.territory_id] = (counts[addr.territory_id] || 0) + 1;
+                        // O contador NÃO deve contabilizar desativados
+                        if (addr.is_active !== false && addr.isActive !== false) {
+                            const tId = addr.territory_id || addr.territoryId;
+                            if (tId) {
+                                counts[tId] = (counts[tId] || 0) + 1;
+                            }
                             stats.total++;
 
                             const result = linkResults[addr.id];
@@ -199,6 +214,9 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
 
                             if (currentStatus && currentStatus !== 'none') {
                                 stats.processed++;
+                                if (tId) {
+                                    procCounts[tId] = (procCounts[tId] || 0) + 1;
+                                }
                                 if (currentStatus === 'contacted') stats.contacted++;
                                 else if (currentStatus === 'not_contacted') stats.not_contacted++;
                                 else if (currentStatus === 'moved') stats.moved++;
@@ -209,6 +227,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                     });
 
                     setAddressCounts(counts);
+                    setProcessedCounts(procCounts);
                     setGlobalStats(stats);
                 }
             } catch (err) {
@@ -569,7 +588,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                     {/* Not Contacted */}
                                     <div style={{ width: `${(globalStats.not_contacted / globalStats.total) * 100}%` }} className="bg-orange-500 h-full transition-all duration-500" title={`Não Contatados: ${globalStats.not_contacted}`} />
                                     {/* Moved */}
-                                    <div style={{ width: `${(globalStats.moved / globalStats.total) * 100}%` }} className="bg-primary h-full transition-all duration-500" title={`Mudou-se: ${globalStats.moved}`} />
+                                    <div style={{ width: `${(globalStats.moved / globalStats.total) * 100}%` }} className="bg-blue-500 h-full transition-all duration-500" title={`Mudou-se: ${globalStats.moved}`} />
                                     {/* Do Not Visit */}
                                     <div style={{ width: `${(globalStats.do_not_visit / globalStats.total) * 100}%` }} className="bg-red-500 h-full transition-all duration-500" title={`Não Visitar: ${globalStats.do_not_visit}`} />
                                 </div>
@@ -582,7 +601,7 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                 <div className="flex flex-wrap gap-3 pt-2">
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-600" /><span className="text-[10px] text-muted font-bold uppercase">Contatado</span></div>
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-500" /><span className="text-[10px] text-muted font-bold uppercase">Não Contatado</span></div>
-                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-primary" /><span className="text-[10px] text-muted font-bold uppercase">Mudou</span></div>
+                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[10px] text-muted font-bold uppercase">Mudou</span></div>
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[10px] text-muted font-bold uppercase">Não Visitar</span></div>
                                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="text-[10px] text-muted font-bold uppercase">Não Trabalhado</span></div>
                                 </div>
@@ -706,10 +725,12 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                                         ${listData?.type === 'address'
                                             ? (item.visitStatus === 'contacted' ? 'bg-[#21832B] text-white' :
                                                 item.visitStatus === 'not_contacted' ? 'bg-orange-500 text-white' :
-                                                    item.visitStatus === 'moved' ? 'bg-primary text-white' :
+                                                    item.visitStatus === 'moved' ? 'bg-blue-500 text-white' :
                                                         item.visitStatus === 'do_not_visit' ? 'bg-red-500 text-white' :
                                                             'bg-primary-light/50 dark:bg-primary-dark/30 text-primary-dark dark:text-primary-light group-hover:bg-primary-light/80 dark:group-hover:bg-primary-dark/50 group-hover:text-primary-dark dark:group-hover:text-primary-light')
-                                            : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border border-gray-100 dark:border-gray-700 group-hover:bg-primary-light/50 dark:group-hover:bg-primary-dark/30 group-hover:text-primary dark:group-hover:text-primary-light'
+                                            : listData?.type === 'territory' && (addressCounts[item.id] > 0 && addressCounts[item.id] === processedCounts[item.id])
+                                                ? 'bg-green-600 text-white shadow-lg shadow-green-500/20'
+                                                : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border border-gray-100 dark:border-gray-700 group-hover:bg-primary-light/50 dark:group-hover:bg-primary-dark/30 group-hover:text-primary dark:group-hover:text-primary-light'
                                         }`}
                                     >
                                         {listData?.type === 'city' && <Building2 className="w-6 h-6" />}
@@ -779,9 +800,15 @@ export default function SharedListView({ id: propId }: SharedListViewProps) {
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <h3 className="font-bold text-main text-base truncate">{item.name}</h3>
-                                                    <span className="text-[10px] font-bold text-primary-dark bg-primary-light/50 dark:bg-primary-dark/50 dark:text-primary-light px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                        {addressCounts[item.id] || 0} Endereços
-                                                    </span>
+                                                    {addressCounts[item.id] > 0 && addressCounts[item.id] === processedCounts[item.id] ? (
+                                                        <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                            <CheckCircle2 className="w-3 h-3" /> Concluído
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] font-bold text-primary-dark bg-primary-light/50 dark:bg-primary-dark/50 dark:text-primary-light px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                            {addressCounts[item.id] || 0} Endereços
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider line-clamp-1">
                                                     {item.description || 'VER ENDEREÇOS'}

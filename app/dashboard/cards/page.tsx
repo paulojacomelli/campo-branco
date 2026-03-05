@@ -300,7 +300,13 @@ function CardsContent() {
 
     const formatDate = (dateValue: any) => {
         if (!dateValue) return 'N/A';
-        const date = new Date(dateValue);
+
+        // Check if it's a Firestore Timestamp and has the toDate method
+        const date = typeof dateValue.toDate === 'function' ? dateValue.toDate() : new Date(dateValue);
+
+        // Still invalid date fallback
+        if (isNaN(date.getTime())) return 'N/A';
+
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     };
 
@@ -460,7 +466,7 @@ function CardsContent() {
                                     <div className="flex items-center gap-4">
                                         <div className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3 text-muted" />
-                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.createdAt)}</span>
+                                            <span className="text-[10px] text-muted font-medium">Início: {formatDate(list.createdAt || list.created_at)}</span>
                                         </div>
                                         {list.status !== 'completed' && list.expiresAt && formatExpirationTime(list.expiresAt) && (
                                             <div className="flex items-center gap-1">
